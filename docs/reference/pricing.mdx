@@ -1,0 +1,183 @@
+---
+title: Cloider pricing reference, price kinds and units
+sidebar_label: Pricing
+sidebar_position: 2
+description: Every Cloider price kind and unit for clusters, apps, databases, buckets and the registry, how to read current prices, and worked cost examples.
+keywords: [cloider pricing, cloider prices, compute unit price, database plan price, storage price per gb, load balancer price, pricing api]
+---
+
+This page lists **what** Cloider charges for and in which unit. The amounts themselves change over time and are kept in one place, so read them from [cloider.com/#pricing](https://cloider.com/#pricing), from `cloider pricing`, or from the public pricing endpoint. How usage is measured is explained in [Billing model](/concepts/billing-model).
+
+## At a glance
+
+| Product | Price kind | Unit | Field in `GET /api/pricing` |
+| --- | --- | --- | --- |
+| Kubernetes cluster | Compute | Per compute unit per month | `cluster.compute_unit` |
+| Kubernetes cluster | Compute unit size | vCPU to memory ratio | `cluster.cpu_to_mem_ratio` |
+| Kubernetes cluster | Persistent volumes | Per GiB per month | `cluster.volume_gi` |
+| Kubernetes cluster | Load balancers | Per load balancer per month | `cluster.loadbalancer` |
+| App | Compute | Per compute unit per month | `app.compute_unit` |
+| App | Compute unit size | vCPU to memory ratio | `app.cpu_to_mem_ratio` |
+| Database | Plan | Per database per month, per engine and plan | `database.<Engine>.<Plan>.price` |
+| Database (paused) | Retained storage | Per database per month while paused | `database.<Engine>.<Plan>.paused_price` |
+| Bucket | Storage | Per GiB stored per month | `bucket.storage_gi` |
+| Registry project | Storage | Per GiB stored per month | `registry.storage_gi` |
+| Domains, DNS records, targets | | Free | |
+| Bucket requests and traffic, registry pushes and pulls | | Free | |
+
+All prices are in US dollars, per month. A billing month counts as 30 days (720 hours), and usage is prorated by the second. Invoices show hourly rates, which are the monthly price divided by 720.
+
+## Read current prices
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+The pricing section of the home page, [cloider.com/#pricing](https://cloider.com/#pricing), has a calculator for Kubernetes clusters: set vCPU, memory, storage and average utilization to estimate a monthly cost. It uses the current cluster prices.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider pricing
+```
+
+The first table lists `SERVICE`, `UNIT` and `PRICE` for each price kind: the cluster's `compute unit`, `volume per Gi`, `load balancer` and `cpu to memory ratio`, the app's `compute unit` and `cpu to memory ratio`, the bucket's and registry's `storage per Gi`. The second lists every database `PLAN` per engine with its monthly `PRICE`, `CPU`, `RAM`, `STORAGE` and `PAUSED` price. Add `-o json` for the raw answer.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider doesn't read prices. Use the **CLI** or **API** tab.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+The pricing endpoint is public: it needs no token.
+
+```bash
+curl https://cloider.com/api/pricing
+```
+
+```json title="Response shape"
+{
+  "cluster": {
+    "compute_unit": "<monthly price of one compute unit>",
+    "volume_gi": "<monthly price of one GiB of volume>",
+    "loadbalancer": "<monthly price of one load balancer>",
+    "cpu_to_mem_ratio": "<MiB of memory per millicore>"
+  },
+  "app": {
+    "compute_unit": "<monthly price of one compute unit>",
+    "cpu_to_mem_ratio": "<MiB of memory per millicore>"
+  },
+  "bucket": {"storage_gi": "<monthly price of one GiB stored>"},
+  "registry": {"storage_gi": "<monthly price of one GiB stored>"},
+  "database": {
+    "PostgreSQL": {
+      "Hobby": {
+        "price": "<monthly price>",
+        "cpu": "<CPU of the plan>",
+        "ram": "<RAM of the plan>",
+        "storage": "<storage of the plan>",
+        "paused_price": "<monthly price while paused>"
+      }
+    }
+  }
+}
+```
+
+Prices are decimal numbers encoded as JSON strings. `database` has one key per engine (`PostgreSQL`, `MySQL`, `MongoDB`, `Redis`) and, under each, one key per plan (`Hobby`, `Starter`, `Basic`, `Standard`, `Plus`, `Pro`).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+What are Cloider's current prices for clusters and PostgreSQL plans?
+```
+
+```json title="Tool call: get_pricing"
+{}
+```
+
+</TabItem>
+</Tabs>
+
+## Compute
+
+Kubernetes clusters and apps pay for **compute units**. One compute unit is one vCPU, or the memory the ratio pairs with one vCPU, whichever a workload uses more of:
+
+```text
+compute units = max(vCPU, memory in MiB / (cpu_to_mem_ratio x 1000))
+```
+
+`cpu_to_mem_ratio` is MiB of memory per millicore of CPU, so `cpu_to_mem_ratio x 1000` is the MiB of memory in one compute unit. `cloider pricing` shows the ratio as `1:<ratio>`.
+
+Each running container counts the larger of its request and its actual use, for CPU and memory separately. A cluster's compute includes its Kubernetes control plane; the calculator on cloider.com estimates the control plane at about $9.99 a month. Clusters and apps have separate compute prices.
+
+On an invoice, compute appears as **Compute-Hour** lines: compute units times hours.
+
+## Storage
+
+| What | Measured as | Price kind |
+| --- | --- | --- |
+| Cluster persistent volumes | Provisioned capacity of each volume, in GiB | `cluster.volume_gi` |
+| Bucket data | GiB stored, averaged over time | `bucket.storage_gi` |
+| Registry project images | GiB stored, averaged over time | `registry.storage_gi` |
+| A paused database's storage | The storage its plan provisions | Cluster volume rate, quoted per plan as `paused_price` |
+
+On an invoice, storage appears as **GB-Hour** lines: GiB times hours.
+
+## Load balancers
+
+Each Service of type `LoadBalancer` that has a public IP is billed per month, prorated to the time it is active. On an invoice each one has its own **LoadBalancer** line with its name and IP, in **Hour** units.
+
+## Databases
+
+Databases are priced per **plan**, per engine. A plan fixes the CPU, RAM and storage, and has a flat monthly price, prorated to the time the database is **Ready**. The plans are, from smallest to largest:
+
+| Plan | Notes |
+| --- | --- |
+| Hobby | The smallest plan |
+| Starter | |
+| Basic | |
+| Standard | |
+| Plus | |
+| Pro | The largest plan |
+
+The CPU, RAM, storage and price of each plan are in the pricing endpoint and `cloider pricing`. You can [resize](/databases/resize) a database to a larger plan; the invoice then has one line per plan for the time on each. While a database is **Paused**, it pays only its `paused_price`, which is the plan's storage at the cluster volume rate.
+
+## Worked examples
+
+These examples use made-up prices to show the arithmetic. Substitute the current prices from `cloider pricing`.
+
+**A small cluster for a whole month.** Suppose a compute unit costs $C a month, a GiB of volume $V, a load balancer $L, and the ratio is 1 vCPU to 3 GiB. A cluster whose containers average 0.5 vCPU and 2 GiB, with a 10 GiB volume and one load balancer, all month:
+
+```text
+compute units = max(0.5, 2 / 3) = 0.67
+monthly cost  = 0.67 x C + 10 x V + 1 x L
+```
+
+**A database for ten days.** A database on a plan priced at $P a month, Ready for 10 days, then deleted:
+
+```text
+cost = P x 10 / 30
+```
+
+**A paused database.** The same database paused for the whole month costs its `paused_price`.
+
+## Price changes
+
+Prices have effective dates. Each day's usage is priced at that day's rates, so a new price applies from its effective date onward. If prices change during a month, the invoice splits each affected line into one line per price period.
+
+## Next steps
+
+- [Billing model](/concepts/billing-model): how usage is measured.
+- [Usage](/account/usage): what your resources cost right now.
+- [Billing](/account/billing): your invoices.
+
+<FAQ items={[
+  {q: 'Where can I see Cloider\'s current prices?', a: 'On cloider.com/#pricing, with cloider pricing in the CLI, or with GET https://cloider.com/api/pricing, which is public and needs no token.'},
+  {q: 'What is the unit of Cloider prices?', a: 'US dollars per month. Usage is prorated by the second over a 30 day month, and invoices show hourly rates (the monthly price divided by 720).'},
+  {q: 'Is there a charge for the Kubernetes control plane?', a: 'The control plane\'s CPU and memory are part of the cluster\'s metered compute. The calculator on cloider.com estimates it at about $9.99 a month.'},
+  {q: 'Do domains or DNS records cost anything?', a: 'No. Domains, DNS records and targets are not billed.'},
+  {q: 'How much does a paused database cost?', a: 'Its paused_price, listed per plan in the pricing endpoint: the plan\'s storage at the cluster volume rate. The plan price is not charged while paused.'}
+]} />

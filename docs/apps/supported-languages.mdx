@@ -1,0 +1,431 @@
+---
+title: Supported languages and frameworks for Cloider apps
+sidebar_label: Supported languages
+sidebar_position: 5
+description: The languages Cloider builds without a Dockerfile, the files that select each one, and minimal Node.js, Python, Go, Java, PHP, Ruby, .NET and static projects that deploy as is.
+keywords: [cloider languages, deploy nodejs, deploy python, deploy flask, deploy django, deploy go, deploy spring boot, deploy php, deploy ruby, deploy dotnet, deploy static site]
+---
+
+Cloider runs any language that fits in a container: with a `Dockerfile` at the root of your project, Cloider builds it
+as written. Without one, Cloider recognizes **Node.js, Python, Go, Java, Scala, PHP, Ruby and .NET** projects and builds
+them with Cloud Native Buildpacks, and serves plain HTML as a **static site**. This page lists the files that select each
+language and gives a minimal project for each that deploys as it is.
+
+## At a glance
+
+| Language | Recognized by a file at the project root | Built by |
+| --- | --- | --- |
+| Node.js (JavaScript, TypeScript) | `package.json` | Buildpacks |
+| Python | `requirements.txt`, `pyproject.toml`, `Pipfile`, `Pipfile.lock`, `poetry.lock`, `uv.lock`, `setup.py`, `setup.cfg`, `runtime.txt`, `.python-version` | Buildpacks |
+| Go | `go.mod` | Buildpacks |
+| Java, Kotlin (Maven or Gradle) | `pom.xml`, `mvnw`, `build.gradle`, `build.gradle.kts`, `settings.gradle`, `settings.gradle.kts`, `gradlew`, `system.properties` | Buildpacks |
+| Scala | `build.sbt` | Buildpacks |
+| PHP | `composer.json`, `composer.lock` | Buildpacks |
+| Ruby | `Gemfile`, `Gemfile.lock` | Buildpacks |
+| .NET (C#, F#, Visual Basic) | A `.csproj`, `.fsproj`, `.vbproj`, `.sln` or `.slnx` file, or a single `.cs` file | Buildpacks |
+| Static site | One or more `.html` / `.htm` files and none of the files above | Static web server |
+| Anything else (Rust, Elixir, Deno, Bun, C++ and more) | `Dockerfile` | Your Dockerfile |
+
+The buildpacks are Heroku's open source Cloud Native Buildpacks (`heroku/builder:26`). They pick the runtime version,
+install your dependencies and run your build step following each language's usual conventions, described below. For
+everything a buildpack doesn't cover, add a `Dockerfile`: it always takes priority. See
+[Build configuration](/apps/build-configuration) for how the strategy is chosen.
+
+## Rules every app follows
+
+Whatever the language, a project deploys cleanly when it:
+
+1. **Listens on `$PORT`**, on all interfaces (`0.0.0.0`). Cloider sets `PORT` to the app's port and only sends traffic
+   there.
+2. **Says how it starts**: a `Procfile` with a `web:` line, the app's **Start command**, a `start` script (Node.js), or
+   a Dockerfile `CMD`.
+3. **Commits its lockfile** (`package-lock.json`, `poetry.lock`, `Gemfile.lock`, `composer.lock`, `go.sum`), so the
+   build installs exactly the dependencies you tested.
+4. **Leaves dependencies out of the upload** (`node_modules/`, `.venv/`, `vendor/`): the build installs them. See
+   [What is uploaded?](/apps/deploy-from-your-computer#what-is-uploaded).
+5. **Reads configuration from environment variables**, set on the app's **Environment** tab. See
+   [Environment variables](/apps/environment-variables).
+
+## Node.js
+
+Cloider builds a project with a `package.json` at its root with the Node.js buildpack. It installs dependencies with the
+package manager your lockfile belongs to, runs your `build` script if there is one, and starts the app with the
+`start` script unless a `Procfile` or a start command says otherwise. Pick the Node.js version with `engines.node`.
+
+```text
+blog/
+  package.json
+  package-lock.json
+  server.js
+```
+
+```json title="package.json"
+{
+  "name": "blog",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
+```
+
+```js title="server.js"
+const express = require("express");
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.get("/", (req, res) => res.send("Hello from Cloider"));
+
+app.listen(port, "0.0.0.0", () => console.log(`Listening on ${port}`));
+```
+
+Run `npm install` once to create `package-lock.json`, then `cloider deploy`.
+
+Framework notes:
+
+- **Next.js**: `"build": "next build"` and `"start": "next start -p $PORT"`. Variables named `NEXT_PUBLIC_*` are inlined
+  at build time, so set them before the build: a plain environment variable or a build variable both reach a buildpack
+  build.
+- **Nuxt**: `"build": "nuxt build"` and `"start": "node .output/server/index.mjs"`. Nuxt's server reads `PORT`.
+- **NestJS**, **Fastify**, **Koa**, **Hono on Node**: start the compiled entry file and listen on `process.env.PORT`.
+- **TypeScript**: compile in the `build` script (`tsc`) and start the compiled JavaScript.
+
+## Python
+
+A project with `requirements.txt`, `pyproject.toml` (with Poetry or uv), a `Pipfile` or another Python file from the
+table is built with the Python buildpack. Pin the Python version in `.python-version`. Python web apps need to say how
+to start, so add a `Procfile` (or set the app's start command) that runs a production server on `$PORT`.
+
+### Flask
+
+```text
+api/
+  app.py
+  requirements.txt
+  .python-version
+  Procfile
+```
+
+```python title="app.py"
+from flask import Flask
+
+app = Flask(__name__)
+
+
+@app.get("/")
+def index():
+    return {"message": "Hello from Cloider"}
+```
+
+```text title="requirements.txt"
+flask==3.1.0
+gunicorn==23.0.0
+```
+
+```text title=".python-version"
+3.13
+```
+
+```text title="Procfile"
+web: gunicorn app:app --bind 0.0.0.0:$PORT
+```
+
+### FastAPI
+
+```text title="requirements.txt"
+fastapi==0.115.6
+uvicorn==0.34.0
+```
+
+```text title="Procfile"
+web: uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+### Django
+
+```text title="Procfile"
+web: gunicorn mysite.wsgi --bind 0.0.0.0:$PORT
+```
+
+For Django, read `SECRET_KEY`, `DEBUG` and `ALLOWED_HOSTS` from environment variables, and include the app's domain in
+`ALLOWED_HOSTS` (for example `blog-x7k2.cloider.app`). Run migrations from the [terminal](/apps/terminal-and-exec):
+
+```bash
+cloider app exec api python manage.py migrate
+```
+
+## Go
+
+A project with `go.mod` at its root is compiled by the Go buildpack, using the Go version from the `go` line of
+`go.mod`. Keep the server's `main` package at the module root.
+
+```text
+api/
+  go.mod
+  main.go
+```
+
+```text title="go.mod"
+module example.com/api
+
+go 1.23
+```
+
+```go title="main.go"
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+)
+
+func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello from Cloider")
+	})
+
+	log.Printf("Listening on %s", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+```
+
+If the module has several `main` packages, set the app's start command to the one to run.
+
+## Java
+
+A Maven (`pom.xml`) or Gradle (`build.gradle`, `build.gradle.kts`) project is built with the JVM buildpacks. Pick the
+Java version in `system.properties` (for example `java.runtime.version=21`). Give the jar a fixed name and start it
+from a `Procfile`, which makes the start command independent of your version number.
+
+### Spring Boot with Maven
+
+```xml title="pom.xml (excerpt)"
+<build>
+  <finalName>app</finalName>
+  <plugins>
+    <plugin>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-maven-plugin</artifactId>
+    </plugin>
+  </plugins>
+</build>
+```
+
+```text title="system.properties"
+java.runtime.version=21
+```
+
+```properties title="src/main/resources/application.properties"
+server.port=${PORT:8080}
+```
+
+```text title="Procfile"
+web: java -jar target/app.jar
+```
+
+Kotlin projects built with Gradle work the same way; point the `Procfile` at the jar Gradle builds.
+
+## Scala
+
+An sbt project (`build.sbt`) is built with the Scala buildpack. Add a `Procfile` with the command that starts your
+server on `$PORT`, for example the script `sbt-native-packager` stages.
+
+## PHP
+
+A project with `composer.json` is built with the PHP buildpack, which installs your Composer dependencies. Commit
+`composer.lock`. The smallest app that deploys as is uses PHP's built-in server from a `Procfile`; for production
+traffic, use the buildpack's web server or a Dockerfile with a PHP web server.
+
+```text
+site/
+  composer.json
+  composer.lock
+  public/index.php
+  Procfile
+```
+
+```json title="composer.json"
+{
+  "require": {
+    "php": "^8.3"
+  }
+}
+```
+
+```php title="public/index.php"
+<?php
+echo "Hello from Cloider";
+```
+
+```text title="Procfile"
+web: php -S 0.0.0.0:$PORT -t public
+```
+
+**Laravel**: set `APP_KEY`, `APP_ENV=production` and the database variables on the **Environment** tab, and run
+`php artisan migrate --force` with [`cloider app exec`](/apps/terminal-and-exec).
+
+## Ruby
+
+A project with a `Gemfile` is built with the Ruby buildpack. Commit `Gemfile.lock` (`bundle lock` creates it) and start
+a server on `$PORT` from a `Procfile`.
+
+```ruby title="Gemfile"
+source "https://rubygems.org"
+
+gem "sinatra"
+gem "puma"
+gem "rackup"
+```
+
+```ruby title="config.ru"
+require "sinatra"
+
+get "/" do
+  "Hello from Cloider"
+end
+
+run Sinatra::Application
+```
+
+```text title="Procfile"
+web: bundle exec puma -b tcp://0.0.0.0:$PORT
+```
+
+**Rails**: `web: bundle exec rails server -b 0.0.0.0 -p $PORT`, with `RAILS_MASTER_KEY` set as a secret environment
+variable.
+
+## .NET
+
+A project or solution file (`.csproj`, `.fsproj`, `.vbproj`, `.sln`, `.slnx`) at the root, or a single `.cs` file, is
+built with the .NET buildpack. Make the app listen on `$PORT`:
+
+```csharp title="Program.cs"
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+app.MapGet("/", () => "Hello from Cloider");
+
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+app.Run($"http://0.0.0.0:{port}");
+```
+
+If you want full control over the SDK and runtime images, use a Dockerfile:
+
+```dockerfile title="Dockerfile"
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet publish -c Release -o /out
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /out .
+ENTRYPOINT ["dotnet", "Api.dll"]
+```
+
+## Static sites and single page apps
+
+A folder of HTML, CSS, JavaScript and images with no project files is served as a static site, with no build step. Put
+`index.html` at the root:
+
+```html title="index.html"
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme</title>
+  </head>
+  <body>
+    <h1>Hello from Cloider</h1>
+  </body>
+</html>
+```
+
+You can even drop a single HTML file on **Create App** in the dashboard.
+
+A site built with a framework (React, Vue, Svelte, Astro, Vite) has a `package.json`, so it is built by the Node.js
+buildpack, which then needs a `start` script that serves the build output:
+
+```json title="package.json (excerpt)"
+{
+  "scripts": {
+    "build": "vite build",
+    "start": "serve -s dist -l tcp://0.0.0.0:$PORT"
+  },
+  "dependencies": {
+    "serve": "^14.2.4"
+  }
+}
+```
+
+Or build it in a Dockerfile and serve the files with an unprivileged nginx on port 8080 (set the app's port to `8080`):
+
+```dockerfile title="Dockerfile"
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginxinc/nginx-unprivileged:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+```
+
+## Any other language with a Dockerfile
+
+A `Dockerfile` runs anything that builds for `linux/amd64`. For example a Rust web server:
+
+```dockerfile title="Dockerfile"
+FROM rust:1.83 AS build
+WORKDIR /src
+COPY . .
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+# the crate (and its binary) is named api
+COPY --from=build /src/target/release/api /usr/local/bin/api
+CMD ["api"]
+```
+
+Read `PORT` in your program, or set the app's port to the one it listens on.
+
+## What if my language isn't detected?
+
+If the build log ends with
+`nothing to build for <id>: no Dockerfile, no buildpack matched, and not a static site (an .html page with no project files)`,
+Cloider found nothing it could build at the root of your source. Check that:
+
+- The project files are at the root of what you uploaded, not one folder down next to other folders. (A zip with one
+  single top folder is fine.)
+- The file names match the table above exactly.
+- Or add a `Dockerfile`, which works for any language.
+
+## Next steps
+
+- [Build configuration](/apps/build-configuration): the build strategies, port and start command in detail.
+- [Deploy from your computer](/apps/deploy-from-your-computer): deploy one of these examples with `cloider deploy`.
+- [Full stack app with PostgreSQL](/guides/full-stack-app-with-postgresql): an app with a managed database.
+
+<FAQ items={[
+  {q: 'Which languages can I deploy on Cloider without a Dockerfile?', a: 'Node.js, Python, Go, Java and Kotlin (Maven or Gradle), Scala, PHP, Ruby and .NET, built with Cloud Native Buildpacks, plus static HTML sites. Any other language deploys with a Dockerfile at the root of the project.'},
+  {q: 'How do I choose the Node.js or Python version?', a: 'For Node.js, set engines.node in package.json, for example 22.x. For Python, put the version in a .python-version file, for example 3.13. For Java, set java.runtime.version in system.properties. Go uses the go line of go.mod.'},
+  {q: 'Do I need a Procfile?', a: 'Only when the buildpack can\'t tell how to start your app. Node.js apps start with their start script. Python, Ruby, PHP and JVM web apps should have a Procfile with a web: line, or the app\'s Start command set, that starts a server on $PORT.'},
+  {q: 'Can I deploy a React or Vue single page app?', a: 'Yes. Either build it with the Node.js buildpack and serve the output with a start script such as serve -s dist, or build it in a Dockerfile and serve it with nginx. A folder of already built HTML files deploys as a static site with no build at all.'},
+  {q: 'Can I deploy Rust, Elixir or Deno?', a: 'Yes, with a Dockerfile at the root of the project. Cloider builds any Dockerfile for linux/amd64 and runs its CMD.'},
+]} />

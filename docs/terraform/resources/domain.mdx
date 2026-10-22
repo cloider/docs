@@ -1,0 +1,191 @@
+---
+title: cloider_domain resource (Terraform)
+sidebar_label: cloider_domain
+sidebar_position: 7
+description: Claim free cloider.app subdomains and add custom domains with the cloider_domain Terraform resource, point nameservers, and import domains you already added.
+keywords: [cloider_domain, terraform custom domain, cloider.app subdomain terraform, terraform nameservers, free subdomain terraform, domain terraform import, cloider dns terraform]
+---
+
+The `cloider_domain` resource adds a domain to your Cloider account: either a **free subdomain** under one of Cloider's roots, such as `acme-web.cloider.app`, or a **custom domain** you own, such as `example.com`. Once added, you route it to an app or a cluster Service with a [`cloider_target`](/terraform/resources/target), and give a custom domain DNS records with [`cloider_dns_record`](/terraform/resources/dns-record).
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `name` |
+| **Changes in place** | None |
+| **Changes that replace the domain** | `name` |
+| **Sensitive attributes** | None |
+| **Timeouts** | None, domains are added immediately |
+| **Import ID** | The domain name, such as `example.com` |
+| **API** | [`/api/domains`](/api/endpoints/domains) |
+| **CLI equivalent** | [`cloider domain`](/cli/commands/domain) |
+
+The provider decides the kind of domain from the name: a name that ends in `.<root>` for one of [`cloider_options`](/terraform/data-sources/options)' `subdomain_roots` is claimed as a free subdomain (`type = "Subdomain"`), and anything else is added as a custom domain (`type = "CustomDomain"`).
+
+## Example usage
+
+### Claim a free subdomain
+
+```hcl title="main.tf"
+resource "cloider_domain" "web" {
+  name = "acme-web.cloider.app"
+}
+```
+
+A free subdomain is one label under the root (`acme-web.cloider.app`, not `www.acme-web.cloider.app`), and must not be taken by another account. Cloider answers DNS for it and issues its HTTPS certificate once a target routes it. See [Free subdomains](/domains/free-subdomains).
+
+To avoid writing the root by hand:
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+resource "cloider_domain" "preview" {
+  name = "acme-preview.${data.cloider_options.current.subdomain_roots[0]}"
+}
+```
+
+### Add a custom domain and show its nameservers
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+resource "cloider_domain" "example" {
+  name = "example.com"
+}
+
+output "nameservers" {
+  description = "Set these at your registrar"
+  value       = data.cloider_options.current.nameservers
+}
+```
+
+Then change the domain's nameservers at your registrar to the ones in the output. See [Nameservers](/domains/nameservers).
+
+### Serve a custom domain from an app: domain, DNS records and targets
+
+A custom domain comes with an `A` record for the domain itself that points at Cloider, and a target doesn't add any other record. So serving `example.com` and `www.example.com` takes four kinds of resources:
+
+```hcl title="main.tf"
+variable "web_app_id" {
+  description = "The app's id, from `cloider app list -o wide`"
+  type        = string
+}
+
+# The free subdomain the custom names point at
+resource "cloider_domain" "free" {
+  name = "acme-web.cloider.app"
+}
+
+# The custom domain, and www as a domain of its own so it can have a target
+resource "cloider_domain" "example" {
+  name = "example.com"
+}
+
+resource "cloider_domain" "www" {
+  name = "www.example.com"
+}
+
+# DNS: example.com came with an A record that points at Cloider, www needs a
+# CNAME to the free subdomain
+resource "cloider_dns_record" "www" {
+  domain = cloider_domain.example.name
+  type   = "CNAME"
+  name   = "www"
+  values = ["${cloider_domain.free.name}."]
+  ttl    = 3600
+}
+
+# Routes: each host name gets its own target
+resource "cloider_target" "free" {
+  domain = cloider_domain.free.name
+  app_id = var.web_app_id
+}
+
+resource "cloider_target" "apex" {
+  domain = cloider_domain.example.name
+  app_id = var.web_app_id
+}
+
+resource "cloider_target" "www" {
+  domain = cloider_domain.www.name
+  app_id = var.web_app_id
+}
+```
+
+`www.example.com` is answered by the nameservers of `example.com`, so its DNS record lives on `example.com`. It only needs to be a domain of its own so that a target can route it. See [Add a custom domain](/domains/add-a-custom-domain) for the full walkthrough.
+
+## Argument reference
+
+| Argument | Type | Required | Changing it | Description |
+| --- | --- | --- | --- | --- |
+| `name` | String | Yes | **Replaces** the domain | The domain name, lower case and without a trailing dot. A name under one of `cloider_options`' `subdomain_roots` is claimed as a free subdomain, anything else is added as a custom domain |
+
+The provider checks the name's form at plan time: `Example.com` or `example.com.` fail with `must be lower case, without a trailing dot`, because the API stores names that way and would read them back differently.
+
+## Attribute reference
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `id` | String | The domain name, the same as `name` |
+| `type` | String | `Subdomain` or `CustomDomain` |
+| `status` | String | `Pending` until something routes to it, `Active` while something does, `Suspended` once nothing does any more. See [Status values](/reference/status-values) |
+| `created_at` | String | When the domain was added, in RFC 3339 |
+
+## Behavior notes
+
+- **A domain the account already has.** Creating a `cloider_domain` for a name your account already added (in the dashboard, say) fails with `Domain already added: example.com is already one of your domains. Import it with 'terraform import <address> example.com' to manage it here.` This keeps a later `terraform destroy` from deleting records and routes that this configuration never made.
+- **Deleting a domain** also deletes its DNS records and the targets that route it. Terraform deletes the `cloider_dns_record` and `cloider_target` resources that refer to the domain first, but any records or targets created outside Terraform go too.
+- **DNS records** can only be added to custom domains. Free subdomains are answered by Cloider and don't take records.
+- **The apex A record.** A custom domain comes with an `A` record for the domain itself that points at Cloider, unless it's under another of the account's custom domains. Terraform doesn't manage it, and a `cloider_dns_record` of type `A` or `ALIAS` without a `name` takes it over.
+- **HTTPS** certificates are issued automatically for every domain a target routes, see [HTTPS certificates](/domains/https-certificates).
+- **Deleted outside Terraform.** The next refresh removes the domain from state and the plan offers to add it again.
+
+## Import
+
+Import a domain by its name. `cloider domain list` shows your domains:
+
+```bash
+cloider domain list
+```
+
+```text title="Output"
+DOMAIN             TYPE           STATUS   CREATED
+example.com        CustomDomain   Active   2026-07-30 08:41
+blog.cloider.app   Subdomain      Active   2026-07-02 17:20
+```
+
+With an `import` block:
+
+```hcl title="imports.tf"
+import {
+  to = cloider_domain.example
+  id = "example.com"
+}
+
+resource "cloider_domain" "example" {
+  name = "example.com"
+}
+```
+
+With the `terraform import` command:
+
+```bash
+terraform import cloider_domain.example example.com
+```
+
+The ID is lower-cased and a trailing dot is removed, so `Example.com.` imports as `example.com`. Import the domain's DNS records and targets too, see [`cloider_dns_record`](/terraform/resources/dns-record#import) and [`cloider_target`](/terraform/resources/target#import).
+
+## Related
+
+- [`cloider_dns_record`](/terraform/resources/dns-record): records on a custom domain
+- [`cloider_target`](/terraform/resources/target): route the domain to an app or a Service
+- [`cloider_options`](/terraform/data-sources/options): subdomain roots and nameservers
+- [Domains overview](/domains/overview)
+
+<FAQ items={[
+  {q: 'How do I add a custom domain to Cloider with Terraform?', a: 'Add a cloider_domain with name = "example.com", apply, and set the domain\'s nameservers at your registrar to cloider_options\' nameservers. Then add cloider_dns_record resources for the host names you serve and a cloider_target to route each one.'},
+  {q: 'How do I claim a free cloider.app subdomain with Terraform?', a: 'Add a cloider_domain whose name ends in a subdomain root, such as acme-web.cloider.app. The provider sees the root and claims it as a free subdomain. It must be one label and not taken by another account.'},
+  {q: 'Why does my custom domain not resolve after adding a target?', a: 'A target doesn\'t add DNS records. The domain itself comes with an A record that points at Cloider; add CNAME records for subdomains such as www with cloider_dns_record, and check that the domain uses Cloider\'s nameservers.'},
+  {q: 'Can Terraform manage a domain I already added in the dashboard?', a: 'Yes, by importing it: terraform import cloider_domain.example example.com, or an import block. Creating it instead fails with "Domain already added".'},
+]} />

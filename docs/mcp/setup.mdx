@@ -1,0 +1,414 @@
+---
+title: Set up the Cloider MCP server in your AI client
+sidebar_label: Setup
+sidebar_position: 2
+description: Add the Cloider MCP server to Claude Code, Claude Desktop, Cursor, VS Code with Copilot, Windsurf, Codex CLI, Gemini CLI, Zed, Cline and Continue, with read only and multi account variants.
+keywords: [cloider mcp setup, claude mcp add, claude desktop mcp config, cursor mcp.json, vscode mcp.json, windsurf mcp, codex mcp, gemini cli mcp, zed context_servers, cline mcp, continue mcp]
+---
+
+The Cloider MCP server is the `cloider mcp` command of the [`cloider` CLI](/cli/overview). Every MCP client sets it up the same way: it starts the command `cloider` with the argument `mcp` and talks to it over stdin and stdout (the **stdio** transport). This page shows the exact configuration for each popular client, then the variants for several accounts, read only access and fewer tools.
+
+:::info[Client formats change]
+Client configuration formats change from time to time. The snippets below follow each client's documented standard format. If a snippet no longer works, check the client's MCP documentation for its current format; the command (`cloider`) and arguments (`["mcp"]`) stay the same.
+:::
+
+## At a glance
+
+| Client | Where the server is configured | Format |
+| --- | --- | --- |
+| [Claude Code](#claude-code) | `claude mcp add`, or `.mcp.json` in a project | `mcpServers` |
+| [Claude Desktop](#claude-desktop) | `claude_desktop_config.json` | `mcpServers` |
+| [Cursor](#cursor) | `~/.cursor/mcp.json` or `.cursor/mcp.json` | `mcpServers` |
+| [VS Code with GitHub Copilot](#vs-code-with-github-copilot) | `.vscode/mcp.json` or the user `mcp.json` | `servers` |
+| [Windsurf](#windsurf) | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` |
+| [OpenAI Codex CLI](#openai-codex-cli) | `codex mcp add`, or `~/.codex/config.toml` | `[mcp_servers.*]` (TOML) |
+| [Gemini CLI](#gemini-cli) | `~/.gemini/settings.json` or `.gemini/settings.json` | `mcpServers` |
+| [Zed](#zed) | Zed `settings.json` | `context_servers` |
+| [Cline](#cline) | `cline_mcp_settings.json` | `mcpServers` |
+| [Continue](#continue) | `.continue/mcpServers/*.yaml` | `mcpServers` (YAML) |
+| [Any other client](#any-other-client) | Its MCP settings | command `cloider`, args `["mcp"]` |
+
+## Before you begin
+
+1. **Install the CLI** and check that it is on your `PATH`:
+
+   ```bash
+   curl -fsSL https://cloider.com/install.sh | sh
+   cloider version
+   ```
+
+   On Windows, unpack the release zip and put `cloider.exe` on your `PATH`. See [Install the CLI](/cli/install).
+
+2. **Log in**, so the server has an API token to act with:
+
+   ```bash
+   cloider login
+   cloider whoami
+   ```
+
+   Choose the account the agent should work in, and **Read** or **Read & Write** access. See [CLI authentication](/cli/authentication).
+
+3. **Find the full path of the binary**, for clients that don't start from your shell (Claude Desktop and some editors don't read your shell's `PATH`):
+
+   ```bash
+   which cloider        # macOS and Linux
+   where cloider        # Windows
+   ```
+
+   If a client says it can't start `cloider`, use this full path as the command.
+
+## Claude Code
+
+Add the server with one command:
+
+```bash
+claude mcp add cloider -- cloider mcp
+```
+
+Everything after `--` is the command Claude Code runs. Check it:
+
+```bash
+claude mcp list
+```
+
+```text title="Output"
+cloider: cloider mcp - ✓ Connected
+```
+
+Inside a Claude Code session, `/mcp` shows the server, its status and its tools.
+
+**Scopes.** By default the server is added for you, in the current project only. `--scope user` adds it for all your projects, and `--scope project` writes it to `.mcp.json` in the project, so everyone who works on the repository gets it:
+
+```bash
+claude mcp add --scope project cloider -- cloider mcp
+```
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "cloider": {
+      "command": "cloider",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+A project `.mcp.json` doesn't contain any token: each developer's server uses their own `cloider login`.
+
+## Claude Desktop
+
+1. Open **Settings**, **Developer**, and click **Edit Config**. This opens `claude_desktop_config.json`:
+
+   | OS | Path |
+   | --- | --- |
+   | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+   | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+
+2. Add the server. Claude Desktop doesn't read your shell's `PATH`, so use the full path from `which cloider`:
+
+   ```json title="claude_desktop_config.json"
+   {
+     "mcpServers": {
+       "cloider": {
+         "command": "/usr/local/bin/cloider",
+         "args": ["mcp"]
+       }
+     }
+   }
+   ```
+
+   On Windows, write the path with double backslashes, for example `"C:\\Users\\you\\bin\\cloider.exe"`.
+
+3. Quit Claude Desktop completely and start it again. The Cloider tools appear under the tools (search and tools) menu in a new chat.
+
+## Cursor
+
+Add the server to `~/.cursor/mcp.json` for every project, or to `.cursor/mcp.json` in one project:
+
+```json title="~/.cursor/mcp.json"
+{
+  "mcpServers": {
+    "cloider": {
+      "command": "cloider",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Then open **Cursor Settings**, **MCP** (or **Tools & Integrations**) and check that `cloider` is enabled and shows its tools. The tools are used by Cursor's agent in the chat.
+
+## VS Code with GitHub Copilot
+
+VS Code runs MCP tools from GitHub Copilot Chat in **agent mode**. Add the server to `.vscode/mcp.json` in your workspace, or to your user configuration with the command **MCP: Open User Configuration**. VS Code uses a `servers` key and a `type`:
+
+```json title=".vscode/mcp.json"
+{
+  "servers": {
+    "cloider": {
+      "type": "stdio",
+      "command": "cloider",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Or from a terminal:
+
+```bash
+code --add-mcp '{"name":"cloider","command":"cloider","args":["mcp"]}'
+```
+
+Open Copilot Chat, switch to **Agent** mode, and click the tools icon to see and toggle the Cloider tools. VS Code asks before running a tool unless you allow it.
+
+## Windsurf
+
+Open **Windsurf Settings**, **Cascade**, **MCP Servers** and choose to edit the raw configuration, or edit the file directly:
+
+```json title="~/.codeium/windsurf/mcp_config.json"
+{
+  "mcpServers": {
+    "cloider": {
+      "command": "cloider",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Refresh the server list in Cascade's MCP panel after saving.
+
+## OpenAI Codex CLI
+
+Add the server with the Codex CLI:
+
+```bash
+codex mcp add cloider -- cloider mcp
+```
+
+Or add it to Codex's configuration file:
+
+```toml title="~/.codex/config.toml"
+[mcp_servers.cloider]
+command = "cloider"
+args = ["mcp"]
+```
+
+Start a new `codex` session, and `/mcp` lists the server's tools.
+
+## Gemini CLI
+
+Add the server to your user settings (`~/.gemini/settings.json`) or to a project's `.gemini/settings.json`:
+
+```json title="~/.gemini/settings.json"
+{
+  "mcpServers": {
+    "cloider": {
+      "command": "cloider",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Start `gemini`, and `/mcp` lists the configured servers and their tools.
+
+## Zed
+
+Zed calls MCP servers **context servers**. Open your settings (`zed: open settings`) and add:
+
+```json title="settings.json"
+{
+  "context_servers": {
+    "cloider": {
+      "source": "custom",
+      "command": "cloider",
+      "args": ["mcp"],
+      "env": {}
+    }
+  }
+}
+```
+
+The tools are available in Zed's Agent Panel.
+
+## Cline
+
+In VS Code, open the Cline panel, click **MCP Servers**, then **Configure** (or **Configure MCP Servers**), which opens `cline_mcp_settings.json`:
+
+```json title="cline_mcp_settings.json"
+{
+  "mcpServers": {
+    "cloider": {
+      "command": "cloider",
+      "args": ["mcp"],
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+`autoApprove` lists tool names Cline may run without asking. Keep destructive tools out of it, see [Safety and permissions](/mcp/safety-and-permissions).
+
+## Continue
+
+Continue reads MCP servers from YAML files in `.continue/mcpServers/` in your workspace:
+
+```yaml title=".continue/mcpServers/cloider.yaml"
+name: Cloider
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: cloider
+    command: cloider
+    args:
+      - mcp
+```
+
+MCP tools are used in Continue's **Agent** mode.
+
+## Any other client
+
+Every client that supports local (stdio) MCP servers needs the same three things:
+
+| Setting | Value |
+| --- | --- |
+| Transport | `stdio` (sometimes called "command" or "local") |
+| Command | `cloider`, or its full path |
+| Arguments | `mcp`, plus any flags below |
+
+Most clients take this JSON:
+
+```json
+{
+  "mcpServers": {
+    "cloider": {
+      "command": "cloider",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+## Variants
+
+The flags below go in the arguments. `--profile` is a global flag of the CLI and can go before or after `mcp`.
+
+### Several accounts with --profile
+
+Log in to each account with its own [CLI profile](/cli/authentication), then add one server per account:
+
+```bash
+cloider login --profile acme
+cloider login --profile client
+
+claude mcp add cloider-acme -- cloider --profile acme mcp
+claude mcp add cloider-client -- cloider --profile client mcp
+```
+
+```json title="JSON clients"
+{
+  "mcpServers": {
+    "cloider-acme": {
+      "command": "cloider",
+      "args": ["--profile", "acme", "mcp"]
+    },
+    "cloider-client": {
+      "command": "cloider",
+      "args": ["--profile", "client", "mcp"]
+    }
+  }
+}
+```
+
+The agent sees two sets of tools with the same names, one per server, and `whoami` on each tells it which account it is in. Name the servers clearly, and tell the agent which one to use.
+
+### Read only
+
+Offer only the 51 tools that change nothing:
+
+```bash
+claude mcp add cloider -- cloider mcp --read-only
+```
+
+```json
+{ "mcpServers": { "cloider": { "command": "cloider", "args": ["mcp", "--read-only"] } } }
+```
+
+For a guarantee that holds whatever the client does, also log the profile in with a read only token:
+
+```bash
+cloider login --profile agent --read-only
+claude mcp add cloider-readonly -- cloider --profile agent mcp --read-only
+```
+
+### Fewer tools with --toolsets
+
+Some clients limit how many tools they load, and a shorter list helps the model choose. Offer only the toolsets you need: `account`, `clusters`, `databases`, `buckets`, `registry`, `apps`, `domains` and `support`.
+
+```bash
+claude mcp add cloider -- cloider mcp --toolsets apps,databases,domains
+```
+
+```json
+{ "mcpServers": { "cloider": { "command": "cloider", "args": ["mcp", "--toolsets", "apps,databases,domains"] } } }
+```
+
+An unknown toolset fails at start with `unknown toolset "...", pick from account, clusters, databases, buckets, registry, apps, domains, support`.
+
+### A token instead of a login
+
+On a machine without `cloider login`, such as a CI runner or a container, give the server a token through the environment or a file. Most clients take an `env` object:
+
+```json
+{
+  "mcpServers": {
+    "cloider": {
+      "command": "cloider",
+      "args": ["mcp", "--token-file", "/run/secrets/cloider-token"]
+    }
+  }
+}
+```
+
+`"env": {"CLOIDER_TOKEN": "..."}` works too, but writes the token into the client's configuration file in plain text. Prefer a token file or a profile, and never commit a configuration with a token in it.
+
+## Verify
+
+Ask the agent:
+
+```text title="Prompt"
+Use the cloider tools: which account am I in, and can this token change anything?
+```
+
+It should call `whoami` and answer with your account, your role and whether the token can only read. If the tools don't appear, see below.
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The server fails to start, `spawn cloider ENOENT` or "command not found" | The client doesn't see the CLI on its `PATH` | Use the full path from `which cloider` as the command |
+| Tools appear, but every call fails with ``not logged in, run `cloider login` or set CLOIDER_TOKEN`` | The CLI isn't logged in for the profile the server uses | Run `cloider login` (or `cloider login --profile <name>`) and restart the client |
+| `This API token is read only!` | The login is read only | Log in again with Read & Write access, or keep it read only on purpose |
+| The client shows no tools after editing the file | The client reads its configuration at start | Restart the client, or reload the server from its MCP panel |
+| JSON parse error in the client | A trailing comma or a missing brace | Validate the file, for example with `python3 -m json.tool < file.json` |
+| Too many tools for the client | The client caps the number of tools | Use `--toolsets` |
+| Running `cloider mcp` in a terminal seems to hang | It is waiting for an MCP client on stdin | That is expected. Press Ctrl-C. Your client starts it by itself |
+
+## Next steps
+
+- [Tools reference](/mcp/tools): every tool and its parameters
+- [Safety and permissions](/mcp/safety-and-permissions): recommended setups for production accounts
+- [Example prompts](/mcp/example-prompts)
+- [Using the docs with AI coding agents](/mcp/ai-coding-agents)
+
+<FAQ items={[
+  {q: 'How do I add the Cloider MCP server to Claude Code?', a: 'Install the cloider CLI, run cloider login, then run claude mcp add cloider -- cloider mcp. Check it with claude mcp list, or /mcp inside a session.'},
+  {q: 'What is the Cloider MCP config for Claude Desktop or Cursor?', a: 'Add {"mcpServers": {"cloider": {"command": "cloider", "args": ["mcp"]}}} to claude_desktop_config.json or ~/.cursor/mcp.json. Claude Desktop needs the full path of the cloider binary as the command.'},
+  {q: 'How do I use the Cloider MCP server in VS Code?', a: 'Add {"servers": {"cloider": {"type": "stdio", "command": "cloider", "args": ["mcp"]}}} to .vscode/mcp.json, then use GitHub Copilot Chat in agent mode.'},
+  {q: 'Can I connect the MCP server to several Cloider accounts?', a: 'Yes. Log in to each account with its own CLI profile, then add one server per account, each started as cloider --profile <name> mcp.'},
+  {q: 'How do I make the Cloider MCP server read only?', a: 'Add --read-only to its arguments: cloider mcp --read-only. For a hard guarantee, also log the profile it uses in with cloider login --read-only, so the API refuses every change.'},
+]} />

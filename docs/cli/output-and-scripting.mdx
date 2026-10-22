@@ -1,0 +1,473 @@
+---
+title: Cloider CLI output formats, exit codes and scripting
+sidebar_label: Output and scripting
+sidebar_position: 5
+description: Use the cloider CLI in scripts and CI with JSON, YAML, wide and quiet output, exit codes, --yes and --wait, jq recipes, and GitHub Actions and GitLab CI pipelines.
+keywords: [cloider json output, cloider exit codes, cloider scripting, cloider jq, cloider github actions, cloider gitlab ci, cloider --wait, cloider --yes, cli automation]
+---
+
+The `cloider` CLI is built to be scripted. Data goes to stdout and progress to stderr, so pipes stay clean. Every command can print the API's answer as JSON or YAML, exit codes tell why something failed, nothing ever waits for input when there is no terminal, and `--wait` turns long running changes into a single blocking command. This page covers all of it, with recipes for `jq`, shell scripts, GitHub Actions and GitLab CI.
+
+## At a glance
+
+| You want | Use |
+| --- | --- |
+| Machine readable output | `-o json` or `-o yaml` |
+| Ids in tables | `-o wide` |
+| Only ids, one per line | `-q` |
+| Tables without a header row | `--no-headers` |
+| No confirmation prompts | `--yes` (`-y`) |
+| Wait until a change is done | `--wait` (`-w`), with `--timeout` |
+| To know why a command failed | the [exit code](#exit-codes): `2` usage, `3` auth, `4` not found, `5` forbidden |
+| To see the API calls | `--debug` |
+
+## Where does output go: stdout or stderr?
+
+The CLI separates **what a command found** from **how it is going**:
+
+- **stdout** gets the result: tables, `get` views, JSON or YAML, ids with `-q`, a kubeconfig, a downloaded file with `-f -`, the URL at the end of a deploy.
+- **stderr** gets everything for a person: `✓` success lines, `!` warnings, `Error:` messages, spinners, progress bars, build output during a deploy, and hints like `Follow it with ...`.
+
+So you can redirect or pipe stdout and still see progress in the terminal:
+
+```bash
+cloider deploy > url.txt                  # build logs on screen, URL in the file
+cloider cluster kubeconfig staging > staging.yaml
+cloider db list -o json | jq length
+```
+
+Colors, spinners and progress bars appear only when both stdout and stderr are terminals. Off a terminal, a spinner becomes plain lines, one per status change, so CI logs stay readable:
+
+```text title="Output in a CI log"
+✓ Creating cluster staging (Kubernetes 1.34)
+Waiting for cluster staging
+cluster staging is Creating
+cluster staging is Ready
+✓ Cluster staging is ready. Get its kubeconfig with `cloider cluster kubeconfig staging --merge`.
+```
+
+## Output formats (-o)
+
+`-o` (or `--output`) picks the format. It works on every command that prints data.
+
+| Format | What you get |
+| --- | --- |
+| `table` | Default. Aligned columns for lists, `Label: value` lines for a single resource. Ids are hidden |
+| `wide` | The same, plus the id column (and the `ID` line in `get` views) |
+| `json` | The API's answer, indented, exactly as the API sent it |
+| `yaml` | The same data as YAML, keys in the API's order |
+
+An unknown format fails before anything runs, with exit code `2`:
+
+```text
+Error: unknown output format "jsn", use table, wide, json or yaml
+```
+
+### Tables
+
+Lists print a header row and one row per resource, columns separated by at least three spaces:
+
+```bash
+cloider cluster list
+```
+
+```text title="Output"
+NAME         VERSION   STATUS   CREATED
+staging      1.34      Ready    2026-10-14 09:12
+production   1.34      Ready    2026-09-02 16:40
+```
+
+A single resource prints as aligned label and value lines:
+
+```bash
+cloider cluster get staging
+```
+
+```text title="Output"
+Name:     staging
+Label:    staging
+Version:  1.34
+Status:   Ready
+Created:  2026-10-14 09:12
+```
+
+Table formatting rules:
+
+- Times are in your local time zone as `YYYY-MM-DD HH:MM`. Some columns say how long ago instead (`5m ago`, `3h ago`, `12d ago`, `just now`, `never`).
+- Sizes use binary units: `512 B`, `1.5 KiB`, `23.4 MiB`, `2.1 GiB`.
+- Money is in US dollars with two decimals: `$12.40`.
+- An empty value prints as `-`.
+- An empty list prints `Nothing to show.` on stderr and nothing on stdout.
+- Statuses are colored: green for up (`Ready`, `Active`, `Enabled`, `Open`), red for down (`Failed`, `Terminated`, `Suspended`, `Canceled`), dim for stopped (`Paused`, `Superseded`, `Deactivated`, `Closed`), yellow for anything on its way.
+
+Table columns are made for people and may gain columns in new versions. Scripts should use `-o json`, `-q` or `-o wide --no-headers`.
+
+### Wide output and ids
+
+Every resource has an **id** (the API's `hashed_id`), a short random string that never changes. Tables leave ids out to save space, because commands take names too. `-o wide` adds them:
+
+```bash
+cloider cluster list -o wide
+```
+
+```text title="Output"
+ID           NAME         VERSION   STATUS   CREATED
+k3m9x2p7q1   staging      1.34      Ready    2026-10-14 09:12
+p8d2w4n6r0   production   1.34      Ready    2026-09-02 16:40
+```
+
+### JSON and YAML
+
+`-o json` prints the API's own response, indented, including fields the CLI doesn't know about yet. That makes it the stable interface for scripts: field names are the [REST API's](/api/overview).
+
+```bash
+cloider cluster get staging -o json
+```
+
+```json title="Output"
+{
+  "hashed_id": "k3m9x2p7q1",
+  "cluster_name": "staging",
+  "cluster_label": "staging",
+  "cluster_version": "1.34",
+  "is_ha": false,
+  "status": "Ready",
+  "created_at": "2026-10-14T09:12:44Z"
+}
+```
+
+`-o yaml` prints the same data as YAML:
+
+```bash
+cloider cluster get staging -o yaml
+```
+
+```yaml title="Output"
+hashed_id: k3m9x2p7q1
+cluster_name: staging
+cluster_label: staging
+cluster_version: "1.34"
+is_ha: false
+status: Ready
+created_at: "2026-10-14T09:12:44Z"
+```
+
+A few commands print data of their own rather than an API object, and say so on their reference page. For example `cloider cluster status staging -o json` prints `{"hashed_id": "k3m9x2p7q1", "status": "Ready"}`, a `create` prints the new resource's id as `{"hashed_id": "..."}`, and `exec` commands print `{"exit_code", "stdout", "stderr", "timed_out"}`. A list that is empty prints `[]`.
+
+### Quiet output (-q)
+
+`-q` (or `--quiet`) prints only the first column of a table, which is always the id or name you can pass to another command, one per line. Ids are printed even though the table hides them:
+
+```bash
+cloider cluster list -q
+```
+
+```text title="Output"
+k3m9x2p7q1
+p8d2w4n6r0
+```
+
+`create` commands print just the new id with `-q`, which is handy to capture:
+
+```bash
+CLUSTER_ID=$(cloider cluster create staging -q)
+```
+
+### No header row (--no-headers)
+
+`--no-headers` drops the header row from tables, for `awk`, `cut` and `while read` loops:
+
+```bash
+cloider cluster list -o wide --no-headers | awk '$4 == "Paused" {print $2}'
+```
+
+## Confirmations and --yes
+
+Commands that delete something ask you to type the resource's name back, the same safeguard the dashboard uses:
+
+```text
+This permanently deletes cluster staging.
+Type staging to confirm: staging
+✓ Deleting cluster staging
+```
+
+Typing anything else cancels with `the name didn't match, nothing was deleted`. A few other commands ask a yes or no question (`[y/N]`), for example before restoring a database backup, resizing a database or deleting a folder in a bucket.
+
+`--yes` (or `-y`) answers every confirmation in advance. **When there is no terminal, commands never prompt**: a command that would ask fails at once with exit code `2` and says which flag it needs, so a script never hangs:
+
+```text
+Error: deleting cluster staging needs --yes when not running in a terminal
+```
+
+```bash
+cloider cluster delete staging --yes
+```
+
+## Waiting for changes (--wait)
+
+Creating, pausing, resuming, resizing and deleting resources take from seconds to minutes. By default these commands return as soon as Cloider has accepted the change. Add `--wait` (or `-w`) to block until the resource has reached its new state:
+
+```bash
+cloider cluster create staging --wait
+cloider db pause orders-db --wait
+cloider cluster delete staging --yes --wait
+```
+
+While waiting, the CLI checks the resource's status every 3 seconds.
+
+- It succeeds when the resource reaches the expected state (`Ready`, `Paused`, or gone for a delete).
+- It fails with `<resource> failed` and exit code `1` if the resource ends up `Failed`.
+- `--timeout` sets how long to wait, as a duration like `30s`, `10m` or `1h`. The default is `15m`. When it runs out, the command fails with `still Creating after 15m0s, gave up waiting`. The change itself carries on; only the waiting stops.
+- Ctrl-C stops waiting with exit code `130`, without cancelling the change.
+
+`cloider deploy` and `cloider app build retry -f` follow the build until the app is up by default; `--detach` (`-d`) returns right away instead.
+
+## Exit codes
+
+Every command exits with `0` on success. When it fails, the exit code says why, so a script can react without parsing messages:
+
+| Code | Meaning | Examples |
+| --- | --- | --- |
+| `0` | Success | |
+| `1` | General error | The API rejected the request (validation error, quota), a `--wait` timed out or ended in `Failed`, a network error |
+| `2` | Usage error | Unknown command or flag, missing or extra arguments, a bad flag value, a name that matches several resources, `--yes` needed without a terminal |
+| `3` | Not logged in, or the token is invalid or revoked | ``not logged in, run `cloider login` or set CLOIDER_TOKEN``, `Invalid or revoked API token!` |
+| `4` | Not found | `no cluster named "stagin"`, a resource deleted in the meantime |
+| `5` | Forbidden | A read only token or Restricted role trying to change something (`This API token is read only!`), an action your role doesn't allow |
+| `124` | An `exec` command was stopped by its `--timeout` | `cloider app exec --timeout 30s blog -- sleep 60` |
+| `130` | Interrupted with Ctrl-C | |
+
+Errors are printed to stderr as `Error: <message>`. API validation errors list each problem on its own line, prefixed with the field name:
+
+```text
+Error: cluster_name: Cluster name can not be upper case
+```
+
+### Exit codes of exec commands
+
+`cloider app exec`, `cloider cluster exec` and `cloider db exec` run a command remotely and **exit with that command's own exit code**, so `1` to `5` can come from the remote command as well as from cloider. Conventions from the shell apply: `127` means the command doesn't exist, `126` that it can't run, and `124` that `--timeout` stopped it.
+
+To tell them apart, use `-o json`: the JSON is printed only when the command actually ran, so a JSON document on stdout means the exit code is the command's.
+
+```bash
+cloider app exec -o json blog -- cat /etc/os-release
+```
+
+```json title="Output"
+{
+  "exit_code": 0,
+  "stdout": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n...",
+  "stderr": "",
+  "timed_out": false
+}
+```
+
+Like `kubectl exec`, a remote command that prints nothing can keep running after a timeout or Ctrl-C.
+
+## How do commands find a resource?
+
+Every command that takes a resource accepts its **name**, **label** or **id**:
+
+| Resource | Accepted references |
+| --- | --- |
+| Cluster | id, label, name |
+| Database | id, label, name |
+| App | id, label, name |
+| Bucket | id, bucket name |
+| Registry project | id, project name |
+| Domain | the domain name, for example `example.com` |
+| Support request | the request id |
+
+The CLI looks the reference up in the list of your resources:
+
+1. An **id** that matches wins.
+2. Otherwise a **name or label** that matches exactly.
+3. Otherwise a name or label that matches ignoring case (`Staging` finds `staging`).
+
+When nothing matches, the command fails with exit code `4`. When several resources match a name, it fails with exit code `2` and lists the candidates with their ids, so you can pick one:
+
+```text
+Error: 2 apps are named "api", pick one by id:
+  api, api (id q7w2e9r4t1)
+  api-1, api (id z5x8c1v3b6)
+```
+
+Ids never clash, so scripts that run unattended are safest with ids, which `-q` and `-o wide` give you.
+
+## Recipes with jq
+
+[jq](https://jqlang.org/) is a small command line JSON processor. Combined with `-o json` it answers most questions in one line.
+
+```bash
+# Names of all clusters that are paused
+cloider cluster list -o json | jq -r '.[] | select(.status == "Paused") | .cluster_label'
+
+# Count databases per engine
+cloider db list -o json | jq 'group_by(.service) | map({engine: .[0].service, count: length})'
+
+# The public host and port of a database
+cloider db get orders-db -o json | jq -r '"\(.host):\(.database_port)"'
+
+# The URL of an app
+cloider app get blog -o json | jq -r .url
+
+# The account the CLI works in
+cloider whoami -o json | jq -r .account.email
+
+# Fail a script if any app isn't Ready
+cloider app list -o json | jq -e 'all(.[]; .status == "Ready")' > /dev/null || echo "an app is not ready"
+```
+
+## Shell script patterns
+
+Stop on the first error, and act on exit codes:
+
+```bash title="nightly-pause.sh"
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pause every Ready cluster except production, and wait for each
+for id in $(cloider cluster list -o json | jq -r '.[] | select(.status == "Ready" and .cluster_label != "production") | .hashed_id'); do
+  cloider cluster pause "$id" --wait --timeout 10m
+done
+```
+
+```bash
+# Create a database only if it doesn't exist yet
+if ! cloider db get orders-db > /dev/null 2>&1; then
+  cloider db create orders-db --engine postgresql --wait
+fi
+
+# Distinguish "not found" from other failures
+cloider app get blog -o json > app.json
+case $? in
+  0) echo "found" ;;
+  4) echo "no such app" ;;
+  3) echo "log in first"; exit 1 ;;
+  *) echo "something else went wrong"; exit 1 ;;
+esac
+```
+
+Use `--yes` on every destructive command in a script, because there is no terminal to confirm at:
+
+```bash
+cloider bucket rm acme-backups --prefix old/ --yes
+```
+
+## Use the CLI in CI/CD
+
+In a pipeline you install the CLI, give it a token through `CLOIDER_TOKEN`, and run commands with `--yes`, `--wait` and `-o json` as needed. Automatic updates are off by default when the `CI` environment variable is set, which every common CI system does. Pin a CLI version with `CLOIDER_VERSION` for repeatable builds.
+
+<Tabs groupId="ci">
+<TabItem value="github" label="GitHub Actions" default>
+
+Add an API token as a repository secret named `CLOIDER_TOKEN` (**Settings**, **Secrets and variables**, **Actions**).
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy to Cloider
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOIDER_TOKEN: ${{ secrets.CLOIDER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Cloider CLI
+        run: |
+          curl -fsSL https://cloider.com/install.sh | CLOIDER_VERSION=0.6.0 CLOIDER_INSTALL_DIR="$HOME/.local/bin" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Deploy the app
+        run: cloider deploy --app blog
+
+      - name: Run database migrations
+        run: cloider app exec --timeout 15m blog -- npm run migrate
+
+      - name: Show the app
+        run: cloider app get blog
+```
+
+`cloider deploy` streams the build output into the job log and fails the step if the build fails. The app's URL is printed to stdout, so you can capture it:
+
+```yaml
+      - name: Deploy the app
+        id: deploy
+        run: echo "url=$(cloider deploy --app blog)" >> "$GITHUB_OUTPUT"
+```
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab CI">
+
+Add an API token as a CI/CD variable named `CLOIDER_TOKEN` (**Settings**, **CI/CD**, **Variables**), with **Masked** and **Protected** turned on.
+
+```yaml title=".gitlab-ci.yml"
+stages: [deploy]
+
+deploy:
+  stage: deploy
+  image: debian:bookworm-slim
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq
+    - curl -fsSL https://cloider.com/install.sh | CLOIDER_VERSION=0.6.0 CLOIDER_INSTALL_DIR=/usr/local/bin sh
+  script:
+    - cloider whoami
+    - cloider deploy --app blog
+    - cloider app exec --timeout 15m blog -- npm run migrate
+```
+
+</TabItem>
+<TabItem value="kubeconfig" label="Deploy to a cluster">
+
+A pipeline that deploys Kubernetes manifests gets the cluster's kubeconfig from the CLI and uses kubectl as usual:
+
+```yaml title=".github/workflows/k8s.yml (steps)"
+- name: Get the kubeconfig
+  run: cloider cluster kubeconfig production -f "$RUNNER_TEMP/kubeconfig"
+
+- name: Apply manifests
+  env:
+    KUBECONFIG: ${{ runner.temp }}/kubeconfig
+  run: kubectl apply -f k8s/
+```
+
+Without kubectl on the runner, `cloider cluster exec` runs kubectl next to the cluster:
+
+```bash
+cloider cluster exec -i production -- kubectl apply -f - < k8s/deployment.yaml
+```
+
+</TabItem>
+</Tabs>
+
+More complete pipelines are in the guides [CI/CD with GitHub Actions](/guides/ci-cd-with-github-actions) and [CI/CD with GitLab](/guides/ci-cd-with-gitlab).
+
+### Tips for reliable pipelines
+
+- **Use a dedicated token** per pipeline, described so you recognize it under **Access Control**, **API Tokens**, and read only when the job only reads.
+- **Use ids or unique names.** A name that becomes ambiguous fails with exit code `2` rather than guessing.
+- **Pass `--yes`** to deletes and restores, and `--wait` to anything later steps depend on.
+- **Rate limits**: the CLI retries requests the API answers with `429 Too Many Requests`, waiting as the API asks. `--wait` polls every 3 seconds to stay well under the limit. See [Rate limits](/api/rate-limits).
+- **Debug** a failing step with `--debug`, which logs each request to stderr without the token.
+
+## Next steps
+
+- [Configuration](/cli/configuration): global flags, environment variables and files.
+- [Command reference](/cli/commands): every command's columns and JSON.
+- [REST API](/api/overview): the field names `-o json` returns.
+- [MCP server](/cli/commands/mcp): let an AI agent drive the CLI.
+
+<FAQ items={[
+  {q: 'How do I get JSON output from the Cloider CLI?', a: 'Add -o json to any command. It prints the API\'s own answer, indented, with the REST API\'s field names. -o yaml prints the same data as YAML.'},
+  {q: 'How do I show resource ids in tables?', a: 'Use -o wide. Tables hide ids by default because every command also accepts names. -q prints only the ids, one per line.'},
+  {q: 'What do the CLI\'s exit codes mean?', a: '0 is success, 1 a general error, 2 a usage error, 3 not logged in or an invalid token, 4 not found, 5 forbidden (for example a read only token). exec commands exit with the remote command\'s code, and 124 when --timeout stopped it. 130 means interrupted.'},
+  {q: 'Why does a delete fail in my script?', a: 'Without a terminal the CLI never prompts. A command that would ask for confirmation fails with exit code 2 and tells you to pass --yes.'},
+  {q: 'How do I wait until a cluster or database is ready?', a: 'Add --wait to create, pause, resume, resize or delete. The CLI checks the status every 3 seconds until it is done, for up to 15 minutes, or as long as --timeout says.'},
+  {q: 'Does the CLI print progress into my JSON?', a: 'No. Results go to stdout and progress, warnings and errors to stderr, so piping stdout into jq or a file only gets the data.'}
+]} />

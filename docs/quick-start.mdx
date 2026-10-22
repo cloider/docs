@@ -1,0 +1,408 @@
+---
+title: Cloider quick start, deploy an app in 5 minutes
+sidebar_label: Quick start
+sidebar_position: 2
+description: Sign up for Cloider, deploy your first app to a free cloider.app URL, then create a serverless Kubernetes cluster and use kubectl, in about 5 minutes.
+keywords: [cloider quick start, deploy app, cloider deploy, free trial, kubernetes cluster, kubectl, cloider cli, getting started]
+---
+
+This quick start takes you from no account to a live app with its own HTTPS address, and then (optionally) to a serverless Kubernetes cluster you control with `kubectl`. It takes about five minutes, and every step works from the dashboard or from the `cloider` command line tool.
+
+**At a glance**
+
+| | |
+| --- | --- |
+| **You will** | Sign up, deploy a small web app, open it at `https://<name>.cloider.app`, optionally create a Kubernetes cluster and run `kubectl get nodes` |
+| **Time** | About 5 minutes, plus a few minutes while the cluster is created |
+| **Cost** | New accounts start on a 14-day free trial with $25 of free credit (see [the billing model](/concepts/billing-model)) |
+| **You need** | A Google or GitHub account, and a web browser. For the CLI path, a terminal on macOS, Linux or Windows |
+
+## Before you begin
+
+- You need a **Google** or **GitHub** account. Cloider has no separate password: you sign in with one of those two providers.
+- For the **CLI** path, you need a terminal with `curl` (macOS and Linux) or the Windows download described in [Install the CLI](/get-started/install-the-cli).
+- For the optional Kubernetes step, install [`kubectl`](https://kubernetes.io/docs/tasks/tools/), the standard Kubernetes command line tool.
+
+:::tip[Pick a tool and stick with it]
+Every step below is shown in tabs: **Dashboard**, **CLI**, **Terraform**, **API** and **MCP** (an AI agent). The tab you pick is remembered on every page of these docs. If you are not sure which to use, start with the Dashboard, or read [Choose a tool](/get-started/choose-a-tool).
+:::
+
+## Step 1: Create your Cloider account
+
+You create a Cloider account by signing in with Google or GitHub on [cloider.com](https://cloider.com). The first sign in creates the account, and later sign ins use the same button.
+
+1. Go to [cloider.com](https://cloider.com) and click **Login / Register** in the top right corner.
+2. In the **Login Or Register** dialog, click **Sign in with Google** or **Sign in with Github**.
+3. Approve the request on the Google or GitHub page. You land on the Cloider dashboard.
+
+<Screenshot
+  src="/img/screenshots/get-started/sign-in.webp"
+  url="/"
+  alt="The cloider.com home page with the Login Or Register dialog open, showing the Sign in with Google and Sign in with Github buttons"
+  caption="The Login Or Register dialog. The same buttons create a new account and sign in to an existing one."
+/>
+
+A new account is on the free trial. A banner at the top of the dashboard shows the date the trial ends. During the trial you can have one Kubernetes cluster, one database, one bucket and one registry project at a time. Read [Create an account](/get-started/create-an-account) for the details.
+
+## Step 2: Install the CLI (CLI path only)
+
+Skip this step if you use the dashboard. The `cloider` CLI is a single binary for macOS, Linux and Windows.
+
+```bash
+curl -fsSL https://cloider.com/install.sh | sh
+```
+
+```text title="Output"
+Downloading cloider 1.4.0 for darwin/arm64
+Installed cloider 1.4.0 to /usr/local/bin/cloider
+Get started with: cloider login
+```
+
+Then log in. `cloider login` opens your browser on the **Authorize Cloider CLI** page, where you pick the account and the access level (**Read and write** or **Read only**), then click **Authorize CLI**.
+
+```bash
+cloider login
+```
+
+```text title="Output"
+Opening the browser to log in. If it doesn't open, visit:
+  https://cloider.com/cli/login?port=53682&state=...
+✓ Logged in as jane@example.com in account jane@example.com (Read & Write)
+```
+
+<Screenshot
+  src="/img/screenshots/get-started/cli-login.webp"
+  url="/cli/login"
+  alt="The Authorize Cloider CLI page with an account selector, the Read and write and Read only options, a Description field and the Authorize CLI button"
+  caption="cloider login opens this page. Choose Read and write to follow this quick start."
+/>
+
+Choose **Read and write** here: a read only token can't deploy anything. More options, such as `--no-browser` for a remote machine, are in [Install the CLI](/get-started/install-the-cli).
+
+## Step 3: Deploy your first app
+
+An **app** is your code, built into a container image and run by Cloider on a free subdomain with HTTPS. You don't write a Dockerfile or configure servers: Cloider detects the language and framework, builds the code and starts it. Read [Apps overview](/apps/overview) for everything apps can do.
+
+Create a small Node.js app to deploy. Any folder with code works, including a folder with a single `index.html`, but this example shows a real server:
+
+```bash
+mkdir hello && cd hello
+```
+
+```json title="package.json"
+{
+  "name": "hello",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
+```
+
+```js title="server.js"
+const http = require('http');
+
+// Cloider tells the app which port to listen on in the PORT variable
+const port = process.env.PORT || 8080;
+
+http
+  .createServer((req, res) => {
+    res.writeHead(200, {'Content-Type': 'text/plain'});
+    res.end('Hello from Cloider!\n');
+  })
+  .listen(port, () => console.log(`Listening on ${port}`));
+```
+
+Now deploy it:
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. In the dashboard sidebar, open **Apps** and click **Create App**.
+2. On the **Bring your own code** step, drag the `hello` folder onto the box that says *Drag and drop your project folder, zip file, or a single HTML file to deploy instantly*, or click **choose a folder** and pick it. You can also import a repository from **GitHub**, **GitLab** or **Bitbucket** here instead (see [Deploy from Git](/apps/deploy-from-git)).
+3. Cloider uploads and inspects the code. On the **Configure your app** step it shows what it found under *We had a look at your code*.
+4. Check the **App Name** (for example `hello`) and the **Port** (`8080` for this example).
+5. Leave **Give this app a free subdomain** switched on and pick an address in **Subdomain**, for example `hello-acme`. The form shows *hello-acme.cloider.app is available* when the name is free.
+6. Click **Create App**.
+
+<Screenshot
+  src="/img/screenshots/apps/new-app-configure.webp"
+  url="/dashboard/apps/new-app"
+  alt="The Configure your app step showing the detected language, the App Name, Port, Start Command and Subdomain fields"
+  caption="The second step of Create App: Cloider has detected the language and port, and you choose the name and subdomain."
+/>
+
+The app page opens and shows the build. When the status reaches **Ready**, the app's URL is live.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+Run `cloider deploy` in the folder. The first deploy zips the folder, detects the language, framework and port, creates the app, claims a free subdomain and builds it:
+
+```bash
+cloider deploy --name hello
+```
+
+```text title="Output"
+Packaged 2 files (0.4 KB)
+Detected JavaScript
+✓ Created app hello on port 8080
+Linked . to hello in .cloider/app.json, later deploys from here update it.
+...
+✓ Deployed version 1 of hello
+https://hello-7kq2.cloider.app
+```
+
+Build output is printed to stderr and the app's URL to stdout, so `URL=$(cloider deploy)` captures just the URL in a script. The folder is now linked to the app in `.cloider/app.json`: run `cloider deploy` again after a change and it builds version 2 of the same app.
+
+Useful flags: `--subdomain hello-acme` picks the subdomain, `--env KEY=VALUE` sets a runtime variable, and `--detach` returns as soon as the build starts. See [Deploy from your computer](/apps/deploy-from-your-computer).
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider doesn't manage apps. Deploy the app with the **Dashboard** or **CLI** tab, and use Terraform for clusters, databases, buckets, registry projects, domains, DNS records and targets (see [Terraform overview](/terraform/overview)).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Deploying an app over the REST API is a sequence of calls, which `cloider deploy` makes for you:
+
+1. `POST https://cloider.com/api/apps/source` with the archive's `name`, `type` and `size` answers with a `token` and a `presigned_url`.
+2. `PUT` the zip of your code to the `presigned_url`.
+3. `POST https://cloider.com/api/apps/source/<token>/detect` detects the language, framework and port.
+4. `POST https://cloider.com/api/apps` with `app_name`, `port`, `subdomain` and `source_token` creates the app and starts the first build.
+
+Every call needs a Read & Write API token in the `Authorization: Bearer $CLOIDER_TOKEN` header. The full request and response shapes are in [Apps endpoints](/api/endpoints/apps). For a first deploy, the CLI is much quicker.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+With the [Cloider MCP server](/mcp/overview) set up in your AI agent (it runs `cloider mcp`, so log in with the CLI first), ask:
+
+```text title="Prompt"
+Deploy the folder /Users/jane/hello as a new app called hello and tell me its URL.
+```
+
+It calls the `deploy_app` tool:
+
+```json title="Tool call: deploy_app"
+{"dir": "/Users/jane/hello", "name": "hello"}
+```
+
+The tool follows the build until the app is up and answers with the app's URL.
+
+</TabItem>
+</Tabs>
+
+### Open your app
+
+Open the URL in a browser, or use `curl`:
+
+```bash
+curl https://hello-7kq2.cloider.app
+```
+
+```text title="Output"
+Hello from Cloider!
+```
+
+The first deploy takes longer than a page load, because Cloider builds a container image from your code before it starts it. If the build fails, the build log on the app's **Builds** tab (or `cloider app build logs hello`) says why; see [Apps troubleshooting](/apps/troubleshooting).
+
+## Step 4 (optional): Create a Kubernetes cluster
+
+A Cloider **Kubernetes cluster** is a standard Kubernetes API that you reach with `kubectl`, Helm or any Kubernetes tool. It is serverless: you don't size or manage nodes, and you pay for the CPU and memory your workloads use. Read [Kubernetes overview](/kubernetes/overview) for how it works.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Kubernetes** in the sidebar and click **Create Cluster**.
+2. Type a **Cluster Name**, for example `staging`. Use lowercase letters, digits and dashes, starting with a letter.
+3. Leave **Cluster Version** on the newest version, or pick another.
+4. Click **Create cluster**.
+5. Wait until the cluster's status is **Ready**. It goes through **Creating** and **Starting** first, which takes a few minutes.
+6. Click the menu button (three dots) at the end of the cluster's row and choose **Kubeconfig** to download its kubeconfig file (saved as `config`).
+
+Then point `kubectl` at the downloaded file:
+
+```bash
+export KUBECONFIG=~/Downloads/config
+kubectl get nodes
+```
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider cluster create staging --wait
+```
+
+```text title="Output"
+✓ Creating cluster staging (Kubernetes 1.34)
+✓ Cluster staging is ready. Get its kubeconfig with `cloider cluster kubeconfig staging --merge`.
+```
+
+Merge the cluster into your kubeconfig and make it the current context:
+
+```bash
+cloider cluster kubeconfig staging --merge --use
+kubectl get nodes
+```
+
+```text title="Output"
+✓ Added context cloider-staging to /Users/jane/.kube/config
+```
+
+`--merge` adds the cluster to `~/.kube/config` (or the first file in `$KUBECONFIG`) as the context `cloider-staging`. Without `--merge`, the command prints the kubeconfig so you can save it anywhere: `cloider cluster kubeconfig staging > staging.yaml`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="main.tf"
+terraform {
+  required_providers {
+    cloider = {
+      source = "cloider/cloider"
+    }
+  }
+}
+
+# Uses CLOIDER_TOKEN, or the token `cloider login` saved
+provider "cloider" {}
+
+resource "cloider_cluster" "staging" {
+  name = "staging"
+}
+
+# Writes a kubeconfig for kubectl
+resource "local_sensitive_file" "kubeconfig" {
+  filename        = "${path.module}/kubeconfig-staging.yaml"
+  content         = cloider_cluster.staging.kube_config.raw
+  file_permission = "0600"
+}
+```
+
+```bash
+terraform init
+terraform apply
+KUBECONFIG=./kubeconfig-staging.yaml kubectl get nodes
+```
+
+`terraform apply` waits until the cluster is `Ready` (up to 20 minutes by default). See [Terraform get started](/terraform/get-started).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Create the cluster:
+
+```bash
+curl -X POST https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_name": "staging", "cluster_version": "1.34"}'
+```
+
+```json title="Response"
+{"hashed_id": "q7m2x"}
+```
+
+Poll its status until it is `Ready` (the answer is plain text), then download the kubeconfig:
+
+```bash
+curl -H "Authorization: Bearer $CLOIDER_TOKEN" https://cloider.com/api/clusters/q7m2x/status
+curl -H "Authorization: Bearer $CLOIDER_TOKEN" https://cloider.com/api/clusters/q7m2x/kubeconfig -o staging.yaml
+KUBECONFIG=./staging.yaml kubectl get nodes
+```
+
+The versions you can pass as `cluster_version` are listed by `GET /api/options`. See [Clusters endpoints](/api/endpoints/clusters).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Create a Kubernetes cluster called staging, wait until it is ready, and add it to my kubeconfig as the current context.
+```
+
+It calls `create_cluster`, then `get_cluster_kubeconfig`:
+
+```json title="Tool call: create_cluster"
+{"name": "staging", "wait": true}
+```
+
+```json title="Tool call: get_cluster_kubeconfig"
+{"cluster": "staging", "merge": true, "use": true}
+```
+
+</TabItem>
+</Tabs>
+
+When `kubectl get nodes` answers, `kubectl` is talking to your new cluster. You're ready to deploy: follow [Deploy a workload](/kubernetes/deploy-a-workload) for a first Deployment and Service, and [Expose services](/kubernetes/expose-services) to give it a public address.
+
+## Step 5: Clean up (optional)
+
+Resources are billed while they exist, so delete what you created if you don't need it. Deleting is permanent.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+- **App**: in **Apps**, click the menu button (three dots) at the end of the app's row and choose **Delete**. See [Pause, resume and delete an app](/apps/pause-resume-and-delete).
+- **Cluster**: in **Kubernetes**, click the menu button at the end of the cluster's row, choose **Delete** and type the cluster name to confirm. See [Delete a cluster](/kubernetes/delete-a-cluster).
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider app delete hello
+cloider cluster delete staging --wait
+```
+
+Each command asks you to type the name to confirm. In a script, add `--yes` to skip the question.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```bash
+terraform destroy
+```
+
+The app was created outside Terraform, so delete it with the Dashboard or CLI tab.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X DELETE -H "Authorization: Bearer $CLOIDER_TOKEN" https://cloider.com/api/clusters/q7m2x
+```
+
+Apps are deleted with `DELETE /api/apps/<id>`; see [Apps endpoints](/api/endpoints/apps).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Delete the app hello and the cluster staging.
+```
+
+The agent calls `delete_app` and `delete_cluster`. Both tools are marked as deleting something, so your MCP client can ask you before it runs them.
+
+</TabItem>
+</Tabs>
+
+You can also **pause** a cluster or an app instead of deleting it. A paused cluster keeps its state and isn't billed for compute. See [Resource lifecycle](/concepts/resource-lifecycle).
+
+## Next steps
+
+- [Deploy your first app](/get-started/deploy-your-first-app): the same app step by step, with environment variables, logs and redeploys.
+- [Create your first cluster](/get-started/create-your-first-cluster): a full walkthrough from cluster to a public service.
+- [Create a database](/databases/create-a-database): add managed PostgreSQL, MySQL, MongoDB or Redis to your app.
+- [Dashboard tour](/get-started/dashboard-tour) and [Choose a tool](/get-started/choose-a-tool): find your way around.
+
+<FAQ items={[
+  {q: 'Is Cloider free to try?', a: 'Yes. A new account starts on a 14-day free trial with $25 of free credit. During the trial an account can have one Kubernetes cluster, one database, one bucket and one container registry project at a time.'},
+  {q: 'Do I need a credit card to sign up?', a: 'No card is asked for when you sign up. You sign in with Google or GitHub and the trial starts. To keep using Cloider after the trial, the account owner upgrades to the paid plan from the link in the dashboard banner.'},
+  {q: 'Do I need a Dockerfile to deploy an app?', a: 'No. Cloider detects the language and framework and builds your code with buildpacks. If your project has its own Dockerfile, Cloider builds that instead.'},
+  {q: 'What URL does my app get?', a: 'An app gets a free subdomain of cloider.app with HTTPS, for example https://hello-7kq2.cloider.app. You can pick the name when you create the app, and add your own domain later.'},
+  {q: 'How long does it take to create a Kubernetes cluster?', a: 'A few minutes. The cluster goes through Creating and Starting before it is Ready. Use --wait with the CLI, or wait for the Ready status in the dashboard, before you download the kubeconfig.'},
+  {q: 'Which Kubernetes versions can I choose?', a: 'The versions offered right now are listed by the Cluster Version field in the dashboard, by the GET /api/options endpoint and by the cloider_options Terraform data source. The CLI picks the newest one when you leave out --version.'}
+]} />

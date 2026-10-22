@@ -1,0 +1,125 @@
+---
+title: cloider_cluster data source (Terraform)
+sidebar_label: cloider_cluster
+sidebar_position: 1
+description: Look up an existing Cloider Kubernetes cluster by id or name with the cloider_cluster data source, and configure the kubernetes and helm providers from its kube_config.
+keywords: [cloider_cluster data source, terraform data source kubernetes cluster, existing cluster kubeconfig terraform, kubernetes provider cloider, helm provider cloider, terraform lookup cluster]
+---
+
+The `cloider_cluster` data source reads an existing Cloider Kubernetes cluster, found by `id` or by `name`, without managing it. Use it when one configuration owns the cluster (or it was created in the dashboard) and another configuration deploys into it: the data source gives the second configuration the cluster's `kube_config` for the `kubernetes` and `helm` providers, and its `id` for database trusted sources and targets.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Arguments** | Exactly one of `id` or `name` |
+| **Returns** | `id`, `name`, `version`, `label`, `status`, `created_at`, `kube_config` (sensitive) |
+| **Changes anything?** | No, it only reads |
+| **Resource version** | [`cloider_cluster` resource](/terraform/resources/cluster) |
+
+## Example usage
+
+### Look up a cluster by name
+
+```hcl title="main.tf"
+data "cloider_cluster" "production" {
+  name = "production"
+}
+
+output "production_cluster_id" {
+  value = data.cloider_cluster.production.id
+}
+```
+
+### Configure the kubernetes and helm providers
+
+```hcl title="providers.tf"
+data "cloider_cluster" "production" {
+  name = "production"
+}
+
+provider "kubernetes" {
+  host                   = data.cloider_cluster.production.kube_config.host
+  cluster_ca_certificate = data.cloider_cluster.production.kube_config.cluster_ca_certificate
+  client_certificate     = data.cloider_cluster.production.kube_config.client_certificate
+  client_key             = data.cloider_cluster.production.kube_config.client_key
+}
+
+provider "helm" {
+  kubernetes = {
+    host                   = data.cloider_cluster.production.kube_config.host
+    cluster_ca_certificate = data.cloider_cluster.production.kube_config.cluster_ca_certificate
+    client_certificate     = data.cloider_cluster.production.kube_config.client_certificate
+    client_key             = data.cloider_cluster.production.kube_config.client_key
+  }
+}
+```
+
+Because a data source is read before the plan, the providers are configured with real values from the start. This is the most reliable way to deploy into a cluster, see [Kubernetes and Helm](/terraform/guides/kubernetes-and-helm#two-configurations-one-for-the-cluster-one-for-what-runs-in-it).
+
+### Look up a cluster by id
+
+When several clusters share a name, use the id:
+
+```hcl title="main.tf"
+data "cloider_cluster" "staging" {
+  id = "x8f2kq"
+}
+```
+
+### Trust an existing cluster in a new database
+
+```hcl title="main.tf"
+data "cloider_cluster" "production" {
+  name = "production"
+}
+
+resource "cloider_database" "orders" {
+  name            = "orders-db"
+  engine          = "postgresql"
+  trusted_sources = ["cluster:${data.cloider_cluster.production.id}"]
+}
+```
+
+## Argument reference
+
+| Argument | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | String | One of `id` or `name` | The cluster's id, such as `x8f2kq` |
+| `name` | String | One of `id` or `name` | The cluster's name. Names don't have to be unique, so a name that several clusters have is refused: use the `id` then |
+
+Setting both, or neither, fails at plan time.
+
+## Attribute reference
+
+| Attribute | Type | Sensitive | Description |
+| --- | --- | --- | --- |
+| `id` | String | No | The cluster's id |
+| `name` | String | No | The cluster's name |
+| `version` | String | No | The Kubernetes version |
+| `label` | String | No | The name the dashboard shows |
+| `status` | String | No | `Creating`, `Starting`, `Ready`, `Pausing`, `Paused` or `Terminating` |
+| `created_at` | String | No | When the cluster was created, in RFC 3339 |
+| `kube_config` | Object | Yes | `raw`, `host`, `cluster_ca_certificate`, `client_certificate`, `client_key` and `token`, the same as on the [resource](/terraform/resources/cluster#kube_config). Null until the cluster is ready |
+
+Deleted clusters are never found.
+
+## Errors
+
+| Error | Cause |
+| --- | --- |
+| `No such cluster: There is no cluster named "production", see 'cloider cluster list'.` | No cluster in the account has that name |
+| `No such cluster: There is no cluster "x8f2kq", see 'cloider cluster list -o wide'.` | No cluster in the account has that id |
+| `Several clusters have this name: Clusters x8f2kq (staging), h3j8pw (staging-1) are all named "staging", give the id of the one to use.` | The name is shared, use `id` |
+
+## Related
+
+- [`cloider_cluster` resource](/terraform/resources/cluster)
+- [Kubernetes and Helm guide](/terraform/guides/kubernetes-and-helm)
+- [Connect with kubectl](/kubernetes/connect-with-kubectl)
+
+<FAQ items={[
+  {q: 'How do I use an existing Cloider cluster in Terraform without managing it?', a: 'Use the cloider_cluster data source with name or id. It returns the cluster\'s id and kube_config without creating, changing or deleting anything.'},
+  {q: 'Why does the cloider_cluster data source say several clusters have this name?', a: 'Cluster names don\'t have to be unique. When two clusters share the name, look the cluster up by id instead. The error lists the ids and labels of the matching clusters.'},
+  {q: 'Why is kube_config null?', a: 'The cluster has no kubeconfig until it is ready. Check the status attribute, wait until the cluster is Ready, and run terraform plan again.'},
+]} />

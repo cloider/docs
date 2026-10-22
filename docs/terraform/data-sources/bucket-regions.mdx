@@ -1,0 +1,94 @@
+---
+title: cloider_bucket_regions data source (Terraform)
+sidebar_label: cloider_bucket_regions
+sidebar_position: 3
+description: List the regions a Cloider bucket can be created in, with their codes, names and S3 endpoints, using the cloider_bucket_regions Terraform data source.
+keywords: [cloider_bucket_regions, terraform bucket region, s3 endpoint terraform, cloider s3 regions, eu-central-2, object storage regions terraform]
+---
+
+The `cloider_bucket_regions` data source lists the regions a [`cloider_bucket`](/terraform/resources/bucket) can be created in, with each region's code, name and S3 endpoint. The default region, the one a bucket gets when you don't set `region`, comes first.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Arguments** | None |
+| **Returns** | `regions`, a list of `code`, `name`, `endpoint` |
+| **Changes anything?** | No, it only reads |
+| **API** | `GET /api/buckets/regions`, see [Bucket endpoints](/api/endpoints/buckets) |
+| **CLI equivalent** | `cloider bucket regions` |
+
+## Example usage
+
+### List the regions
+
+```hcl title="main.tf"
+data "cloider_bucket_regions" "all" {}
+
+output "bucket_regions" {
+  value = { for r in data.cloider_bucket_regions.all.regions : r.code => r.name }
+}
+```
+
+```text title="Output"
+bucket_regions = {
+  "eu-central-2" = "Europe"
+}
+```
+
+### Create a bucket in a region by code, and output its endpoint
+
+```hcl title="main.tf"
+data "cloider_bucket_regions" "all" {}
+
+locals {
+  regions = { for r in data.cloider_bucket_regions.all.regions : r.code => r }
+}
+
+resource "cloider_bucket" "assets" {
+  name   = "acme-assets"
+  region = local.regions["eu-central-2"].code
+}
+
+output "assets_endpoint" {
+  value = local.regions["eu-central-2"].endpoint
+}
+```
+
+Indexing the map by a code that doesn't exist fails at plan time, which is a cheap check that the region is still offered.
+
+### Use the default region's endpoint for an S3 client
+
+```hcl title="main.tf"
+data "cloider_bucket_regions" "all" {}
+
+provider "aws" {
+  alias = "cloider"
+  # ... see the object storage guide for the full provider block
+  endpoints {
+    s3 = data.cloider_bucket_regions.all.regions[0].endpoint
+  }
+}
+```
+
+The [object storage guide](/terraform/guides/object-storage) has the complete `aws` provider configuration.
+
+## Attribute reference
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `regions` | List of Object | The regions, the default one first |
+| `regions[*].code` | String | The code `cloider_bucket`'s `region` takes, such as `eu-central-2` |
+| `regions[*].name` | String | The region's name, such as `Europe` |
+| `regions[*].endpoint` | String | The S3 endpoint of the region's buckets, such as `https://s3.eu-central-2.cloider.com` |
+
+## Related
+
+- [`cloider_bucket`](/terraform/resources/bucket)
+- [Object storage with the AWS provider](/terraform/guides/object-storage)
+- [Create a bucket](/object-storage/create-a-bucket)
+
+<FAQ items={[
+  {q: 'Which regions can a Cloider bucket be created in?', a: 'The cloider_bucket_regions data source lists them, with the default region first. The same list comes from cloider bucket regions and GET /api/buckets/regions.'},
+  {q: 'What is the S3 endpoint of a Cloider bucket?', a: 'Each region has one, in the endpoint attribute of cloider_bucket_regions and of the cloider_bucket resource, such as https://s3.eu-central-2.cloider.com.'},
+]} />

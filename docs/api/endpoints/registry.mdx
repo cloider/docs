@@ -1,0 +1,871 @@
+---
+title: Container registry API endpoints
+sidebar_label: Registry
+sidebar_position: 7
+description: Cloider API reference for container registry projects, create and delete, settings, repositories, images and tags, retention rules and runs, and tag immutability.
+keywords: [cloider registry api, container registry api, registry project api, delete docker image api, retention policy api, immutable tags api, registry.cloider.com]
+---
+
+These endpoints manage Cloider [container registry](/container-registry/overview) projects. A project holds your container images at `registry.cloider.com/<project>/<repository>:<tag>`. You create and delete projects, change their visibility and storage limit, browse and delete repositories, images and tags, and set the policies that delete old images (retention) and protect tags (immutability). Pushing and pulling images is done with `docker` and a [registry token](/api/endpoints/registry-tokens), not with these endpoints.
+
+All paths are relative to `https://cloider.com/api`. See [Authentication](/api/authentication) for the token header.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/registry/projects`](#list-projects) | Read |
+| POST | [`/registry/projects`](#create-a-project) | Write |
+| GET | [`/registry/projects/options`](#get-registry-options) | Read |
+| GET | [`/registry/projects/:hashed_id`](#get-a-project) | Read |
+| GET | [`/registry/projects/:hashed_id/status`](#get-a-projects-status) | Read |
+| GET | [`/registry/projects/:hashed_id/summary`](#get-live-storage-use) | Read |
+| GET | [`/registry/projects/:hashed_id/usage`](#get-a-projects-usage) | Read |
+| PUT | [`/registry/projects/:hashed_id/settings`](#change-visibility-and-storage-limit) | Write |
+| DELETE | [`/registry/projects/:hashed_id`](#delete-a-project) | Write |
+| GET | [`/registry/projects/:hashed_id/repositories`](#list-repositories) | Read |
+| POST | [`/registry/projects/:hashed_id/repositories/delete`](#delete-a-repository) | Write |
+| GET | [`/registry/projects/:hashed_id/artifacts`](#list-images-in-a-repository) | Read |
+| POST | [`/registry/projects/:hashed_id/artifacts/delete`](#delete-an-image) | Write |
+| POST | [`/registry/projects/:hashed_id/tags/delete`](#remove-a-tag) | Write |
+| GET | [`/registry/projects/:hashed_id/retention`](#get-the-retention-policy) | Read |
+| PUT | [`/registry/projects/:hashed_id/retention/rules`](#replace-the-retention-rules) | Write |
+| PUT | [`/registry/projects/:hashed_id/retention/schedule`](#set-the-retention-schedule) | Write |
+| POST | [`/registry/projects/:hashed_id/retention/runs`](#run-the-retention-policy) | Write |
+| GET | [`/registry/projects/:hashed_id/retention/runs`](#list-retention-runs) | Read |
+| GET | [`/registry/projects/:hashed_id/retention/runs/:run_id`](#list-a-runs-repositories) | Read |
+| GET | [`/registry/projects/:hashed_id/retention/runs/:run_id/tasks/:task_id`](#see-what-a-run-did-in-a-repository) | Read |
+| GET | [`/registry/projects/:hashed_id/immutability`](#list-immutability-rules) | Read |
+| POST | [`/registry/projects/:hashed_id/immutability`](#add-an-immutability-rule) | Write |
+| PUT | [`/registry/projects/:hashed_id/immutability/:rule_id`](#change-an-immutability-rule) | Write |
+| DELETE | [`/registry/projects/:hashed_id/immutability/:rule_id`](#delete-an-immutability-rule) | Write |
+| PUT | [`/registry/projects/:hashed_id/immutable-tags`](#turn-immutable-tags-on-or-off) | Write |
+
+## The project object
+
+```json
+{
+  "hashed_id": "r4c8z",
+  "name": "acme",
+  "public": false,
+  "apps": false,
+  "storage_limit_gi": 5,
+  "status": "Ready",
+  "size_bytes": 1288490188,
+  "size_sampled_at": "2026-10-20T09:00:07.402118Z",
+  "host": "registry.cloider.com",
+  "url": "registry.cloider.com/acme",
+  "created_at": "2026-09-21T11:48:30.991204Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The project's id |
+| `name` | string | The project name, the first path segment of every image. Unique across Cloider and fixed once created |
+| `public` | boolean | `true` when anyone can pull without logging in. Pushing always needs a token |
+| `apps` | boolean | `true` for the project Cloider made to hold your [apps](/apps/overview)' images. It can't be deleted and its images and policies are managed by Cloider |
+| `storage_limit_gi` | integer | The most the project may store, in GiB. A push that would go past it is refused |
+| `status` | string | `Creating`, `Ready`, `Terminating` or `Failed` |
+| `size_bytes` | integer | Bytes stored as of the last usage sample. Billing follows what is stored |
+| `size_sampled_at` | string or null | When `size_bytes` was measured |
+| `host` | string | The registry host, `registry.cloider.com` |
+| `url` | string | The prefix of every image in the project, `<host>/<name>` |
+| `created_at` | string | When the project was created |
+
+`GET /registry/projects/:hashed_id` also returns `username`, the account's registry username that every [registry token](/api/endpoints/registry-tokens) logs in with.
+
+## List projects
+
+```http
+GET /registry/projects
+```
+
+Returns the account's projects, newest first, without deleted ones.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/registry/projects \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is a list of [project objects](#the-project-object).
+
+## Get registry options
+
+```http
+GET /registry/projects/options
+```
+
+Returns what the create form needs: the registry host and the storage limits.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/registry/projects/options \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{"host": "registry.cloider.com", "default_storage_limit_gi": 5, "max_storage_limit_gi": 20}
+```
+
+## Create a project
+
+```http
+POST /registry/projects
+```
+
+Creates a project. Like a bucket, it is created while the request runs, so the answer also tells you whether the name was free.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | Yes | 3 to 63 characters: lower case letters, digits and `-`, with at least one letter, starting and ending with a letter or digit, no `--`. Shared by every Cloider account |
+| `public` | boolean | No | `true` to allow anonymous pulls. Default `false` |
+| `storage_limit_gi` | integer | No | 1 to 20. Default 5 |
+| `immutable_tags` | boolean | No | `true` so that no tag can be pushed over or deleted. Default `false` |
+
+```bash
+curl -X POST https://cloider.com/api/registry/projects \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "acme", "storage_limit_gi": 10}'
+```
+
+```json title="Response"
+{"hashed_id": "r4c8z"}
+```
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `name` | `Project name must not be empty`, `Project name must be at least 3 characters`, `Project name must not exceed 63 characters`, `Project name can only have lowercase letters, numbers and "-"`, `Project name must start and end with a letter or a number, with no "--"`, `Project name must have at least one letter`, `Project name is reserved`, `This project name is already taken` |
+| `400` | `storage_limit_gi` | `Storage limit must be between 1 and 20 GB` |
+| `400` | `_` | `Free plan users can not create more than one project. UPGRADE NOW!` (the apps project doesn't count) |
+| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `400` | `_` | `The container registry isn't available at the moment!`, `Operation failed, Couldn't create the project!` |
+| `403` | `_` | `This API token is read only!`, `You have read-only access to this account, you can not create projects!` |
+
+## Get a project
+
+```http
+GET /registry/projects/:hashed_id
+```
+
+Returns one project, with the account's registry `username` added.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/registry/projects/r4c8z \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "hashed_id": "r4c8z",
+  "name": "acme",
+  "public": false,
+  "apps": false,
+  "storage_limit_gi": 10,
+  "status": "Ready",
+  "size_bytes": 1288490188,
+  "size_sampled_at": "2026-10-20T09:00:07.402118Z",
+  "host": "registry.cloider.com",
+  "url": "registry.cloider.com/acme",
+  "username": "acme",
+  "created_at": "2026-09-21T11:48:30.991204Z"
+}
+```
+
+## Get a project's status
+
+```http
+GET /registry/projects/:hashed_id/status
+```
+
+Returns the status as plain text, for example `Ready`. A deleted project answers `404`.
+
+**Access:** any token.
+
+## Get live storage use
+
+```http
+GET /registry/projects/:hashed_id/summary
+```
+
+Returns the project's repository count and storage use as the registry counts them right now. `size_bytes` on the project is only the last usage sample.
+
+**Access:** any token. The project must be `Ready`.
+
+```bash
+curl https://cloider.com/api/registry/projects/r4c8z/summary \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{"repository_count": 4, "used_bytes": 1288490188, "limit_bytes": 10737418240}
+```
+
+Errors: `400` with `The project must be ready to read its storage.` or `Couldn't read the project, try again in a moment!`.
+
+## Get a project's usage
+
+```http
+GET /registry/projects/:hashed_id/usage
+```
+
+Returns the project with its storage usage and cost: the last 31 days in `daily_usage` and this month's totals in `monthly_usage` (`avg_storage_usage` in GiB, `storage_total_cost`, `total_cost`, `days`, `forecast_this_month`, `forecast_next_month`), plus `forecast_rest_of_day`, `date` and `month`. It has the same shape as a [bucket's usage](/api/endpoints/buckets#get-a-buckets-usage).
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/registry/projects/r4c8z/usage \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+## Change visibility and storage limit
+
+```http
+PUT /registry/projects/:hashed_id/settings
+```
+
+Sets whether the project is public and its storage limit. Both fields are applied, so always send both, even to change only one.
+
+**Access:** Read & Write token. The project must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `public` | boolean | Yes | `true` to allow anonymous pulls, `false` for private |
+| `storage_limit_gi` | integer | Yes | 1 to 20. Leaving it out sends `0`, which is refused |
+
+```bash
+curl -X PUT https://cloider.com/api/registry/projects/r4c8z/settings \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"public": false, "storage_limit_gi": 15}'
+```
+
+The response is the updated [project object](#the-project-object).
+
+| Status | Message |
+| --- | --- |
+| `400` | `Storage limit must be between 1 and 20 GB` (on `storage_limit_gi`) |
+| `400` | `The project must be ready to change its settings.` |
+| `400` | `Another change to this project is in progress, try again in a moment!` |
+| `400` | `Couldn't change the project's settings, try again in a moment!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not change projects!` |
+
+## Delete a project
+
+```http
+DELETE /registry/projects/:hashed_id
+```
+
+Deletes the project with every repository and image in it. This can't be undone. The project goes to `Terminating` while its repositories are deleted, then disappears, and its status answers `404`.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/registry/projects/r4c8z \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's project list, with this project `Terminating`.
+
+| Status | Message |
+| --- | --- |
+| `400` | `This project is still being created!`, `This project is already being deleted!` |
+| `400` | `This project holds your apps' images and is managed by Cloider, it can't be deleted.` |
+| `400` | `Another change to this project is in progress, try again in a moment!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not delete projects!` |
+
+## List repositories
+
+```http
+GET /registry/projects/:hashed_id/repositories
+```
+
+Lists the project's repositories, the image names under it (`api` in `registry.cloider.com/acme/api:1.0`), 25 per page by default.
+
+**Access:** any token. The project must be `Ready`.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `q` | No | Only repositories whose name contains this. Lower case letters, digits, `.`, `_`, `-` and `/`, up to 128 characters |
+| `page` | No | Page number, from 1. Default 1 |
+| `page_size` | No | 1 to 100. Default 25 |
+
+```bash
+curl -G https://cloider.com/api/registry/projects/r4c8z/repositories \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  --data-urlencode "q=api"
+```
+
+```json title="Response"
+{
+  "repositories": [
+    {
+      "name": "api",
+      "artifact_count": 12,
+      "pull_count": 340,
+      "created_at": "2026-09-21T12:02:10.118Z",
+      "updated_at": "2026-10-19T16:44:52.906Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+`name` is without the project, and can contain slashes (`team/api`). `artifact_count` is the number of images. `total` is the number of repositories matching, across pages.
+
+## List images in a repository
+
+```http
+GET /registry/projects/:hashed_id/artifacts
+```
+
+Lists the images (artifacts) in one repository, newest first, 25 per page by default, with their tags, size and platforms.
+
+**Access:** any token. The project must be `Ready`.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `repository` | Yes | The repository name, for example `api` or `team/api` |
+| `page` | No | Default 1 |
+| `page_size` | No | 1 to 100. Default 25 |
+
+```bash
+curl -G https://cloider.com/api/registry/projects/r4c8z/artifacts \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  --data-urlencode "repository=api"
+```
+
+```json title="Response"
+{
+  "artifacts": [
+    {
+      "digest": "sha256:3f1c9a8e0d7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a",
+      "tags": [
+        {"name": "1.4.2", "pushed_at": "2026-10-19T16:44:50Z", "immutable": false},
+        {"name": "latest", "pushed_at": "2026-10-19T16:44:51Z", "immutable": false}
+      ],
+      "size": 48213504,
+      "pushed_at": "2026-10-19T16:44:50Z",
+      "pulled_at": "2026-10-20T08:12:03Z",
+      "type": "IMAGE",
+      "platforms": [
+        {"os": "linux", "architecture": "amd64"},
+        {"os": "linux", "architecture": "arm64"}
+      ]
+    }
+  ],
+  "total": 12
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `digest` | The image's content digest, `sha256:` and 64 hex characters. The stable way to name an image |
+| `tags` | Its tags, each with `name`, `pushed_at` and whether an immutability rule protects it (`immutable`) |
+| `size` | Size in bytes |
+| `pushed_at`, `pulled_at` | When it was pushed and last pulled (`null` if never) |
+| `type` | The artifact type, for example `IMAGE` |
+| `platforms` | The `os` and `architecture` (and `variant` where there is one) of each image a multi-platform image contains |
+
+Errors: `400` with `Invalid repository` on `repository`, `404 It doesn't exist any more, reload and try again!` for a repository that is gone.
+
+## Delete a repository
+
+```http
+POST /registry/projects/:hashed_id/repositories/delete
+```
+
+Deletes a repository and every image in it.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `repository` | string | Yes | The repository name |
+
+```bash
+curl -X POST https://cloider.com/api/registry/projects/r4c8z/repositories/delete \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repository": "old-worker"}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+## Delete an image
+
+```http
+POST /registry/projects/:hashed_id/artifacts/delete
+```
+
+Deletes one image, by digest, with every tag on it.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `repository` | string | Yes | The repository name |
+| `digest` | string | Yes | The image's digest, `sha256:...` |
+
+```bash
+curl -X POST https://cloider.com/api/registry/projects/r4c8z/artifacts/delete \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repository": "api", "digest": "sha256:3f1c9a8e0d7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a"}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+## Remove a tag
+
+```http
+POST /registry/projects/:hashed_id/tags/delete
+```
+
+Takes one tag off an image. The image stays under its other tags. An image left with no tag at all is removed by the registry's nightly cleanup.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `repository` | string | Yes | The repository name |
+| `digest` | string | Yes | The digest of the image the tag is on |
+| `tag` | string | Yes | The tag, for example `latest` |
+
+```bash
+curl -X POST https://cloider.com/api/registry/projects/r4c8z/tags/delete \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repository": "api", "digest": "sha256:3f1c9a8e0d7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a", "tag": "latest"}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+### Errors of the three delete endpoints
+
+| Status | Message |
+| --- | --- |
+| `400` | `Invalid repository` (on `repository`), `Invalid repository or image`, `Invalid repository, image or tag` |
+| `400` | `A tag immutability rule protects this tag. Disable the rule in the Policy tab to delete it.` |
+| `400` | `This image is in use by another image in the repository, delete that one first.` (an image a multi-platform index points to) |
+| `400` | `This project holds your apps' images and is managed by Cloider. Deleting an app deletes its images.` |
+| `400` | `The project must be ready to browse its images.`, `Couldn't reach the registry, try again in a moment!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not delete images!` |
+| `404` | `It doesn't exist any more, reload and try again!` |
+
+## Retention policies
+
+A retention policy deletes old images automatically. Its **rules** say which images to **keep**; a run deletes every image in the repositories the rules cover that no rule keeps. Runs happen on a **schedule** or when you start one, and a **dry run** shows what would be deleted without deleting anything. See [Retention policies](/container-registry/retention-policies) for examples.
+
+### The retention rule object
+
+```json
+{
+  "repositories": {"match": "matching", "patterns": ["**"]},
+  "tags": {"match": "excluding", "patterns": ["latest", "v*"]},
+  "untagged": true,
+  "keep": "latest_pushed",
+  "count": 10,
+  "disabled": false
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `repositories` | object | Which repositories the rule covers: `match` is `matching` or `excluding`, `patterns` is 1 to 20 patterns. `**` matches everything, `*` stays within one path segment, `?` matches one character |
+| `tags` | object | Which tags the rule looks at, in the same form. Tag patterns use letters, digits, `.`, `_`, `-`, `*` and `?` |
+| `untagged` | boolean | Whether images without a tag count as matching the tag patterns too |
+| `keep` | string | `always`, `latest_pushed`, `latest_pulled`, `pushed_within_days` or `pulled_within_days` |
+| `count` | integer | For `latest_pushed` and `latest_pulled`, how many images to keep (1 to 10000). For the `within_days` ones, the number of days (1 to 3650). Ignored for `always` |
+| `disabled` | boolean | `true` to keep the rule but not apply it |
+
+### The schedule object
+
+```json
+{"every": "daily", "minute": 0, "hour": 3, "weekday": 0, "cron": "0 0 3 * * *"}
+```
+
+| Field | Description |
+| --- | --- |
+| `every` | `none`, `hourly`, `daily`, `weekly`, or `custom` for a schedule set outside the dashboard |
+| `minute`, `hour` | The time of day in UTC, 0 to 59 and 0 to 23 |
+| `weekday` | For `weekly`, 0 (Sunday) to 6 (Saturday) |
+| `cron` | The schedule as a cron expression with seconds. Read only |
+
+## Get the retention policy
+
+```http
+GET /registry/projects/:hashed_id/retention
+```
+
+Returns the project's retention rules and schedule. A project without a policy has no rules and the schedule `none`.
+
+**Access:** any token. The project must be `Ready`.
+
+```bash
+curl https://cloider.com/api/registry/projects/r4c8z/retention \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "rules": [
+    {
+      "repositories": {"match": "matching", "patterns": ["**"]},
+      "tags": {"match": "matching", "patterns": ["**"]},
+      "untagged": true,
+      "keep": "latest_pushed",
+      "count": 10,
+      "disabled": false
+    }
+  ],
+  "schedule": {"every": "daily", "minute": 0, "hour": 3, "weekday": 0, "cron": "0 0 3 * * *"}
+}
+```
+
+A policy that was changed outside the dashboard can't be read and answers `400` with `This project's policies were changed outside the dashboard, contact support to edit them.`
+
+## Replace the retention rules
+
+```http
+PUT /registry/projects/:hashed_id/retention/rules
+```
+
+Replaces all retention rules. The schedule is kept. An empty list removes every rule.
+
+**Access:** Read & Write token. Not allowed on the apps project.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `rules` | object list | Yes | Up to 15 [retention rules](#the-retention-rule-object) |
+
+```bash
+curl -X PUT https://cloider.com/api/registry/projects/r4c8z/retention/rules \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rules": [
+      {
+        "repositories": {"match": "matching", "patterns": ["**"]},
+        "tags": {"match": "matching", "patterns": ["**"]},
+        "untagged": true,
+        "keep": "latest_pushed",
+        "count": 10
+      }
+    ]
+  }'
+```
+
+The response is the saved policy, as in [Get the retention policy](#get-the-retention-policy).
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `repositories`, `tags` | `Choose matching or excluding`, `Enter at least one pattern, ** for all`, `Enter at most 20 patterns`, `"..." isn't a valid pattern. ...` |
+| `400` | `keep` | `Choose what the rule keeps` |
+| `400` | `count` | `Keep between 1 and 10000 images`, `Enter between 1 and 3650 days` |
+| `400` | `_` | `A policy holds at most 15 rules.`, `Two of the rules are the same, change or delete one of them.`, `The registry refused the policy, check its rules and try again.` |
+| `400` | `_` | `This project holds your apps' images and is managed by Cloider, its policies can't be changed.` |
+| `403` | `_` | `This API token is read only!`, `You have read-only access to this account, you can not change policies!` |
+
+## Set the retention schedule
+
+```http
+PUT /registry/projects/:hashed_id/retention/schedule
+```
+
+Sets when the retention policy runs by itself. The rules are kept.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `every` | string | Yes | `none` (only manual runs), `hourly`, `daily` or `weekly`. `custom` keeps a custom schedule as it is |
+| `minute` | integer | No | 0 to 59 |
+| `hour` | integer | No | 0 to 23, UTC. Used by `daily` and `weekly` |
+| `weekday` | integer | No | 0 (Sunday) to 6. Used by `weekly` |
+
+```bash
+curl -X PUT https://cloider.com/api/registry/projects/r4c8z/retention/schedule \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"every": "weekly", "minute": 30, "hour": 2, "weekday": 0}'
+```
+
+The response is the saved policy. Errors are on `schedule`: `Choose how often the policy runs` and `Choose a valid time`.
+
+## Run the retention policy
+
+```http
+POST /registry/projects/:hashed_id/retention/runs
+```
+
+Starts a retention run now. With `dry_run` it only records what it would delete, so you can check the rules first.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `dry_run` | boolean | No | `true` for a dry run. Default `false` |
+
+```bash
+curl -X POST https://cloider.com/api/registry/projects/r4c8z/retention/runs \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+The run happens in the background: [list the runs](#list-retention-runs) to follow it. Errors: `Add a retention rule, or enable one, to run the policy.` and `The policy is already running, wait for it to finish.` (both `400`).
+
+## List retention runs
+
+```http
+GET /registry/projects/:hashed_id/retention/runs
+```
+
+Lists the project's retention runs, newest first.
+
+**Access:** any token.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `page` | No | Default 1 |
+| `page_size` | No | 1 to 100. Default 25 |
+
+```bash
+curl https://cloider.com/api/registry/projects/r4c8z/retention/runs \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "runs": [
+    {
+      "id": 57,
+      "status": "succeeded",
+      "trigger": "manual",
+      "dry_run": true,
+      "started_at": "2026-10-20T09:14:02Z",
+      "finished_at": "2026-10-20T09:14:09Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+`status` is `pending`, `running`, `stopped`, `failed` or `succeeded`; `trigger` is `manual` or `schedule`; `finished_at` is `null` while the run is going. Poll this list until the latest run is no longer `pending` or `running`.
+
+## List a run's repositories
+
+```http
+GET /registry/projects/:hashed_id/retention/runs/:run_id
+```
+
+Lists what a run did per repository: one task per repository, with the number of images it looked at and kept.
+
+**Access:** any token.
+
+| Path parameter | Description |
+| --- | --- |
+| `run_id` | The run's `id` from the runs list |
+
+```bash
+curl https://cloider.com/api/registry/projects/r4c8z/retention/runs/57 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "tasks": [
+    {"id": 311, "repository": "api", "status": "succeeded", "total": 24, "retained": 10}
+  ],
+  "total": 1
+}
+```
+
+`page` and `page_size` work as for the runs list. A malformed `run_id` answers `400 Invalid run`.
+
+## See what a run did in a repository
+
+```http
+GET /registry/projects/:hashed_id/retention/runs/:run_id/tasks/:task_id
+```
+
+Lists every image a task looked at and what happened to it.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/registry/projects/r4c8z/retention/runs/57/tasks/311 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "images": [
+    {"digest": "sha256:3f1c9a8e0d7b6c5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a", "tags": ["1.4.2", "latest"], "result": "kept"},
+    {"digest": "sha256:9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b", "tags": ["1.1.0"], "result": "deleted"}
+  ]
+}
+```
+
+`result` is `kept`, `deleted`, `immutable` (kept because an immutability rule protects it) or `failed`. In a dry run, `deleted` means "would be deleted".
+
+## Tag immutability
+
+An immutability rule protects tags from being pushed over or deleted, so that `api:1.4.2` always means the same image. **Immutable tags** is the simple version: one rule that protects every tag in every repository. See [Immutable tags](/container-registry/immutable-tags).
+
+### The immutability rule object
+
+```json
+{
+  "id": 12,
+  "repositories": {"match": "matching", "patterns": ["**"]},
+  "tags": {"match": "matching", "patterns": ["v*"]},
+  "disabled": false
+}
+```
+
+`repositories` and `tags` take the same patterns as retention rules. `id` is the rule's numeric id.
+
+## List immutability rules
+
+```http
+GET /registry/projects/:hashed_id/immutability
+```
+
+Returns the project's immutability rules and whether immutable tags are on.
+
+**Access:** any token. The project must be `Ready`.
+
+```bash
+curl https://cloider.com/api/registry/projects/r4c8z/immutability \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "rules": [
+    {"id": 12, "repositories": {"match": "matching", "patterns": ["**"]}, "tags": {"match": "matching", "patterns": ["v*"]}, "disabled": false}
+  ],
+  "immutable_tags": false
+}
+```
+
+`immutable_tags` is `true` when an enabled rule protects every tag (`**`) in every repository (`**`).
+
+## Add an immutability rule
+
+```http
+POST /registry/projects/:hashed_id/immutability
+```
+
+Adds a rule. A project holds at most 15.
+
+**Access:** Read & Write token. Not allowed on the apps project.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `repositories` | object | Yes | `{"match": "matching" or "excluding", "patterns": [...]}` |
+| `tags` | object | Yes | Same form, tag patterns |
+| `disabled` | boolean | No | `true` to add it switched off |
+
+```bash
+curl -X POST https://cloider.com/api/registry/projects/r4c8z/immutability \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repositories": {"match": "matching", "patterns": ["**"]}, "tags": {"match": "matching", "patterns": ["v*"]}}'
+```
+
+The response is the full rule list with `immutable_tags`, as in [List immutability rules](#list-immutability-rules). Errors: the pattern errors on `repositories` and `tags`, `The project already has a rule like this one.`, and `A project holds at most 15 immutability rules.`.
+
+## Change an immutability rule
+
+```http
+PUT /registry/projects/:hashed_id/immutability/:rule_id
+```
+
+Replaces a rule's patterns and its `disabled` flag. The body is the same as for adding one. The response is the full rule list. A rule that doesn't exist answers `404 It doesn't exist any more, reload and try again!`; a malformed `rule_id` answers `400 Invalid rule`.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X PUT https://cloider.com/api/registry/projects/r4c8z/immutability/12 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repositories": {"match": "matching", "patterns": ["**"]}, "tags": {"match": "matching", "patterns": ["v*"]}, "disabled": true}'
+```
+
+## Delete an immutability rule
+
+```http
+DELETE /registry/projects/:hashed_id/immutability/:rule_id
+```
+
+Deletes a rule. The response is the remaining rule list.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/registry/projects/r4c8z/immutability/12 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+## Turn immutable tags on or off
+
+```http
+PUT /registry/projects/:hashed_id/immutable-tags
+```
+
+Turns on the rule that protects every tag in the project, or removes it. Other immutability rules aren't touched.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `immutable_tags` | boolean | Yes | `true` to protect every tag, `false` to stop |
+
+```bash
+curl -X PUT https://cloider.com/api/registry/projects/r4c8z/immutable-tags \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"immutable_tags": true}'
+```
+
+The response is the rule list with `immutable_tags`. With 15 rules already, turning it on answers `A project holds at most 15 immutability rules, delete one in the Policy tab first.`
+
+### Errors of the policy endpoints
+
+Besides the errors listed with each endpoint, every policy change can answer:
+
+| Status | Message |
+| --- | --- |
+| `400` | `The project must be ready to change its policies.` |
+| `400` | `Another change to this project is in progress, try again in a moment!` |
+| `400` | `This project holds your apps' images and is managed by Cloider, its policies can't be changed.` |
+| `400` | `This project's policies were changed outside the dashboard, contact support to edit them.` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not change policies!` |
+
+## Related
+
+- [Registry tokens](/api/endpoints/registry-tokens) for `docker login`
+- [Push and pull images](/container-registry/push-and-pull-images)
+- [Repositories and tags](/container-registry/repositories-and-tags)
+- [cloider registry](/cli/commands/registry) commands and the [cloider_registry](/terraform/resources/registry) Terraform resource

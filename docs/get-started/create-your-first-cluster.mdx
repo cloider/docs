@@ -1,0 +1,362 @@
+---
+title: Create your first Kubernetes cluster on Cloider
+sidebar_label: Create your first cluster
+sidebar_position: 6
+description: Create a serverless Kubernetes cluster on Cloider, connect kubectl with the kubeconfig, deploy a first workload and put it on the internet on a free subdomain.
+keywords: [cloider kubernetes, create kubernetes cluster, kubectl, kubeconfig, serverless kubernetes, deploy nginx, kubernetes tutorial]
+---
+
+This tutorial creates a Kubernetes cluster on Cloider, connects `kubectl` to it, deploys a small web server and makes it reachable on the internet at a free `cloider.app` address. It takes about fifteen minutes, most of it waiting for the cluster to start.
+
+A Cloider **Kubernetes cluster** gives you a standard Kubernetes API, so `kubectl`, Helm, Terraform and any other Kubernetes tool work with it. It is **serverless**: you don't choose machine sizes or manage nodes. You create the cluster, deploy workloads and pay for the CPU and memory they use, plus storage and load balancers. Read the [Kubernetes overview](/kubernetes/overview) for how it works.
+
+:::tip[Kubernetes or Apps?]
+If you just want to run a web app from source code, [Apps](/apps/overview) is simpler: no YAML, no `kubectl`. Choose a cluster when you need Kubernetes itself: several services, Helm charts, custom manifests, or a workload you already run on Kubernetes elsewhere.
+:::
+
+## Before you begin
+
+- A Cloider account. During the free trial you can have one cluster at a time. See [Create an account](/get-started/create-an-account).
+- [`kubectl`](https://kubernetes.io/docs/tasks/tools/) installed on your computer.
+- For the CLI path, the `cloider` CLI logged in with **Read and write** access. See [Install the CLI](/get-started/install-the-cli).
+
+## Step 1: Create the cluster
+
+A cluster needs a name and a Kubernetes version. Names use lowercase letters, digits and `-`, start with a letter and are at least 2 characters long. This tutorial uses `staging`.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Kubernetes** in the sidebar and click **Create Cluster**.
+2. In **Cluster Name**, type `staging`.
+3. In **Cluster Version**, keep the newest version unless you need an older one.
+4. Click **Create cluster**.
+
+<Screenshot
+  src="/img/screenshots/kubernetes/create.webp"
+  url="/dashboard/clusters/new-cluster"
+  alt="The Create new cluster form with the Cluster Name field set to staging and the Cluster Version selector"
+  caption="Creating a cluster takes two fields."
+/>
+
+The cluster appears in the list with the status **Creating**, then **Starting**, then **Ready**. The page updates by itself.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider cluster create staging --wait
+```
+
+```text title="Output"
+✓ Creating cluster staging (Kubernetes 1.34)
+✓ Cluster staging is ready. Get its kubeconfig with `cloider cluster kubeconfig staging --merge`.
+```
+
+Without `--wait`, the command returns at once and `cloider cluster status staging` tells you when it is `Ready`. Pick a version with `--version 1.33`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="main.tf"
+terraform {
+  required_providers {
+    cloider = {
+      source = "cloider/cloider"
+    }
+  }
+}
+
+provider "cloider" {}
+
+resource "cloider_cluster" "staging" {
+  name = "staging"
+}
+```
+
+```bash
+terraform init
+terraform apply
+```
+
+`terraform apply` waits until the cluster is `Ready`. See [cloider_cluster](/terraform/resources/cluster).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X POST https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_name": "staging", "cluster_version": "1.34"}'
+```
+
+```json title="Response"
+{"hashed_id": "q7m2x"}
+```
+
+Then poll `GET /api/clusters/q7m2x/status` until it answers `Ready`. See [Clusters endpoints](/api/endpoints/clusters).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Create a Kubernetes cluster called staging and wait until it's ready.
+```
+
+```json title="Tool call: create_cluster"
+{"name": "staging", "wait": true}
+```
+
+</TabItem>
+</Tabs>
+
+## Step 2: Connect kubectl
+
+`kubectl` finds a cluster through a **kubeconfig** file, which holds the cluster's address and the credentials to reach it. Treat it like a password: anyone with the file has full access to the cluster.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. In **Kubernetes**, click the menu button (three dots) at the end of the `staging` row.
+2. Click **Kubeconfig**. Your browser downloads a file called `config`.
+3. Move it somewhere safe and point `kubectl` at it:
+
+```bash
+mkdir -p ~/.kube
+mv ~/Downloads/config ~/.kube/staging.yaml
+export KUBECONFIG=~/.kube/staging.yaml
+```
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+Merge the cluster into your kubeconfig as the context `cloider-staging`, and switch to it:
+
+```bash
+cloider cluster kubeconfig staging --merge --use
+```
+
+```text title="Output"
+✓ Added context cloider-staging to /Users/jane/.kube/config
+```
+
+Leave out `--use` to add the context without switching, and change contexts later with `kubectl config use-context cloider-staging`. To write a separate file instead, use `cloider cluster kubeconfig staging -f ~/.kube/staging.yaml`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The cluster's `kube_config` attribute holds the whole file in `raw`, and the parts the `kubernetes` and `helm` providers need in `host`, `cluster_ca_certificate`, `client_certificate` and `client_key`:
+
+```hcl title="kubeconfig.tf"
+resource "local_sensitive_file" "kubeconfig" {
+  filename        = "${path.module}/kubeconfig-staging.yaml"
+  content         = cloider_cluster.staging.kube_config.raw
+  file_permission = "0600"
+}
+```
+
+```bash
+terraform apply
+export KUBECONFIG=$PWD/kubeconfig-staging.yaml
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  https://cloider.com/api/clusters/q7m2x/kubeconfig -o ~/.kube/staging.yaml
+export KUBECONFIG=~/.kube/staging.yaml
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```json title="Tool call: get_cluster_kubeconfig"
+{"cluster": "staging", "merge": true, "use": true}
+```
+
+</TabItem>
+</Tabs>
+
+Check the connection:
+
+```bash
+kubectl get namespaces
+```
+
+```text title="Output"
+NAME              STATUS   AGE
+default           Active   4m
+kube-node-lease   Active   4m
+kube-public       Active   4m
+kube-system       Active   4m
+```
+
+More options, such as several clusters and contexts, are in [Connect with kubectl](/kubernetes/connect-with-kubectl).
+
+## Step 3: Deploy a workload
+
+Create a Deployment running two replicas of the NGINX web server, and a Service in front of it:
+
+```yaml title="hello.yaml"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+spec:
+  selector:
+    app: hello
+  ports:
+    - port: 80
+      targetPort: 80
+```
+
+```bash
+kubectl apply -f hello.yaml
+kubectl get pods
+```
+
+```text title="Output"
+NAME                     READY   STATUS    RESTARTS   AGE
+hello-6d4b9c7f8d-2xk9p   1/1     Running   0          20s
+hello-6d4b9c7f8d-q8m4t   1/1     Running   0          20s
+```
+
+You pay for the CPU and memory the pods use, so small requests keep a test workload cheap. See [Deploy a workload](/kubernetes/deploy-a-workload).
+
+## Step 4: Put it on the internet
+
+A Service inside the cluster isn't reachable from the internet yet. On Cloider you publish it by routing a **domain** to it with a **target**: a free `cloider.app` subdomain works and comes with HTTPS. Kubernetes Ingress objects in the cluster are not served, so use a target instead.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Domains** in the sidebar and claim a free subdomain, for example `hello-staging.cloider.app`.
+2. On the domain's page, add a target that routes the path `/` to the cluster `staging`, the service `default/hello` and port `80`.
+
+The full walkthrough with screenshots is in [Expose services](/kubernetes/expose-services).
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider domain create hello-staging.cloider.app
+cloider target create hello-staging.cloider.app --cluster staging --service default/hello --port 80
+```
+
+```text title="Output"
+✓ Claimed hello-staging.cloider.app
+Route it with `cloider target create hello-staging.cloider.app --app <app>`.
+✓ Routed hello-staging.cloider.app/ to staging/default/hello:80
+```
+
+`cloider cluster services staging` lists the services a target can route to.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Use the [`cloider_domain`](/terraform/resources/domain) and [`cloider_target`](/terraform/resources/target) resources. Their attributes and a complete example are on those pages.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Claim the subdomain with `POST /api/domains` and create the target with `POST /api/targets`. See [Domains endpoints](/api/endpoints/domains) and [Targets endpoints](/api/endpoints/targets).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Claim hello-staging.cloider.app and route it to the hello service in the default namespace of my staging cluster, port 80.
+```
+
+The agent calls `create_domain`, then `create_domain_target`:
+
+```json title="Tool call: create_domain_target"
+{"domain": "hello-staging.cloider.app", "cluster": "staging", "service": "default/hello", "port": 80}
+```
+
+</TabItem>
+</Tabs>
+
+Open it:
+
+```bash
+curl -I https://hello-staging.cloider.app
+```
+
+```text title="Output"
+HTTP/2 200
+server: nginx/1.27.5
+content-type: text/html
+```
+
+## Step 5: Use the browser terminal (optional)
+
+Each cluster has a terminal in the dashboard with `kubectl` and `helm` already pointed at it, which is handy on a computer without `kubectl`. In **Kubernetes**, open the row menu of `staging` and click **Terminal**. From a terminal on your own computer, `cloider cluster shell staging` opens the same shell, and `cloider cluster exec staging kubectl get pods -A` runs one command. See [Web terminal and exec](/kubernetes/web-terminal-and-exec).
+
+## Verify
+
+- The cluster's status is **Ready**.
+- `kubectl get pods` shows the `hello` pods as `Running`.
+- `https://hello-staging.cloider.app` answers with the NGINX welcome page.
+
+## Stop paying for the cluster when you're done
+
+- **Pause** it to stop paying for compute while keeping everything in it: row menu, **Pause**, or `cloider cluster pause staging`. Resume it the same way. See [Pause and resume](/kubernetes/pause-and-resume).
+- **Delete** it to remove it and everything in it for good: row menu, **Delete**, or `cloider cluster delete staging`. See [Delete a cluster](/kubernetes/delete-a-cluster).
+
+How a paused cluster is billed is explained in [Billing model](/concepts/billing-model).
+
+## Troubleshooting
+
+| Symptom | Likely cause and fix |
+| --- | --- |
+| `Free plan users can not create more than one cluster. UPGRADE NOW!` | You are on the trial and already have a cluster. Delete it or upgrade. |
+| **Kubeconfig** is greyed out in the row menu | The cluster isn't **Ready** yet. Wait for it, or check `cloider cluster status staging`. |
+| `kubectl` answers `Unable to connect to the server` | `kubectl` uses another kubeconfig or context. Check `echo $KUBECONFIG` and `kubectl config current-context`. A paused cluster doesn't answer either. |
+| `cluster staging has no services to route to yet` | The Service wasn't created. Run `kubectl get svc` and apply `hello.yaml` again. |
+| Pods stay `Pending` | The pods can't be scheduled. Run `kubectl describe pod <pod-name>` and read the events. |
+
+More in [Kubernetes troubleshooting](/kubernetes/troubleshooting).
+
+## Next steps
+
+- [Helm](/kubernetes/helm): install charts.
+- [Persistent volumes](/kubernetes/persistent-volumes) and [Load balancers](/kubernetes/load-balancers).
+- [Pull private images](/kubernetes/pull-private-images) from your Cloider registry project.
+- [WordPress on Kubernetes](/guides/wordpress-on-kubernetes): a complete example with a database and a volume.
+
+<FAQ items={[
+  {q: 'How do I create a Kubernetes cluster on Cloider?', a: 'In the dashboard, open Kubernetes, click Create Cluster, type a name and click Create cluster. From a terminal, run cloider cluster create staging --wait.'},
+  {q: 'How do I get the kubeconfig of a Cloider cluster?', a: 'In the dashboard, open the cluster row menu and click Kubeconfig to download it. With the CLI, run cloider cluster kubeconfig staging --merge --use to add it to ~/.kube/config as the context cloider-staging.'},
+  {q: 'Do I need to manage nodes?', a: 'No. Cloider clusters are serverless: you deploy workloads and pay for the CPU and memory they use. There are no node pools to size or upgrade.'},
+  {q: 'Can I use Ingress resources?', a: 'Ingress objects in a Cloider cluster are not served. To reach a Service from the internet, route a domain to it with a target, or use a Service of type LoadBalancer.'},
+  {q: 'Can I upgrade a cluster to a newer Kubernetes version?', a: 'A cluster keeps the version it was created with. To move to a newer version, create a new cluster and deploy your workloads to it.'},
+  {q: 'How many clusters can I have?', a: 'One at a time during the free trial. Paid accounts have no limit on the number of clusters.'}
+]} />

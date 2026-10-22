@@ -1,0 +1,198 @@
+---
+title: Resize a database to a larger plan
+sidebar_label: Resize
+sidebar_position: 11
+description: Move a Cloider PostgreSQL, MySQL, MongoDB or Redis database to a larger plan for more CPU, RAM and storage, keeping its data, host and password.
+keywords: [resize database, upgrade database plan, scale database, more storage, cloider db resize, database plan]
+---
+
+Resizing moves a database to a larger plan, which gives it more CPU, RAM and storage. The database keeps its data, host, port, user and password. It restarts once to apply the new size, so it is unavailable for a short time. A database can only be resized up: a smaller plan isn't possible, because a storage volume can grow but not shrink.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Direction** | Larger plans only: Hobby, Starter, Basic, Standard, Plus, Pro |
+| **What changes** | CPU, RAM and storage, to the new plan's sizes. For MySQL, also the server settings tuned per plan, such as the connection limit |
+| **What stays** | Data, host names, port, user, password, trusted sources, SSL mode, backups |
+| **Downtime** | One restart. The status is `Upgrading` until the database is `Ready` again |
+| **Requirement** | The database must be `Ready` (not paused) |
+| **Billing** | The new plan's price starts once the resize has been applied |
+
+See [plans and sizes](/databases/overview#plans-and-sizes) for the CPU, RAM and storage of each plan and engine.
+
+## When should I resize?
+
+The [Insights tab](/databases/insights) shows when a database is getting too small for its plan:
+
+- **Storage** used is getting close to the plan's storage. A full disk stops writes, so resize before it fills up.
+- **Memory** stays near the plan's RAM, or queries slow down as the data grows. For Redis, the whole dataset has to fit in RAM.
+- **CPU** stays near the plan's limit at busy times.
+- **Connections** come close to the maximum the server allows.
+
+## Resize a database
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the database and go to the **Resize** tab.
+2. Under **Upgrade Database**, the table lists your current plan (marked **Current**) and every larger plan, with its monthly and hourly price, RAM, CPUs and storage. The next plan up is selected.
+3. Select the plan you want and click **Resize**.
+4. The **Upgrade Database** dialog shows the old and new plan and the new monthly price, and warns that the database restarts and that resizing can't be reverted to a smaller plan. Click **Restart & resize**.
+
+<Screenshot
+  src="/img/screenshots/databases/detail-resize.webp"
+  url="/dashboard/databases/orders-db-p0q9zm"
+  alt="The Resize tab of orders-db showing the Upgrade Database table with the Standard plan marked Current and the larger Plus and Pro plans with their prices, RAM, CPUs and storage"
+  caption="Only larger plans can be selected. The current plan is shown for reference."
+/>
+
+The dashboard takes you to the Databases list, where the database shows **Upgrading** until it is **Ready** on the new plan. On the largest plan, the tab says "This database is already on the largest plan."
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider db resize orders-db --plan plus --wait
+```
+
+```text title="Output"
+Resize orders-db from Standard to Plus? It restarts the database. [y/N] y
+✓ Resizing orders-db to Plus
+✓ Database orders-db runs on Plus
+```
+
+`--plan` is required and takes the plan name in any letter case. Add `--yes` to skip the question in scripts. `--wait` waits up to `--timeout` (15 minutes by default).
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Change `plan` to a larger one:
+
+```hcl title="main.tf"
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+  plan   = "plus"   # was "standard"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+```
+
+```bash
+terraform apply
+```
+
+```text title="Output"
+  # cloider_database.orders will be updated in-place
+  ~ resource "cloider_database" "orders" {
+        id   = "p0q9zm"
+      ~ plan = "standard" -> "plus"
+        # (unchanged attributes hidden)
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+:::danger[A smaller plan replaces the database]
+Terraform can't resize a database down. Setting a smaller `plan` makes Terraform plan to **destroy the database and create a new, empty one**, which deletes its data and backups. Keep `prevent_destroy = true` on databases that hold data you care about, so Terraform refuses such a plan.
+:::
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X PUT https://cloider.com/api/databases/p0q9zm/plan \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"database_plan": "Plus"}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+`database_plan` takes the capitalized plan name. The status changes to `Upgrading`. Poll `GET /api/databases/p0q9zm/status` until it is `Ready`, then `database_plan` in `GET /api/databases/p0q9zm` shows the new plan.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+orders-db is running out of storage. Move it to the Plus plan.
+```
+
+```json title="Tool call: resize_database"
+{"database": "orders-db", "plan": "Plus", "wait": true}
+```
+
+</TabItem>
+</Tabs>
+
+## What happens during a resize?
+
+1. The database's status changes to `Upgrading`.
+2. Its storage volume is grown to the new plan's size. The data stays on the same volume.
+3. The database restarts with the new CPU and RAM. For MySQL, the server settings for the new plan, such as the connection limit and the buffer pool size, are applied at the same time.
+4. Once the database answers again and the volume has its new size, the status returns to `Ready` and billing switches to the new plan.
+
+During the restart, open connections are closed and new ones are refused. Most drivers and connection pools reconnect on their own. Plan a resize for a quiet moment, and make sure your app retries failed queries.
+
+## Move to a smaller plan
+
+There is no way to shrink a database in place. To move to a smaller plan, create a new database on that plan and copy the data over:
+
+1. [Create a database](/databases/create-a-database) with the same engine on the smaller plan, for example `orders-small`.
+2. Copy the data with the engine's tools. For PostgreSQL:
+
+   ```bash
+   PGPASSWORD="$(cloider db password orders-db)" \
+     pg_dump -h orders-db-p0q9zm.db.cloider.com -p 20417 -U orders_db_user -d orders-db -Fc -f orders.dump
+
+   PGPASSWORD="$(cloider db password orders-small)" \
+     pg_restore -h orders-small-h8j2kc.db.cloider.com -p 21105 -U orders_small_user -d orders-small \
+     --no-owner --no-privileges orders.dump
+   ```
+
+   For MySQL use `mysqldump` and `mysql`, for MongoDB `mongodump` and `mongorestore`, and for Redis a `redis-cli --rdb` snapshot or a key by key copy.
+
+3. Point your app at the new database, check that everything works, then [delete](/databases/pause-resume-and-delete) the old one.
+
+The new database has its own host, port, user and password.
+
+## Troubleshooting
+
+### A database can only be upgraded to a larger plan.
+
+The plan you chose is the current plan or a smaller one. Pick a larger plan, or [move to a smaller plan](#move-to-a-smaller-plan) by copying the data.
+
+### The database must be running to be upgraded.
+
+The database is paused, or busy with another change (`Creating`, `Starting`, `Upgrading`, `Pausing`). Resume it or wait until it is `Ready`, then resize.
+
+### Invalid database plan
+
+The plan name isn't one of `Hobby`, `Starter`, `Basic`, `Standard`, `Plus` or `Pro`. The API needs the capitalized name.
+
+### This plan isn't available at the moment!
+
+The plan can't be chosen for this engine right now. `cloider pricing` lists the plans on offer.
+
+### You have read-only access to this account, you can not upgrade databases!
+
+Your role or your API token is read-only. Use an account role or a token with write access.
+
+## Next steps
+
+- [Watch usage in Insights](/databases/insights)
+- [Plans and sizes](/databases/overview#plans-and-sizes)
+- [Pricing](/reference/pricing)
+
+<FAQ items={[
+  {q: 'Does resizing a database delete data?', a: 'No. Resizing to a larger plan keeps the data, host, port, user and password. The database restarts once to apply the new CPU, RAM and storage.'},
+  {q: 'How long is a database unavailable during a resize?', a: 'Only while it restarts. The status shows Upgrading during the whole resize and returns to Ready when the database is back on the new plan.'},
+  {q: 'Can I downgrade a database to a smaller plan?', a: 'No. Storage volumes can grow but not shrink, so a database can only move to a larger plan. To use a smaller plan, create a new database on it and copy the data with pg_dump, mysqldump, mongodump or a Redis snapshot.'},
+  {q: 'When does the new plan\'s price start?', a: 'When the resize has been applied and the database runs on the new plan. You are never billed for resources the database does not have yet.'},
+  {q: 'Can I resize a paused database?', a: 'No. Resume the database first. A resize needs the database to be Ready.'}
+]} />

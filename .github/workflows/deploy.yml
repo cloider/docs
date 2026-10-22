@@ -1,0 +1,67 @@
+# Builds the site on every push to main, pushes the image to the Cloider
+# registry and rolls it out to the docs Deployment on the prod cluster, which
+# serves docs.cloider.com.
+#
+# The only secret is KUBECONFIG, for the docs/github-deployer ServiceAccount
+# (k8s/). The registry login is the namespace's own pull secret, regcred.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: registry.cloider.com/cloider/docs
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # the whole history, for the pages' "last updated" dates
+          fetch-depth: 0
+
+      - name: Tag
+        id: tag
+        run: echo "tag=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Cluster access
+        env:
+          KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        run: |
+          echo "$KUBECONFIG_DATA" > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      # the Deployment's pull secret, so what is pushed is what it can pull
+      - name: Registry login
+        run: |
+          creds="$(kubectl -n docs get secret regcred -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d \
+            | jq -r '.auths["registry.cloider.com"] | if .auth then (.auth | @base64d) else "\(.username):\(.password)" end')"
+          echo "::add-mask::${creds#*:}"
+          printf '%s' "${creds#*:}" | docker login registry.cloider.com -u "${creds%%:*}" --password-stdin
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # no attestation manifests, the registry refuses to delete images they reference
+          provenance: false
+          tags: ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
+
+      # A JSON patch, so regcred replaces whatever pull secrets the Deployment had
+      # instead of being merged in next to them
+      - name: Roll out
+        run: |
+          kubectl -n docs patch deployment docs --type=json -p "$(jq -nc --arg image "$IMAGE:${{ steps.tag.outputs.tag }}" '[
+            {op: "add", path: "/spec/template/spec/imagePullSecrets", value: [{name: "regcred"}]},
+            {op: "replace", path: "/spec/template/spec/containers/0/image", value: $image}
+          ]')"
+          kubectl -n docs rollout status deployment/docs --timeout=5m

@@ -1,0 +1,123 @@
+---
+title: Cloider security model and shared responsibility
+sidebar_label: Security
+sidebar_position: 6
+description: "How Cloider keeps accounts secure: isolation, HTTPS and TLS, sign in, hashed API tokens, product credentials and the shared responsibility model."
+keywords: [cloider security, api token security, tls, https, trusted sources, shared responsibility, kubeconfig security, least privilege]
+---
+
+Security on Cloider is shared: Cloider secures the platform, the network edges and the credentials it issues, and you secure what you run on it and who you give access to. This page explains both halves and the controls you have.
+
+## At a glance
+
+| Area | What Cloider does | What you control |
+| --- | --- | --- |
+| **Sign in** | Google or GitHub sign in, 24 hour sessions in HTTP-only cookies | Your Google or GitHub account security, such as two-factor authentication |
+| **Access** | Checks the account and role on every request | Who you invite and with which role ([Accounts and roles](/concepts/accounts-and-roles)) |
+| **API tokens** | Stores only a hash, shows the token once, re-checks the creator's role on every request | Read vs Read & Write, where tokens are stored, revoking unused ones |
+| **Encryption in transit** | HTTPS for the dashboard, the API, apps, domains, buckets and the registry | Turning on SSL/TLS for databases and requiring it in clients |
+| **Network** | Isolates accounts and resources | Database [trusted sources](/databases/trusted-sources), public or private buckets and registry projects |
+| **Workloads** | Runs and patches the platform, control planes and database servers | Your code, images, dependencies, Kubernetes RBAC and secrets |
+
+## Account isolation
+
+Every resource belongs to exactly one account, and every API request is checked against the account it is made in. A request for a resource of another account answers `404 Not Found`, so ids from other accounts are never confirmed to exist.
+
+- **Kubernetes clusters** each have their own control plane (API server and cluster state). The kubeconfig of one cluster gives no access to another.
+- **Databases** each have their own server, users and password, and their own list of trusted sources.
+- **Buckets** are reached with access keys that belong to your account.
+- **Registry projects** are private by default and reached with tokens that belong to your account.
+
+## Signing in and sessions
+
+You sign in to the dashboard with **Google** or **GitHub**. Cloider never sees or stores a password. With GitHub, Cloider uses your primary, verified email address.
+
+- A dashboard session is kept in **HTTP-only cookies**, which page scripts can't read, and lasts **24 hours**.
+- **Logout** ends the session in that browser.
+- Your access is checked on every request: if an Owner or Admin removes or deactivates you, the account's API stops answering your requests at once.
+
+Protect the Google or GitHub account you sign in with, for example with two-factor authentication: it is the key to your Cloider account.
+
+## API tokens
+
+API tokens let the CLI, Terraform, the MCP server and your own code call the API. Their design limits what a leaked token can do:
+
+- **Shown once.** A token is displayed only when it is generated. Cloider stores only a hash of it, so nobody, including Cloider, can show it again.
+- **Recognizable.** Every token starts with `cldr_` followed by 40 random characters, so secret scanners and code reviews can spot a leaked one.
+- **One account.** A token works in the account it was created in, and nowhere else.
+- **Never more than its creator.** A token acts with its creator's current role, looked up on every request. Removing, deactivating or demoting the creator takes effect on their tokens immediately.
+- **Read or Read & Write.** A **Read** token can only make read requests, whatever its creator's role.
+- **Can't escalate.** No token can invite members, change roles or create other tokens: those actions only work in a signed in dashboard session. The only change a token can make to tokens is to revoke itself.
+- **Traceable.** **Access Control**, **API Tokens** shows each token's description, creator, permission and when it was last used.
+
+Read [API tokens](/account/api-tokens) to manage them.
+
+## Credentials for each product
+
+Besides API tokens, each product issues its own credentials. Treat all of them like passwords.
+
+| Credential | Grants | Shown | Where to manage it |
+| --- | --- | --- | --- |
+| **Kubeconfig** | Cluster admin access to one Kubernetes cluster | Any time, to every member | [Connect with kubectl](/kubernetes/connect-with-kubectl) |
+| **Database password** | The database user's access to one database | Any time, to every member | [Connect](/databases/connect) |
+| **S3 access key** | Access to buckets through any S3 tool | Secret shown once | [Access keys](/object-storage/access-keys) |
+| **Registry token** | Pull, or pull and push, to registry projects, optionally with an expiry | Secret shown once | [Registry tokens](/container-registry/tokens) |
+| **API token** | The Cloider API, as its creator | Shown once | [API tokens](/account/api-tokens) |
+
+Every member, including Restricted members, can read kubeconfigs and database passwords. Invite only people you trust with them.
+
+## Encryption in transit
+
+- **Dashboard and API**: `https://cloider.com` and `https://cloider.com/api` are HTTPS only.
+- **Apps and domains**: free `cloider.app` subdomains and your own domains are served over HTTPS with certificates Cloider manages. See [HTTPS certificates](/domains/https-certificates).
+- **Object storage**: the S3 endpoint `https://s3.eu-central-2.cloider.com` uses HTTPS.
+- **Container registry**: `registry.cloider.com` uses HTTPS.
+- **Databases**: PostgreSQL, MySQL, MongoDB and Redis databases support SSL/TLS, which you turn on per database. You can download the database's CA certificate to verify the server. See [SSL/TLS](/databases/ssl-tls).
+
+## Network access
+
+- **Databases** are reachable only from their **trusted sources**, the list of addresses and Cloider resources you allow. Keep the list as short as possible. See [Trusted sources](/databases/trusted-sources).
+- **Buckets** are private unless you make them public. A public bucket's files can be read by anyone with the URL. Use [bucket policies](/object-storage/bucket-policies) for finer rules.
+- **Registry projects** are private unless you make them public. Anyone can pull from a public project without a token; pushing always needs one.
+- **Cluster workloads** are only reachable from the internet when you expose them, with a [target](/domains/targets) or a `LoadBalancer` Service.
+
+## Shared responsibility
+
+| Cloider is responsible for | You are responsible for |
+| --- | --- |
+| The physical and virtual infrastructure under every product | The code, containers and images you deploy, and their dependencies |
+| Running and monitoring Kubernetes control planes | What runs inside your clusters: RBAC, service accounts, network policies, secrets |
+| Running database servers and taking daily backups | Database users, data, queries, trusted sources and enabling SSL/TLS |
+| HTTPS certificates for apps and domains | DNS records you create for your own domains |
+| Hashing API tokens and enforcing roles | Who you invite, which role you give, and storing tokens and keys safely |
+| Isolating accounts from each other | Making buckets or registry projects public, and bucket policies |
+
+## Best practices
+
+1. **Use the least access that works.** Give people the Restricted role unless they need to change things. Use **Read** API tokens for monitoring and `terraform plan`.
+2. **One token per use.** Create a separate token for each script, CI pipeline and computer, with a clear description, so you can revoke one without breaking the others.
+3. **Keep tokens out of code.** Pass them in environment variables (`CLOIDER_TOKEN`) or secret files (`CLOIDER_TOKEN_FILE`), and in your CI system's secret store. Never commit them.
+4. **Revoke what you don't use.** Delete tokens, access keys and registry tokens that haven't been used for a while; **Last used** tells you which.
+5. **Remove people who leave.** Removing a member deletes their tokens too.
+6. **Lock databases down.** Keep trusted sources short and turn on SSL/TLS.
+7. **Keep buckets and registry projects private** unless their content is meant to be public.
+8. **Use an MCP server in read-only mode** (`cloider mcp --read-only`) when an AI agent only needs to look. See [MCP safety and permissions](/mcp/safety-and-permissions).
+
+## Report a security issue
+
+If you find a security problem in Cloider, contact support@cloider.com or open a [support request](/account/support) with the type **Product Related Question or Issue**. Don't include working credentials in the report.
+
+## Next steps
+
+- [Accounts and roles](/concepts/accounts-and-roles)
+- [API tokens](/account/api-tokens)
+- [Trusted sources](/databases/trusted-sources)
+
+<FAQ items={[
+  {q: 'Does Cloider store my password?', a: 'No. You sign in with Google or GitHub, so Cloider never sees or stores a password.'},
+  {q: 'How are Cloider API tokens stored?', a: 'Only a hash of each token is stored. The token is shown once when it is generated and cannot be shown again, even by Cloider.'},
+  {q: 'What can a leaked API token do?', a: 'At most what its creator can do in that one account, and only reads if it is a Read token. It cannot invite members, change roles or create new tokens. Delete it in Access Control, API Tokens to stop it immediately.'},
+  {q: 'Is traffic to my app encrypted?', a: 'Yes. Apps are served over HTTPS on their free cloider.app subdomain and on custom domains, with certificates Cloider manages.'},
+  {q: 'Are database connections encrypted?', a: 'You can turn on SSL/TLS for each PostgreSQL, MySQL, MongoDB or Redis database and download its CA certificate to verify the server.'},
+  {q: 'Who is responsible for securing workloads in my cluster?', a: 'You are. Cloider runs and secures the control plane and infrastructure; the workloads, images, RBAC and secrets inside the cluster are yours to secure.'}
+]} />

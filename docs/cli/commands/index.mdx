@@ -1,0 +1,338 @@
+---
+title: Cloider CLI command reference, every command
+sidebar_label: All commands
+sidebar_position: 1
+description: Every cloider CLI command and subcommand in one place, grouped by product, with a one line description and a link to its full reference, flags and examples.
+keywords: [cloider commands, cloider cli reference, cloider command list, cloider help, cli cheat sheet, cloider subcommands]
+---
+
+This page lists every command of the `cloider` CLI, grouped by product, with a one line description and a link to its full reference with flags, examples and output. The CLI has 195 commands and subcommands; `cloider <command> --help` shows the same information in the terminal.
+
+## How to read the reference
+
+Every command page uses the same conventions:
+
+| Notation | Meaning |
+| --- | --- |
+| `cloider cluster create <name>` | `<name>` is a required argument |
+| `cloider cluster services [cluster]` | `[cluster]` is optional |
+| `<path>...` or `--trusted-source` (repeatable) | The argument or flag can be given several times |
+| `on\|off`, `public\|private` | Pick one of the values |
+| `[--]` | A `--` may separate cloider's flags from a remote command's own arguments (exec commands) |
+| `<cluster>`, `<database>`, `<app>` | A resource's name, label or id, see [how commands find a resource](/cli/output-and-scripting#how-do-commands-find-a-resource) |
+
+Commands that change a resource take `--wait` (`-w`) and `--timeout`; deletes ask for confirmation unless you pass `--yes`. Every command also takes the [global flags](/cli/configuration#global-flags):
+
+| Global flag | Description |
+| --- | --- |
+| `--profile <name>` | Profile to use (env `CLOIDER_PROFILE`) |
+| `--api-url <url>` | API to talk to (env `CLOIDER_API_URL`, default `https://cloider.com/api`) |
+| `--token-file <path>` | Read the API token from this file (env `CLOIDER_TOKEN_FILE`) |
+| `-o, --output <format>` | `table`, `wide` (adds ids), `json` or `yaml` |
+| `-q, --quiet` | Print only ids or names |
+| `--no-headers` | Print tables without the header row |
+| `--no-color` | Disable colors (env `NO_COLOR`) |
+| `-y, --yes` | Don't ask for confirmation |
+| `--debug` | Log API requests to stderr |
+| `-h, --help` | Help for any command |
+
+## Command pages
+
+<DocCardList />
+
+## Kubernetes clusters
+
+`cloider cluster` manages [serverless Kubernetes clusters](/kubernetes/overview). Alias: `clusters`.
+
+| Command | Description |
+| --- | --- |
+| [`cloider cluster`](/cli/commands/cluster) | Manage Kubernetes clusters |
+| [`cloider cluster create`](/cli/commands/cluster#cloider-cluster-create) | Create a cluster |
+| [`cloider cluster delete`](/cli/commands/cluster#cloider-cluster-delete) | Delete a cluster and everything in it |
+| [`cloider cluster exec`](/cli/commands/cluster#cloider-cluster-exec) | Run a command in the cluster's terminal (kubectl, helm), for scripts and AI agents |
+| [`cloider cluster get`](/cli/commands/cluster#cloider-cluster-get) | Show a cluster |
+| [`cloider cluster kubeconfig`](/cli/commands/cluster#cloider-cluster-kubeconfig) | Print a cluster's kubeconfig, write it to a file, or merge it into yours |
+| [`cloider cluster list`](/cli/commands/cluster#cloider-cluster-list) | List clusters |
+| [`cloider cluster pause`](/cli/commands/cluster#cloider-cluster-pause) | Pause a cluster, stopping its compute until it is resumed |
+| [`cloider cluster resume`](/cli/commands/cluster#cloider-cluster-resume) | Resume a paused cluster |
+| [`cloider cluster services`](/cli/commands/cluster#cloider-cluster-services) | List the services clusters expose, which domain targets can route to |
+| [`cloider cluster shell`](/cli/commands/cluster#cloider-cluster-shell) | Open a shell with kubectl inside a cluster |
+| [`cloider cluster status`](/cli/commands/cluster#cloider-cluster-status) | Print a cluster's status |
+
+## Databases
+
+`cloider db` manages PostgreSQL, MySQL, MongoDB and Redis [databases](/databases/overview). Aliases: `database`, `databases`, `dbs`.
+
+| Command | Description |
+| --- | --- |
+| [`cloider db`](/cli/commands/db) | Manage PostgreSQL, MySQL, Redis and MongoDB databases |
+| [`cloider db backups`](/cli/commands/db#cloider-db-backups) | List a database's backups, newest first |
+| [`cloider db cert`](/cli/commands/db#cloider-db-cert) | Print the CA certificate that signs a database's TLS certificate |
+| [`cloider db connect`](/cli/commands/db#cloider-db-connect) | Connect with the engine's own client (psql, mysql, redis-cli, mongosh) |
+| [`cloider db create`](/cli/commands/db#cloider-db-create) | Create a database |
+| [`cloider db delete`](/cli/commands/db#cloider-db-delete) | Delete a database and its data |
+| [`cloider db exec`](/cli/commands/db#cloider-db-exec) | Run a query or script with the database's client, for scripts and AI agents |
+| [`cloider db get`](/cli/commands/db#cloider-db-get) | Show a database and how to reach it |
+| [`cloider db insights`](/cli/commands/db#cloider-db-insights) | Show a database's resource usage today (-o json for the month) |
+| [`cloider db list`](/cli/commands/db#cloider-db-list) | List databases |
+| [`cloider db password`](/cli/commands/db#cloider-db-password) | Print a database user's password |
+| [`cloider db pause`](/cli/commands/db#cloider-db-pause) | Pause a database, keeping its data at a lower price until it is resumed |
+| [`cloider db rename`](/cli/commands/db#cloider-db-rename) | Change the name a database is shown and found by |
+| [`cloider db resize`](/cli/commands/db#cloider-db-resize) | Move a database to a larger plan (restarts it) |
+| [`cloider db restore`](/cli/commands/db#cloider-db-restore) | Restore a backup into a new database, leaving this one as it is |
+| [`cloider db resume`](/cli/commands/db#cloider-db-resume) | Resume a paused database |
+| [`cloider db shell`](/cli/commands/db#cloider-db-shell) | Open the engine's client inside the platform, already logged in |
+| [`cloider db ssl`](/cli/commands/db#cloider-db-ssl) | Require TLS on a database, or stop requiring it (restarts it) |
+| [`cloider db status`](/cli/commands/db#cloider-db-status) | Print a database's status |
+| [`cloider db trusted-sources`](/cli/commands/db#cloider-db-trusted-sources) | List or change who may connect to a database |
+
+## Object storage
+
+`cloider bucket` manages S3 compatible [buckets](/object-storage/overview), their files and access keys. Alias: `buckets`; `bucket key` also answers to `bucket keys`.
+
+| Command | Description |
+| --- | --- |
+| [`cloider bucket`](/cli/commands/bucket) | Manage object storage buckets, their files and access keys |
+| [`cloider bucket create`](/cli/commands/bucket#cloider-bucket-create) | Create a bucket |
+| [`cloider bucket delete`](/cli/commands/bucket#cloider-bucket-delete) | Delete a bucket and every file in it |
+| [`cloider bucket deleted`](/cli/commands/bucket#cloider-bucket-deleted) | List deleted files a versioned bucket can still restore |
+| [`cloider bucket download`](/cli/commands/bucket#cloider-bucket-download) | Download files from a bucket |
+| [`cloider bucket get`](/cli/commands/bucket#cloider-bucket-get) | Show a bucket, its endpoint and url |
+| [`cloider bucket key`](/cli/commands/bucket#cloider-bucket-key-list) | Manage S3 access keys for buckets |
+| [`cloider bucket key create`](/cli/commands/bucket#cloider-bucket-key-create) | Create an access key, its secret is shown once |
+| [`cloider bucket key delete`](/cli/commands/bucket#cloider-bucket-key-delete) | Delete an access key, anything using it loses access |
+| [`cloider bucket key list`](/cli/commands/bucket#cloider-bucket-key-list) | List access keys |
+| [`cloider bucket key update`](/cli/commands/bucket#cloider-bucket-key-update) | Change an access key's label, buckets or permission |
+| [`cloider bucket lifecycle`](/cli/commands/bucket#cloider-bucket-lifecycle) | Show or replace a bucket's lifecycle rules |
+| [`cloider bucket lifecycle clear`](/cli/commands/bucket#cloider-bucket-lifecycle) | Remove every lifecycle rule of a bucket |
+| [`cloider bucket lifecycle get`](/cli/commands/bucket#cloider-bucket-lifecycle) | List a bucket's lifecycle rules |
+| [`cloider bucket lifecycle set`](/cli/commands/bucket#cloider-bucket-lifecycle) | Replace every lifecycle rule of a bucket (-f - reads stdin) |
+| [`cloider bucket list`](/cli/commands/bucket#cloider-bucket-list) | List buckets |
+| [`cloider bucket ls`](/cli/commands/bucket#cloider-bucket-ls) | List a bucket's files and folders |
+| [`cloider bucket mkdir`](/cli/commands/bucket#cloider-bucket-mkdir) | Create an empty folder |
+| [`cloider bucket policy`](/cli/commands/bucket#cloider-bucket-policy) | Show, set or remove a bucket's S3 policy |
+| [`cloider bucket policy delete`](/cli/commands/bucket#cloider-bucket-policy) | Remove a bucket's policy |
+| [`cloider bucket policy get`](/cli/commands/bucket#cloider-bucket-policy) | Print a bucket's policy |
+| [`cloider bucket policy set`](/cli/commands/bucket#cloider-bucket-policy) | Replace a bucket's policy (-f - reads stdin) |
+| [`cloider bucket regions`](/cli/commands/bucket#cloider-bucket-regions) | List the regions a bucket can be created in |
+| [`cloider bucket restore`](/cli/commands/bucket#cloider-bucket-restore) | Make a previous version of a file the current one, or undelete it |
+| [`cloider bucket rm`](/cli/commands/bucket#cloider-bucket-rm) | Delete files, or whole folders with --prefix |
+| [`cloider bucket rm-versions`](/cli/commands/bucket#cloider-bucket-rm-versions) | Permanently delete versions of a file |
+| [`cloider bucket status`](/cli/commands/bucket#cloider-bucket-status) | Print a bucket's status |
+| [`cloider bucket upload`](/cli/commands/bucket#cloider-bucket-upload) | Upload files to a bucket |
+| [`cloider bucket usage`](/cli/commands/bucket#cloider-bucket-usage) | Show a bucket's storage use and cost this month |
+| [`cloider bucket versioning`](/cli/commands/bucket#cloider-bucket-versioning) | Show or change whether a bucket keeps previous versions of its files |
+| [`cloider bucket versions`](/cli/commands/bucket#cloider-bucket-versions) | List the versions a file has, newest first |
+| [`cloider bucket visibility`](/cli/commands/bucket#cloider-bucket-visibility) | Show or change whether anyone can read a bucket's files |
+
+## Container registry
+
+`cloider registry` manages [registry projects](/container-registry/overview), images, tokens and policies. Alias: `registries`; `registry token` also answers to `registry tokens`.
+
+| Command | Description |
+| --- | --- |
+| [`cloider registry`](/cli/commands/registry) | Manage container registry projects, their images and tokens |
+| [`cloider registry create`](/cli/commands/registry#cloider-registry-create) | Create a project |
+| [`cloider registry delete`](/cli/commands/registry#cloider-registry-delete) | Delete a project and every image in it |
+| [`cloider registry get`](/cli/commands/registry#cloider-registry-get) | Show a project, its address and storage |
+| [`cloider registry images`](/cli/commands/registry#cloider-registry-images) | List the images in a repository and their tags, newest first |
+| [`cloider registry immutability`](/cli/commands/registry#cloider-registry-immutability) | Protect tags from being deleted or pushed over |
+| [`cloider registry immutability add`](/cli/commands/registry#cloider-registry-immutability) | Add an immutability rule |
+| [`cloider registry immutability delete`](/cli/commands/registry#cloider-registry-immutability) | Delete an immutability rule |
+| [`cloider registry immutability list`](/cli/commands/registry#cloider-registry-immutability) | List a project's immutability rules |
+| [`cloider registry immutability update`](/cli/commands/registry#cloider-registry-immutability) | Change an immutability rule, keeping what isn't given |
+| [`cloider registry list`](/cli/commands/registry#cloider-registry-list) | List projects |
+| [`cloider registry login`](/cli/commands/registry#cloider-registry-login) | Log docker in to every project of the account |
+| [`cloider registry repos`](/cli/commands/registry#cloider-registry-repos) | List a project's repositories, most recently pushed first |
+| [`cloider registry retention`](/cli/commands/registry#cloider-registry-retention) | Delete old images automatically, with rules for what to keep |
+| [`cloider registry retention get`](/cli/commands/registry#cloider-registry-retention) | Show a project's retention rules and schedule |
+| [`cloider registry retention run`](/cli/commands/registry#cloider-registry-retention) | Run a project's retention now, or see what it would delete with --dry-run |
+| [`cloider registry retention runs`](/cli/commands/registry#cloider-registry-retention) | List retention runs, what a run did per repository, or per image |
+| [`cloider registry retention schedule`](/cli/commands/registry#cloider-registry-retention) | Change when a project's retention runs, in UTC |
+| [`cloider registry retention set`](/cli/commands/registry#cloider-registry-retention) | Replace every retention rule of a project (-f - reads stdin) |
+| [`cloider registry rm`](/cli/commands/registry#cloider-registry-rm) | Delete an image, and every tag on it |
+| [`cloider registry rm-repo`](/cli/commands/registry#cloider-registry-rm-repo) | Delete a repository and every image in it |
+| [`cloider registry set`](/cli/commands/registry#cloider-registry-set) | Change who can pull from a project, how much it may store, or whether its tags are immutable |
+| [`cloider registry status`](/cli/commands/registry#cloider-registry-status) | Print a project's status |
+| [`cloider registry token`](/cli/commands/registry#cloider-registry-token) | Manage the tokens docker logs in to projects with |
+| [`cloider registry token create`](/cli/commands/registry#cloider-registry-token-create) | Create a registry token, its secret is shown once |
+| [`cloider registry token delete`](/cli/commands/registry#cloider-registry-token-delete) | Delete a registry token, anything logged in with it loses access |
+| [`cloider registry token list`](/cli/commands/registry#cloider-registry-token-list) | List registry tokens |
+| [`cloider registry token update`](/cli/commands/registry#cloider-registry-token-update) | Change a registry token's label, projects or permission |
+| [`cloider registry untag`](/cli/commands/registry#cloider-registry-untag) | Take a tag off an image, the image stays |
+| [`cloider registry usage`](/cli/commands/registry#cloider-registry-usage) | Show a project's storage use and cost this month |
+
+## Apps and deploys
+
+`cloider app` and `cloider deploy` manage [apps](/apps/overview); `cloider git` connects the git providers apps deploy from. Alias: `apps`.
+
+| Command | Description |
+| --- | --- |
+| [`cloider app`](/cli/commands/app) | Manage apps: deploy, logs, environment, builds |
+| [`cloider app build`](/cli/commands/app#cloider-app-build-logs) | Read a build's logs or retry it |
+| [`cloider app build logs`](/cli/commands/app#cloider-app-build-logs) | Print a build's output, following it while it runs (default: the latest build) |
+| [`cloider app build retry`](/cli/commands/app#cloider-app-build-retry) | Run a failed build again |
+| [`cloider app build-args`](/cli/commands/app#cloider-app-build-args) | Read and change the build args the app's Dockerfile is built with |
+| [`cloider app build-args get`](/cli/commands/app#cloider-app-build-args) | Print one variable's value, secrets included |
+| [`cloider app build-args import`](/cli/commands/app#cloider-app-build-args) | Set variables from a .env file (- for stdin) |
+| [`cloider app build-args list`](/cli/commands/app#cloider-app-build-args) | List the app's variables |
+| [`cloider app build-args set`](/cli/commands/app#cloider-app-build-args) | Set variables, keeping the others |
+| [`cloider app build-args unset`](/cli/commands/app#cloider-app-build-args) | Remove variables |
+| [`cloider app build-env`](/cli/commands/app#cloider-app-build-env) | Read and change the variables a buildpack build runs with |
+| [`cloider app build-env get`](/cli/commands/app#cloider-app-build-env) | Print one variable's value, secrets included |
+| [`cloider app build-env import`](/cli/commands/app#cloider-app-build-env) | Set variables from a .env file (- for stdin) |
+| [`cloider app build-env list`](/cli/commands/app#cloider-app-build-env) | List the app's variables |
+| [`cloider app build-env set`](/cli/commands/app#cloider-app-build-env) | Set variables, keeping the others |
+| [`cloider app build-env unset`](/cli/commands/app#cloider-app-build-env) | Remove variables |
+| [`cloider app builds`](/cli/commands/app#cloider-app-builds) | List the app's builds, newest first |
+| [`cloider app create`](/cli/commands/app#cloider-app-create) | Create an app from a git repository (use `cloider deploy` for a directory) |
+| [`cloider app delete`](/cli/commands/app#cloider-app-delete) | Delete an app |
+| [`cloider app deploy`](/cli/commands/deploy) | Deploy a directory as an app, creating the app the first time |
+| [`cloider app env`](/cli/commands/app#cloider-app-env) | Read and change the app's environment variables |
+| [`cloider app env get`](/cli/commands/app#cloider-app-env) | Print one variable's value, secrets included |
+| [`cloider app env import`](/cli/commands/app#cloider-app-env) | Set variables from a .env file (- for stdin) |
+| [`cloider app env list`](/cli/commands/app#cloider-app-env) | List the app's variables |
+| [`cloider app env set`](/cli/commands/app#cloider-app-env) | Set variables, keeping the others |
+| [`cloider app env unset`](/cli/commands/app#cloider-app-env) | Remove variables |
+| [`cloider app exec`](/cli/commands/app#cloider-app-exec) | Run a command in the app's container, for scripts and AI agents |
+| [`cloider app get`](/cli/commands/app#cloider-app-get) | Show an app |
+| [`cloider app git`](/cli/commands/app#cloider-app-git) | Change the branch a git app deploys from, or its auto deploy |
+| [`cloider app link`](/cli/commands/app#cloider-app-link) | Link a directory to an app, so `cloider deploy` there deploys to it |
+| [`cloider app list`](/cli/commands/app#cloider-app-list) | List apps |
+| [`cloider app logs`](/cli/commands/app#cloider-app-logs) | Print the app's logs, -f to follow them |
+| [`cloider app open`](/cli/commands/app#cloider-app-open) | Open the app's URL in the browser |
+| [`cloider app pause`](/cli/commands/app#cloider-app-pause) | Stop the app serving, keeping its environment and image |
+| [`cloider app resume`](/cli/commands/app#cloider-app-resume) | Start a paused app again |
+| [`cloider app shell`](/cli/commands/app#cloider-app-shell) | Open a shell inside the app's container |
+| [`cloider app status`](/cli/commands/app#cloider-app-status) | Print the app's status |
+| [`cloider app update`](/cli/commands/app#cloider-app-update) | Change the app's port or start command |
+| [`cloider app usage`](/cli/commands/app#cloider-app-usage) | Show the app's usage and cost this month |
+| [`cloider deploy`](/cli/commands/deploy) | Deploy a directory as an app, creating the app the first time |
+| [`cloider git`](/cli/commands/git) | Connect GitHub, GitLab or Bitbucket, and browse what apps can deploy from |
+| [`cloider git branches`](/cli/commands/git#cloider-git-branches) | List a repository's branches |
+| [`cloider git connect`](/cli/commands/git#cloider-git-connect) | Connect a git account, in the browser |
+| [`cloider git disconnect`](/cli/commands/git#cloider-git-disconnect) | Disconnect a git account |
+| [`cloider git installations`](/cli/commands/git#cloider-git-installations) | List the connected accounts of a git provider |
+| [`cloider git repos`](/cli/commands/git#cloider-git-repos) | List the repositories a connected account gives access to |
+
+## Domains, DNS and routing
+
+`cloider domain`, `cloider dns` and `cloider target` manage [domains](/domains/overview), their DNS records and their routes. Aliases: `domains`, `targets`.
+
+| Command | Description |
+| --- | --- |
+| [`cloider domain`](/cli/commands/domain) | Manage free subdomains and custom domains |
+| [`cloider domain check`](/cli/commands/domain#cloider-domain-check) | Check whether a free subdomain can be claimed |
+| [`cloider domain create`](/cli/commands/domain#cloider-domain-create) | Claim a free subdomain, or add a domain you own |
+| [`cloider domain delete`](/cli/commands/domain#cloider-domain-delete) | Delete a domain, with its DNS records and targets |
+| [`cloider domain get`](/cli/commands/domain#cloider-domain-get) | Show a domain and its targets |
+| [`cloider domain list`](/cli/commands/domain#cloider-domain-list) | List domains, whatever their status |
+| [`cloider dns`](/cli/commands/dns) | Manage the DNS records of custom domains |
+| [`cloider dns create`](/cli/commands/dns#cloider-dns-create) | Add a DNS record |
+| [`cloider dns delete`](/cli/commands/dns#cloider-dns-delete) | Delete a DNS record |
+| [`cloider dns get`](/cli/commands/dns#cloider-dns-get) | Show a DNS record |
+| [`cloider dns list`](/cli/commands/dns#cloider-dns-list) | List a domain's DNS records |
+| [`cloider dns update`](/cli/commands/dns#cloider-dns-update) | Change a DNS record, keeping what isn't given |
+| [`cloider target`](/cli/commands/target) | Route a domain's paths to apps or cluster services |
+| [`cloider target create`](/cli/commands/target#cloider-target-create) | Route a path of a domain to an app or a cluster service |
+| [`cloider target delete`](/cli/commands/target#cloider-target-delete) | Delete a target |
+| [`cloider target list`](/cli/commands/target#cloider-target-list) | List a domain's targets |
+| [`cloider target update`](/cli/commands/target#cloider-target-update) | Change a target, keeping what isn't given |
+
+## Support
+
+`cloider support` opens and follows [support requests](/account/support).
+
+| Command | Description |
+| --- | --- |
+| [`cloider support`](/cli/commands/support) | Open and follow support requests |
+| [`cloider support attachment`](/cli/commands/support#cloider-support-attachment) | Download an attachment of a support request |
+| [`cloider support create`](/cli/commands/support#cloider-support-create) | Open a support request |
+| [`cloider support get`](/cli/commands/support#cloider-support-get) | Show a support request and its replies |
+| [`cloider support list`](/cli/commands/support#cloider-support-list) | List your support requests |
+| [`cloider support reply`](/cli/commands/support#cloider-support-reply) | Reply to a support request |
+
+## Account
+
+Usage, bills, prices, members, API tokens and the current identity. Aliases: `members`, `tokens`.
+
+| Command | Description |
+| --- | --- |
+| [`cloider usage`](/cli/commands/account#cloider-usage) | Show this month's cost so far, and the forecast, per resource |
+| [`cloider billing`](/cli/commands/account#cloider-billing) | List the account's monthly bills |
+| [`cloider billing show`](/cli/commands/account#cloider-billing-show) | Show a bill's items |
+| [`cloider pricing`](/cli/commands/account#cloider-pricing) | Show current prices |
+| [`cloider member`](/cli/commands/account#cloider-member-list) | See who has access to the account |
+| [`cloider member add`](/cli/commands/account#cloider-member-add-role-and-remove) | Add a member (in the dashboard) |
+| [`cloider member list`](/cli/commands/account#cloider-member-list) | List the account's owner and members |
+| [`cloider member remove`](/cli/commands/account#cloider-member-add-role-and-remove) | Remove a member (in the dashboard) |
+| [`cloider member role`](/cli/commands/account#cloider-member-add-role-and-remove) | Change a member's role (in the dashboard) |
+| [`cloider token`](/cli/commands/account#cloider-token-list) | See the account's API tokens |
+| [`cloider token create`](/cli/commands/account#cloider-token-create-and-revoke) | Generate an API token (in the dashboard) |
+| [`cloider token list`](/cli/commands/account#cloider-token-list) | List API tokens |
+| [`cloider token revoke`](/cli/commands/account#cloider-token-create-and-revoke) | Revoke an API token (in the dashboard, or `cloider logout` for the CLI's own) |
+| [`cloider whoami`](/cli/commands/account#cloider-whoami) | Show who the CLI acts as, and in which account |
+
+## Authentication and profiles
+
+Logging in and out, and switching between accounts. Alias: `profiles`.
+
+| Command | Description |
+| --- | --- |
+| [`cloider login`](/cli/commands/auth-and-profiles#cloider-login) | Log in through the browser, or with an API token |
+| [`cloider logout`](/cli/commands/auth-and-profiles#cloider-logout) | Revoke the CLI's token and forget it |
+| [`cloider profile`](/cli/commands/auth-and-profiles#cloider-profile) | Switch between accounts and apis |
+| [`cloider profile add`](/cli/commands/auth-and-profiles#cloider-profile-add) | Add or change a profile, e.g. one whose token is kept in a file of your own |
+| [`cloider profile list`](/cli/commands/auth-and-profiles#cloider-profile-list) | List profiles |
+| [`cloider profile remove`](/cli/commands/auth-and-profiles#cloider-profile-remove) | Forget a profile, without revoking its token (see logout) |
+| [`cloider profile use`](/cli/commands/auth-and-profiles#cloider-profile-use) | Make a profile the one in use |
+
+## The CLI itself
+
+Version, updates, shell completion and the MCP server.
+
+| Command | Description |
+| --- | --- |
+| [`cloider version`](/cli/commands/tooling#cloider-version) | Print the CLI's version |
+| [`cloider update`](/cli/commands/tooling#cloider-update) | Update the CLI to the latest version |
+| [`cloider update disable`](/cli/commands/tooling#cloider-update-disable-and-enable) | Stop updating automatically |
+| [`cloider update enable`](/cli/commands/tooling#cloider-update-disable-and-enable) | Update automatically again |
+| [`cloider update status`](/cli/commands/tooling#cloider-update-status) | Show the version, the latest one and whether auto-update is on |
+| [`cloider completion`](/cli/commands/tooling#cloider-completion) | Generate the autocompletion script for the specified shell |
+| [`cloider completion bash`](/cli/commands/tooling#cloider-completion) | Generate the autocompletion script for bash |
+| [`cloider completion fish`](/cli/commands/tooling#cloider-completion) | Generate the autocompletion script for fish |
+| [`cloider completion powershell`](/cli/commands/tooling#cloider-completion) | Generate the autocompletion script for powershell |
+| [`cloider completion zsh`](/cli/commands/tooling#cloider-completion) | Generate the autocompletion script for zsh |
+| [`cloider mcp`](/cli/commands/mcp) | Serve Cloider to AI agents as an MCP server |
+
+## Command aliases
+
+Most command groups also answer to a plural or a short form, and `list` and `delete` have short aliases:
+
+| Alias | Same as |
+| --- | --- |
+| `cloider clusters`, `cloider dbs`, `cloider database`, `cloider databases`, `cloider buckets`, `cloider registries`, `cloider apps`, `cloider domains`, `cloider targets`, `cloider members`, `cloider tokens`, `cloider profiles` | The singular group |
+| `ls` | `list`, in every group except `registry`, `registry token`, `bucket key` and `profile`. `bucket ls` lists files, not buckets |
+| `rm` | `delete` (clusters, databases, apps, domains, DNS records, targets, bucket keys, bucket policies, registry tokens, immutability rules, profiles `remove`) |
+| `show` | `get` (clusters, databases, apps) |
+| `cloider db firewall` | `cloider db trusted-sources` |
+| `cloider registry repositories` | `cloider registry repos` |
+| `cloider registry tags` | `cloider registry images` |
+| `cloider registry rm-image` | `cloider registry rm` |
+| `cloider app deploy` | `cloider deploy` |
+
+## Commands that work without logging in
+
+`cloider pricing`, `cloider version`, `cloider update` (and its subcommands), `cloider completion`, `cloider profile` and `cloider login` itself work without an API token. Everything else needs one; see [Authentication](/cli/authentication).
+
+## Next steps
+
+- [CLI overview](/cli/overview) for a guided first session.
+- [Output and scripting](/cli/output-and-scripting) for JSON, exit codes and CI.
+- [MCP tools](/mcp/tools) for the same commands as AI agent tools.
+
+<FAQ items={[
+  {q: 'How many commands does the Cloider CLI have?', a: 'The cloider CLI has 195 commands and subcommands, grouped into cluster, db, bucket, registry, app, deploy, git, domain, dns, target, support, the account commands (usage, billing, pricing, member, token, whoami), login, logout, profile, version, update, completion and mcp.'},
+  {q: 'How do I see the help for a command in the terminal?', a: 'Add --help to any command, for example cloider db create --help, or run cloider help db create. Both show the arguments, flags and examples.'},
+  {q: 'Which global flags does every command take?', a: '--profile, --api-url, --token-file, -o/--output, -q/--quiet, --no-headers, --no-color, -y/--yes, --debug and -h/--help.'}
+]} />

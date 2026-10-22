@@ -1,0 +1,179 @@
+---
+title: Cloider limits and quotas reference
+sidebar_label: Limits and quotas
+sidebar_position: 3
+description: "Every Cloider limit in one place: trial limits, per account maximums, name rules, app, bucket, registry, DNS, exec and support limits, rate limits."
+keywords: [cloider limits, cloider quotas, rate limit, name length, max api tokens, upload size limit, trial limits, dns ttl]
+---
+
+This page lists the limits Cloider enforces, grouped by area, with the error you get when you reach one. Limits that apply to one product only are also explained on that product's pages.
+
+## At a glance
+
+| Limit | Value |
+| --- | --- |
+| API rate limit | 10 requests a second and 100 a minute, per client |
+| Trial | 1 cluster, 1 database, 1 bucket, 1 registry project at a time |
+| API tokens per account | 50 |
+| S3 access keys per account | 50 |
+| Registry tokens per account | 50 |
+| App upload | 2000 files, 100 MB |
+| Dashboard file upload to a bucket | 5 GB per file |
+| Support attachments | 5 files of 10 MB per message |
+
+## Rate limits
+
+The API allows **10 requests a second and 100 requests a minute per client**. Requests over the limit are refused with HTTP `429 Too Many Requests` (or sometimes `503 Service Unavailable`).
+
+- The `cloider` CLI, and so the MCP server, retries a refused request up to 3 more times, waiting as long as the `Retry-After` header says (up to 60 seconds) or 1, 2 and 4 seconds otherwise. Reads are also retried on `502`, `503` and `504`; writes are not, since they may have gone through.
+- Your own code should do the same: back off on `429` and respect `Retry-After`.
+
+See [Rate limits](/api/rate-limits).
+
+## Trial limits
+
+While an account is on the free trial (the **Free** plan), it can have at most one of each of these at a time. Deleted resources don't count.
+
+| Resource | Limit | Error |
+| --- | --- | --- |
+| Kubernetes clusters | 1 | `Free plan users can not create more than one cluster. UPGRADE NOW!` |
+| Databases | 1 | `Free plan users can not create more than one database. UPGRADE NOW!` |
+| Buckets | 1 | `Free plan users can not create more than one bucket. UPGRADE NOW!` |
+| Registry projects | 1, not counting the apps project Cloider creates | `Free plan users can not create more than one project. UPGRADE NOW!` |
+
+The trial lasts 14 days. A suspended account can't create resources: `Your account is suspended. Upgrade to a paid plan to continue using our services.`
+
+## Account limits
+
+| Limit | Value | Error |
+| --- | --- | --- |
+| API tokens | 50 per account | `An account can have up to 50 API tokens, delete one you no longer use!` |
+| API token description | 1 to 100 characters | `Description can be up to 100 characters` |
+| S3 access keys | 50 per account | `An account can have up to 50 access keys, delete one you no longer use!` |
+| Registry tokens | 50 per account | `An account can have up to 50 registry tokens, delete one you no longer use!` |
+| Access key and registry token names | Up to 64 characters | `Name must not exceed 64 characters` |
+| Registry token expiry | 1 to 3650 days, or never | `Expiry must be between 1 and 3650 days, or never` |
+| Member email | One membership per email address and account | `Email address already added!` |
+
+## Names
+
+Names are lowercase. Where a rule says "letters", it means `a` to `z`.
+
+| Resource | Rules | Unique |
+| --- | --- | --- |
+| **Cluster** | Letters, digits and `-`; starts with a letter; doesn't start or end with `-`; at least 2 characters | No, the label gets `-1`, `-2`... |
+| **App** | Letters, digits and `-`; starts with a letter; doesn't start or end with `-`; 2 to 64 characters | No, the label gets `-1`, `-2`... |
+| **Database name** | Letters, digits and `-`; starts with a letter; doesn't start or end with `-`; 2 to 64 characters. Reserved: `mysql`, `information_schema`, `performance_schema`, `sys`, `postgres`, `template0`, `template1`, `admin`, `local`, `config` | No, the label gets `-1`, `-2`... |
+| **Database username** | Letters, digits and `_`; starts with a letter; doesn't start or end with `_`; 2 to 64 characters. Reserved: `root`, `mysql`, `postgres`, `admin` | |
+| **Database label** | Letters, digits and `-`; starts with a letter; 2 to 64 characters | |
+| **Bucket** | Letters, digits and `-`; starts and ends with a letter or digit; 3 to 63 characters; no dots. Reserved: the prefixes `xn--`, `sthree-`, `amzn-s3-demo-`, the suffixes `-s3alias`, `--ol-s3`, `--x-s3`, `--table-s3`, and the name `filemeta` | Across all of Cloider |
+| **Registry project** | Letters, digits and `-`; starts and ends with a letter or digit; no `--`; at least one letter; 3 to 63 characters. Reserved: `library` and names starting with `cloider` | Across all of Cloider |
+| **Free subdomain label** | Up to 63 characters | Across all of Cloider |
+| **Domain name** | Up to 253 characters, each label up to 63 | Across all of Cloider |
+| **Environment variable** | Starts with a letter or `_`, then letters, digits and `_` (uppercase allowed); up to 128 characters | Per app |
+
+The exact messages, such as `Cluster name can not start with numbers` or `Bucket name must not exceed 63 characters`, name the rule that failed.
+
+## Apps
+
+| Limit | Value | Error |
+| --- | --- | --- |
+| Source upload | 2000 files and 100 MB | `Only up to 2000 files can be uploaded, zip your project first.` |
+| Port | 1 to 65535 | |
+| Start command | One line, up to 1000 bytes | |
+| Environment variables | 100 per list (runtime variables, build variables or build arguments) | `An app can have at most 100 ...` |
+| One variable's value | 16 KB | `This value exceeds the allowed size of 16KB` |
+| All values of a list | 64 KB | `The ... exceed the allowed size of 64KB` |
+| Builds | One at a time per app | |
+| Log history | 100, 200, 500 or 1000 lines (`cloider app logs -n`) | |
+
+## Kubernetes clusters
+
+| Limit | Value |
+| --- | --- |
+| Kubernetes versions | The versions `GET /api/options` lists (currently 1.34, 1.33 and 1.32) |
+| Upgrades | A cluster keeps its version; create a new cluster for a newer one |
+| Ingress | Ingress objects in a cluster are not served; use targets or `LoadBalancer` Services |
+| Target to a cluster service | The service name, namespace and cluster name together must fit in a 63 character DNS label: `Service and namespace names are too long for this cluster (combined limit exceeded)` |
+
+## Databases
+
+| Limit | Value |
+| --- | --- |
+| Engines and versions | PostgreSQL 18, MySQL 9, MongoDB 8, Redis 8 |
+| Plans | Hobby, Starter, Basic, Standard, Plus, Pro, each with fixed CPU, RAM and storage |
+| Resize | To a larger plan only |
+
+## Object storage
+
+| Limit | Value | Error |
+| --- | --- | --- |
+| Dashboard upload | 5 GB per file | `Files over 5 GB can't be uploaded from the dashboard, use an S3 client!` |
+| Delete from the dashboard | 1000 files and folders per request | `Too many files at once, select fewer!` |
+| Delete a folder from the dashboard | Up to 10000 files | `The folder "<name>" holds over 10000 files, delete it with an S3 client!` |
+| Restore a version from the dashboard | 5 GB | `Versions over 5 GB can't be restored from the dashboard, use an S3 client!` |
+| Versions listed per file | The newest 1000 | |
+| Lifecycle rules | 100 per bucket; prefixes up to 1024 characters; day counts 1 to 36500 | `A bucket can have up to 100 lifecycle rules` |
+| Bucket policy | 16 KB of text | `The policy is over 16 KB` |
+
+S3 clients have no dashboard limits: use one for large files and bulk operations. See [S3 tools](/object-storage/s3-tools).
+
+## Container registry
+
+| Limit | Value | Error |
+| --- | --- | --- |
+| Project storage limit | 1 to 20 GB, 5 GB by default. Pushes beyond it are refused | `Storage limit must be between 1 and 20 GB` |
+| Retention rules | 15 per project | `A policy holds at most 15 rules.` |
+| Patterns per rule | 20 | `Enter at most 20 patterns` |
+
+## Domains and DNS
+
+| Limit | Value | Error |
+| --- | --- | --- |
+| DNS record TTL | 60 to 172800 seconds (the CLI defaults to 300) | `TTL must be between 60 and 172800 seconds` |
+| DNS record types | A, AAAA, CNAME, ALIAS, MX, TXT, NS, CAA, HTTPS, SPF, SRV, PTR | |
+| Targets | One per domain and path | `This path is already in use on this domain. Please choose a different path.` |
+
+## Running commands (exec)
+
+| Limit | Value | Error |
+| --- | --- | --- |
+| Timeout | 1 second to 1 hour; 600 seconds by default | `The timeout can be an hour at most!` |
+| Standard input | 2 MiB | `stdin is bigger than 2 MiB!` |
+| Command line | 64 KiB | |
+
+Exec isn't available to Restricted members (`You have read-only access to this account, you can not run commands!`) or with a Read token (`This API token is read only!`).
+
+## Support
+
+| Limit | Value | Error |
+| --- | --- | --- |
+| Subject | At least 4 characters | `Subject must not be shorter than 4 characters!` |
+| Description | At least 20 characters | `Description must not be shorter than 20 characters!` |
+| Attachments | 5 files per message | `Only maximum of 5 files are allowed per submission, zip the files if you need more!` |
+| Attachment size | 10 MB each | `File (<name>) exceeded the allowed size of 10MB!` |
+
+## Tool limits
+
+| Limit | Value |
+| --- | --- |
+| CLI `--wait` | 15 minutes by default, change it with `--timeout` |
+| MCP `wait` argument | Up to 15 minutes |
+| MCP `timeout_seconds` for exec tools | 1 to 3600, 600 by default |
+| Terraform cluster timeouts | 20 minutes for create, update and delete by default |
+| Dashboard session | 24 hours |
+
+## Next steps
+
+- [Pricing](/reference/pricing)
+- [Troubleshooting](/reference/troubleshooting)
+- [API rate limits](/api/rate-limits)
+
+<FAQ items={[
+  {q: 'What is the Cloider API rate limit?', a: '10 requests a second and 100 requests a minute per client. Requests over the limit get HTTP 429. The CLI retries them automatically, respecting the Retry-After header.'},
+  {q: 'How many resources can I create on the Cloider free trial?', a: 'One Kubernetes cluster, one database, one bucket and one registry project at a time. Apps, domains and DNS records have no trial limit.'},
+  {q: 'How many API tokens can a Cloider account have?', a: '50. The same limit applies to S3 access keys and to registry tokens.'},
+  {q: 'How big can an app upload be?', a: 'Up to 2000 files and 100 MB. Leave out dependencies and build output.'},
+  {q: 'What is the largest file I can upload to a bucket?', a: 'From the dashboard, 5 GB per file. S3 clients such as the AWS CLI or rclone have no dashboard limit and use multipart uploads for large files.'},
+  {q: 'Do bucket names have to be unique?', a: 'Yes, across all of Cloider, like registry project names and domains. Cluster, app and database names only need to be unique within the account, and even then Cloider adds -1, -2 to the label instead of refusing.'}
+]} />

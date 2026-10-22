@@ -1,0 +1,151 @@
+---
+title: cloider_options data source (Terraform)
+sidebar_label: cloider_options
+sidebar_position: 2
+description: Read what Cloider offers right now with the cloider_options data source, Kubernetes versions, database engines, versions and plans, subdomain roots and nameservers.
+keywords: [cloider_options, terraform kubernetes versions, database versions terraform, database plans terraform, cloider nameservers terraform, subdomain roots, terraform data source options]
+---
+
+The `cloider_options` data source reads what can be created on Cloider at the moment: the Kubernetes versions a cluster can run, the database engines with their versions, the database plans, the roots free subdomains go under, and the nameservers a custom domain points at. Use it to pick versions, validate inputs and print nameservers without hard coding them.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Arguments** | None |
+| **Returns** | `cluster_versions`, `database_engines`, `database_plans`, `subdomain_roots`, `nameservers` |
+| **Changes anything?** | No, it only reads |
+| **API** | `GET /api/options`, see [Account endpoints](/api/endpoints/account) |
+| **CLI equivalent** | [`cloider pricing`](/cli/commands/account) for plans |
+
+## Example usage
+
+### List the Kubernetes versions
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+output "kubernetes_versions" {
+  value = data.cloider_options.current.cluster_versions
+}
+```
+
+```text title="Output"
+kubernetes_versions = tolist([
+  "1.34",
+  "1.33",
+  "1.32",
+])
+```
+
+### Pick the newest PostgreSQL version
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+locals {
+  postgresql_versions = one([
+    for e in data.cloider_options.current.database_engines : e.versions if e.engine == "postgresql"
+  ])
+}
+
+resource "cloider_database" "orders" {
+  name    = "orders-db"
+  engine  = "postgresql"
+  version = local.postgresql_versions[0]
+
+  # A new version would replace the database, so keep the one it was created with
+  lifecycle {
+    ignore_changes = [version]
+  }
+}
+```
+
+### Validate a plan variable
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+variable "database_plan" {
+  type    = string
+  default = "starter"
+}
+
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+  plan   = var.database_plan
+
+  lifecycle {
+    precondition {
+      condition     = contains(data.cloider_options.current.database_plans, var.database_plan)
+      error_message = "database_plan has to be one of ${join(", ", data.cloider_options.current.database_plans)}."
+    }
+  }
+}
+```
+
+### Print the nameservers for a custom domain
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+resource "cloider_domain" "example" {
+  name = "example.com"
+}
+
+output "set_these_nameservers_at_your_registrar" {
+  value = data.cloider_options.current.nameservers
+}
+```
+
+```text title="Output"
+set_these_nameservers_at_your_registrar = tolist([
+  "ns1.cloider.com",
+  "ns2.cloider.com",
+  "ns3.cloider.com",
+  "ns4.cloider.com",
+])
+```
+
+### Build a free subdomain from the root
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+resource "cloider_domain" "preview" {
+  name = "acme-preview.${data.cloider_options.current.subdomain_roots[0]}"
+}
+```
+
+## Attribute reference
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `cluster_versions` | List of String | The Kubernetes versions a [`cloider_cluster`](/terraform/resources/cluster) can run, newest first |
+| `database_engines` | List of Object | The engines a [`cloider_database`](/terraform/resources/database) can run, see below |
+| `database_plans` | List of String | The plans a database can have, smallest first, lower case as `cloider_database` takes them: `hobby`, `starter`, `basic`, `standard`, `plus`, `pro` |
+| `subdomain_roots` | List of String | The roots a free subdomain [`cloider_domain`](/terraform/resources/domain) goes under, such as `cloider.app` |
+| `nameservers` | List of String | The nameservers to set at a custom domain's registrar |
+
+Each `database_engines` element has:
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `engine` | String | The engine, as `cloider_database`'s `engine` takes it: `postgresql`, `mysql`, `mongodb` or `redis` |
+| `versions` | List of String | Its versions, newest first |
+| `ssl` | Bool | Whether it supports SSL |
+
+The values come from the API every time Terraform reads the data source, so they change when Cloider adds or retires a version. Referring to `cluster_versions[0]` or `versions[0]` therefore needs `ignore_changes`, as in the examples, or a new release would replace the cluster or database.
+
+## Related
+
+- [`cloider_bucket_regions`](/terraform/data-sources/bucket-regions)
+- [`cloider_cluster`](/terraform/resources/cluster), [`cloider_database`](/terraform/resources/database), [`cloider_domain`](/terraform/resources/domain)
+- [Pricing](/reference/pricing) for what each database plan includes
+
+<FAQ items={[
+  {q: 'Which Kubernetes versions does Cloider offer?', a: 'The cloider_options data source\'s cluster_versions lists them, newest first. The same list is returned by GET /api/options and used by the CLI and the dashboard.'},
+  {q: 'How do I get Cloider\'s nameservers in Terraform?', a: 'Read data.cloider_options.<name>.nameservers. Set those nameservers at your domain\'s registrar to have Cloider answer DNS for a custom domain.'},
+  {q: 'Why should I use ignore_changes with versions from cloider_options?', a: 'Because the list changes when Cloider adds a version, and a different version replaces a cluster or database. ignore_changes = [version] keeps the version the resource was created with.'},
+]} />

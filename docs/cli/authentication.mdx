@@ -1,0 +1,478 @@
+---
+title: Log in to the Cloider CLI with a browser or API token
+sidebar_label: Authentication
+sidebar_position: 3
+description: Every way to authenticate the cloider CLI, from browser login to API tokens in CLOIDER_TOKEN or a file, plus token precedence, storage, profiles, logout and CI use.
+keywords: [cloider login, cloider api token, CLOIDER_TOKEN, CLOIDER_TOKEN_FILE, cloider logout, cloider whoami, cloider profiles, cli authentication, ci token]
+---
+
+The `cloider` CLI talks to the Cloider API with an **API token**, a secret that starts with `cldr_` and belongs to one Cloider account. `cloider login` gets a token for you through the browser and saves it. In CI and scripts you skip the login and hand the CLI a token through `CLOIDER_TOKEN`, `CLOIDER_TOKEN_FILE` or `--token-file`. This page explains every way to log in, which token wins when several are set, where tokens are stored, and how to work with several accounts.
+
+## At a glance
+
+| You want to | Use |
+| --- | --- |
+| Log in on your own computer | `cloider login` (opens the browser) |
+| Log in over SSH or on a server without a browser | `cloider login --no-browser` |
+| Log in with a token you already have | `cloider login --with-token < token.txt` |
+| Use a token kept in a file of your own | `cloider login --token-file ~/secrets/cloider` or `--token-file` on any command |
+| Authenticate in CI | `CLOIDER_TOKEN` or `CLOIDER_TOKEN_FILE`, no login needed |
+| Work in several accounts | One [profile](#work-with-several-accounts-using-profiles) per account: `cloider login --profile acme` |
+| See who the CLI acts as | `cloider whoami` |
+| Log out and revoke the token | `cloider logout` (`--all` for every profile) |
+
+## What is an API token?
+
+An API token is a long random secret that lets a program act in your Cloider account without your password. Each token:
+
+- belongs to **one account**. If you are a member of several accounts, you need one token per account.
+- is either **Read & Write** or **Read only**. A read only token can list and show resources but gets `This API token is read only!` when it tries to change anything. A token created by a member with the **Restricted** role is always read only.
+- acts with the **role** of the member who created it. See [Accounts and roles](/concepts/accounts-and-roles).
+- is listed in the dashboard under **Access Control**, **API Tokens**, where it can be revoked at any time. An account can have at most 50 tokens.
+
+A token can't add members, change roles or create other tokens. Those actions need a browser session in the dashboard, so a leaked token can't hand out more access. See [API tokens](/account/api-tokens).
+
+## Log in through the browser
+
+`cloider login` is the normal way to log in on your own computer. It opens the dashboard, where you pick the account and the access level, and the dashboard creates a token for the CLI.
+
+```bash
+cloider login
+```
+
+```text title="Output"
+Opening the browser to log in. If it doesn't open, visit:
+  https://cloider.com/cli/login?host=janes-macbook&port=53817&state=4qX0...
+⠋ Waiting for the browser…
+```
+
+In the browser:
+
+1. If you aren't signed in to Cloider, the page says **Sign in to continue**. Click **Continue with Google** or **Continue with GitHub**. You come back to the same page afterwards.
+2. The page **Authorize Cloider CLI** opens. Under **Account**, pick the account the CLI should work in. Your own account is listed as *Your Cloider account*; accounts shared with you show *Shared with you* and your role in them.
+3. Under **Access permissions**, choose **Read and write** to view and manage resources, or **Read only** to view resources without making changes. **Read and write** is unavailable for an account where your role is Restricted.
+4. Keep or edit the **Description**. It defaults to `Cloider CLI on <your computer's name>` (up to 100 characters) and is how the token is listed under **Access Control**, **API Tokens**.
+5. Click **Authorize CLI**. The page changes to **You're all set**, and you can close the tab.
+
+<Screenshot
+  src="/img/screenshots/get-started/cli-login.webp"
+  url="/cli/login"
+  alt="The Authorize Cloider CLI page with an Account selector, Access permissions offering Read and write or Read only, a Description field, and the Authorize CLI and Cancel buttons"
+  caption="The page cloider login opens. Authorization applies only to the selected account."
+/>
+
+The terminal confirms the login with the user, the account and the access level:
+
+```text title="Output"
+✓ Logged in as jane@example.com in account billing@acme.example (Read & Write)
+```
+
+<Screenshot
+  src="/img/screenshots/cli/login-done.webp"
+  url="/cli/login?result=done"
+  alt="The You're all set page: the Cloider CLI is signed in, and the tab can be closed"
+  caption="The page the browser lands on once the CLI has its token."
+/>
+
+If you click **Cancel** instead, the page shows **Authorization cancelled** and the command fails with `login was cancelled in the browser`. If nothing happens in the browser for 5 minutes, the command gives up with `no answer from the browser after 5m0s`.
+
+### How does the browser login work?
+
+The browser login never shows the token on screen and never sends it anywhere but your own machine:
+
+1. The CLI starts a small web server on `127.0.0.1` on a random port, and makes up a random one-time `state` value.
+2. It opens `https://cloider.com/cli/login` with the port, the state and your computer's short host name.
+3. When you click **Authorize CLI**, the dashboard creates the API token in the account you picked and redirects your browser to `http://127.0.0.1:<port>/callback` with the token and the state.
+4. The CLI accepts the token only if the state matches the one it made up, then sends the browser back to the **You're all set** page so the token doesn't stay in the address bar.
+5. The CLI checks the token by calling `GET /api/whoami`, saves it, and stops the local server.
+
+### Ask for a read only token
+
+`--read-only` preselects **Read only** on the page:
+
+```bash
+cloider login --read-only
+```
+
+Use it on shared machines, for monitoring scripts, or when you give an AI agent access through [`cloider mcp`](/cli/commands/mcp) and want it to look but not touch.
+
+## Log in without a browser on the machine (--no-browser)
+
+On a server, in a container or over SSH, the machine running the CLI often has no browser. `--no-browser` prints a link you can open on any other device, and you paste the token back:
+
+```bash
+cloider login --no-browser
+```
+
+```text title="Output"
+Open this link in a browser, authorize the CLI, and paste the token it shows:
+  https://cloider.com/cli/login?host=build-01
+
+Token:
+```
+
+1. Open the link on your laptop or phone and sign in if asked.
+2. Pick the account and access level and click **Authorize CLI**.
+3. The page shows **Copy your token** with the token and a **Copy token** button. It is shown only once.
+4. Paste it at the `Token:` prompt. The input is hidden, like a password.
+
+<Screenshot
+  src="/img/screenshots/cli/login-token.webp"
+  url="/cli/login?host=build-01"
+  alt="The Copy your token page showing a newly generated API token in a box with a Copy token button"
+  caption="With --no-browser the page shows the token once, to paste into the terminal."
+/>
+
+`--no-browser` needs an interactive terminal for the prompt. In a script use `--with-token` or `CLOIDER_TOKEN` instead.
+
+## Log in with an existing token (--with-token)
+
+If you already have a token, for example one created under **Access Control**, **API Tokens**, `--with-token` reads it from standard input:
+
+```bash
+cloider login --with-token < token.txt
+```
+
+```bash
+# From a password manager
+op read "op://Private/Cloider/token" | cloider login --with-token
+
+# From an environment variable, without it landing in your shell history
+printenv CLOIDER_NEW_TOKEN | cloider login --with-token
+```
+
+When you run `cloider login --with-token` in a terminal without piping anything in, it asks `Paste your API token:` and hides what you type.
+
+The CLI checks the token with the API before saving it. A token that is wrong or revoked fails with `that token is not valid, or was revoked` and exit code `3`. The token is then copied into the profile's token file in `~/.cloider`. `--with-token` and `--no-browser` can't be combined.
+
+## Use a token from a file (--token-file)
+
+`--token-file` is a [global flag](/cli/configuration#global-flags) that works in two ways:
+
+**On any command**, it uses the token in that file for this one command, without saving anything:
+
+```bash
+cloider --token-file ~/secrets/cloider-acme cluster list
+```
+
+**With `cloider login`**, it points the profile at that file, where it is. The CLI doesn't copy the token: every later command reads the file again, so you can rotate the token by replacing the file.
+
+```bash
+cloider login --token-file ~/secrets/cloider-acme
+```
+
+```text title="Output"
+✓ Logged in as jane@example.com in account billing@acme.example (Read & Write)
+```
+
+The file must contain only the token (surrounding whitespace and a trailing newline are fine). A path starting with `~/` is expanded to your home directory. On macOS and Linux, if anyone but you can read the file, the CLI warns like `ssh` does:
+
+```text
+! /home/jane/secrets/cloider-acme is readable by others (mode 644), run: chmod 600 /home/jane/secrets/cloider-acme
+```
+
+A token file you pointed a profile at is yours: `cloider logout` revokes the token but leaves the file in place.
+
+## Use a token from the environment (CLOIDER_TOKEN, CLOIDER_TOKEN_FILE)
+
+You don't have to log in at all. When one of these environment variables is set, every command uses it:
+
+| Variable | Contains | Typical use |
+| --- | --- | --- |
+| `CLOIDER_TOKEN` | The token itself | CI secrets exposed as variables, one-off scripts |
+| `CLOIDER_TOKEN_FILE` | The path of a file that contains the token | Docker and Kubernetes secrets mounted as files, CI systems with file variables |
+
+```bash
+export CLOIDER_TOKEN=cldr_xxxxxxxxxxxxxxxxxxxxxxxx
+cloider whoami
+```
+
+```bash
+export CLOIDER_TOKEN_FILE=/run/secrets/cloider
+cloider app list
+```
+
+An environment token takes precedence over the token you logged in with. `cloider login` warns about this when it finishes:
+
+```text
+! CLOIDER_TOKEN or CLOIDER_TOKEN_FILE is set, and takes precedence over this login.
+```
+
+## Which token does the CLI use?
+
+When several token sources are set, the CLI uses the **first** one in this order and ignores the rest:
+
+| Order | Source | Shown by `cloider whoami` as |
+| --- | --- | --- |
+| 1 | `--token-file <path>` flag | `--token-file <path>` |
+| 2 | `CLOIDER_TOKEN` environment variable | `CLOIDER_TOKEN` |
+| 3 | `CLOIDER_TOKEN_FILE` environment variable | `CLOIDER_TOKEN_FILE <path>` |
+| 4 | The current profile's token file, written by `cloider login` | `profile <name> (<path>)` |
+
+The profile is chosen separately, in this order: the `--profile` flag, the `CLOIDER_PROFILE` environment variable, the profile picked with `cloider profile use`, and finally the profile named `default`. A token from 1, 2 or 3 still uses the chosen profile's API URL.
+
+If none of the four gives a token, commands that need one fail with exit code `3`:
+
+```text
+Error: not logged in, run `cloider login` or set CLOIDER_TOKEN
+```
+
+A file named with `--token-file` or `CLOIDER_TOKEN_FILE` must exist; a missing or empty file is an error (`can't read the token from ...`). The profile's own token file missing just means you aren't logged in.
+
+## Where are tokens stored?
+
+`cloider login` writes the token in plain text into the CLI's configuration directory, `~/.cloider` (or the directory in `CLOIDER_CONFIG_DIR`):
+
+| Profile | Token file |
+| --- | --- |
+| `default` | `~/.cloider/token` |
+| Any other profile, for example `acme` | `~/.cloider/tokens/acme` |
+| A profile set up with `--token-file` | The file you named, recorded in `~/.cloider/config.json` |
+
+The CLI creates these files with mode `0600` (only you can read them) and the directories with mode `0700`, and it writes them atomically so a crash never leaves half a token behind. Because they are plain text files, you can also put a token there by hand:
+
+```bash
+mkdir -p ~/.cloider && chmod 700 ~/.cloider
+printf '%s\n' "cldr_xxxxxxxxxxxxxxxxxxxxxxxx" > ~/.cloider/token
+chmod 600 ~/.cloider/token
+```
+
+On Windows the directory is `%USERPROFILE%\.cloider`. The full layout is in [Configuration](/cli/configuration#the-configuration-directory).
+
+:::warning[Treat the token like a password]
+Anyone who has the token can act in your account with its access level. Don't commit it to git, don't paste it into issues, and revoke it under **Access Control**, **API Tokens** if it leaks.
+:::
+
+## What happens when you log in again?
+
+Logging in again for the same profile replaces its token. If the profile had a token the CLI wrote itself and the new one is different, the CLI first revokes the old one on Cloider, so unused tokens don't pile up against the account's limit of 50:
+
+```text title="Output"
+Revoked the token this profile used before.
+✓ Logged in as jane@example.com in account billing@acme.example (Read & Write)
+```
+
+The first profile you log in with becomes the current profile.
+
+## Check who you are logged in as (whoami)
+
+`cloider whoami` calls the API and shows who the CLI acts as, in which account, and where its token came from:
+
+```bash
+cloider whoami
+```
+
+```text title="Output"
+User:        jane@example.com
+Account:     billing@acme.example
+Role:        Admin
+Access:      Read & Write
+Token:       Cloider CLI on janes-macbook
+Profile:     default
+API:         https://cloider.com/api
+Token from:  profile default (/Users/jane/.cloider/token)
+```
+
+| Field | Meaning |
+| --- | --- |
+| **User** | The person who created the token |
+| **Account** | The account the token works in, named by its owner's email |
+| **Role** | Your role in that account: `Owner`, `Admin` or `Restricted` |
+| **Access** | `Read & Write`, or `Read` for a read only token or a Restricted member |
+| **Token** | The token's description |
+| **Profile**, **API**, **Token from** | Which profile, API URL and token source this command used |
+
+In scripts, use JSON:
+
+```bash
+cloider whoami -o json | jq -r '.account.email'
+```
+
+```text title="Output"
+billing@acme.example
+```
+
+## Work with several accounts using profiles
+
+A **profile** is a named pair of an API URL and a token. Because a token belongs to one account, you create one profile per account you work in. The profile called `default` exists without being created.
+
+Log in once per account, giving each login a profile name (letters, digits, `.`, `_` or `-`, up to 64 characters):
+
+```bash
+cloider login                    # the default profile, for example your own account
+cloider login --profile acme     # pick the Acme Inc account in the browser
+```
+
+```text title="Output"
+✓ Logged in as jane@example.com in account billing@acme.example (Read & Write)
+Saved as profile "acme". Switch to it with `cloider profile use acme`.
+```
+
+Then choose the profile per command, per shell, or for good:
+
+```bash
+# One command
+cloider --profile acme cluster list
+
+# Every command in this shell
+export CLOIDER_PROFILE=acme
+
+# From now on
+cloider profile use acme
+```
+
+List your profiles. The current one is marked with `*`:
+
+```bash
+cloider profile list
+```
+
+```text title="Output"
+NAME      CURRENT   ACCOUNT                API                       TOKEN
+acme      *         billing@acme.example   https://cloider.com/api   /Users/jane/.cloider/tokens/acme
+default             jane@example.com       https://cloider.com/api   /Users/jane/.cloider/token
+```
+
+A profile whose token file is missing shows `(not logged in)` in the **TOKEN** column. Every profile command (`list`, `use`, `add`, `remove`) is described in [Auth and profiles commands](/cli/commands/auth-and-profiles).
+
+### Point a profile at a token file of your own
+
+`cloider profile add` creates or changes a profile without logging in through the browser, for example one whose token lives in a secrets file:
+
+```bash
+cloider profile add ci --token-file /run/secrets/cloider
+cloider --profile ci whoami
+```
+
+## Log out
+
+`cloider logout` revokes the current profile's token on Cloider and deletes the token file the CLI wrote:
+
+```bash
+cloider logout
+```
+
+```text title="Output"
+✓ Logged out of profile default
+```
+
+To log out of every profile at once:
+
+```bash
+cloider logout --all
+```
+
+```text title="Output"
+✓ Logged out of profile acme
+✓ Logged out of profile default
+```
+
+What logout does depends on where the token came from:
+
+| Token source | What `cloider logout` does |
+| --- | --- |
+| A token file the CLI wrote (`~/.cloider/token`, `~/.cloider/tokens/<profile>`) | Revokes the token and deletes the file |
+| A token file you pointed a profile at with `--token-file` | Revokes the token, leaves the file: `Left <path> in place, remove it yourself if it should go.` |
+| `--token-file`, `CLOIDER_TOKEN` or `CLOIDER_TOKEN_FILE` on this command | Revokes that token instead of the profile's, and leaves it in place: `Revoked the token from CLOIDER_TOKEN` |
+
+`cloider logout` without any saved token prints `Not logged in.` and succeeds. `cloider profile remove <name>` is different: it forgets a profile and deletes the CLI's token file, but doesn't revoke the token on Cloider.
+
+## Use the CLI in CI/CD
+
+In CI you never run `cloider login`. Create a token in the dashboard, store it as a secret in your CI system, and expose it as `CLOIDER_TOKEN`.
+
+1. In the dashboard, open **Access Control**, **API Tokens** and create a token with a description like `GitHub Actions deploy`. Choose read only access if the pipeline only reads. See [API tokens](/account/api-tokens).
+2. Store the token as a secret in your CI system.
+3. Expose it as `CLOIDER_TOKEN` in the job that runs `cloider`.
+
+<Tabs groupId="ci">
+<TabItem value="github" label="GitHub Actions" default>
+
+```yaml title=".github/workflows/deploy.yml"
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOIDER_TOKEN: ${{ secrets.CLOIDER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Cloider CLI
+        run: |
+          curl -fsSL https://cloider.com/install.sh | CLOIDER_INSTALL_DIR="$HOME/.local/bin" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: cloider whoami
+      - run: cloider deploy --app blog
+```
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab CI">
+
+Add `CLOIDER_TOKEN` under **Settings**, **CI/CD**, **Variables** in your GitLab project, with **Masked** turned on.
+
+```yaml title=".gitlab-ci.yml"
+deploy:
+  image: debian:bookworm-slim
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+    - curl -fsSL https://cloider.com/install.sh | CLOIDER_INSTALL_DIR=/usr/local/bin sh
+  script:
+    - cloider whoami
+    - cloider deploy --app blog
+```
+
+</TabItem>
+<TabItem value="file" label="Mounted secret file">
+
+If your CI or orchestrator mounts secrets as files (Docker secrets, Kubernetes secrets, GitLab file variables), use `CLOIDER_TOKEN_FILE`:
+
+```bash
+export CLOIDER_TOKEN_FILE=/run/secrets/cloider
+cloider app list
+```
+
+</TabItem>
+</Tabs>
+
+Commands never prompt when there is no terminal, so pass `--yes` to commands that would ask for confirmation, such as deletes. More CI patterns, exit codes and JSON output are in [Output and scripting](/cli/output-and-scripting).
+
+## Troubleshooting
+
+| Message | Exit code | Cause and fix |
+| --- | --- | --- |
+| ``not logged in, run `cloider login` or set CLOIDER_TOKEN`` | `3` | No token was found. Log in, or set `CLOIDER_TOKEN`. Check the profile with `cloider profile list`. |
+| `Invalid or revoked API token!` followed by ``Run `cloider login` to log in again.`` | `3` | The token was revoked in the dashboard, or the member who created it was removed. Log in again. |
+| `This API token is read only!` followed by ``This token can only read. Run `cloider login` and pick Read & Write to make changes.`` | `5` | The token is read only, or your role in the account is Restricted. Log in again with **Read and write**, or ask an owner or admin to change your role. |
+| `This endpoint can't be used with an API token!` | `5` | The action is only allowed in the dashboard, for example managing members and tokens. |
+| ``not running in a terminal: use `cloider login --with-token`, or set CLOIDER_TOKEN`` | `2` | `cloider login` without flags needs a terminal to open the browser and wait. In scripts, use `--with-token` or `CLOIDER_TOKEN`. |
+| `that token is not valid, or was revoked` | `3` | The token you passed to `cloider login` doesn't work. Check for copy and paste mistakes. |
+| `login was cancelled in the browser` | `1` | You clicked **Cancel** on the authorize page. Run `cloider login` again. |
+| `no answer from the browser after 5m0s` | `1` | The browser didn't complete the login within 5 minutes. If the browser can't reach `127.0.0.1` on the machine running the CLI (for example over SSH), use `--no-browser`. |
+| `CLOIDER_TOKEN or CLOIDER_TOKEN_FILE is set, and takes precedence over this login.` | `0` | A warning, not an error. Unset the variable to use the login. |
+| **This link is incomplete** in the browser | | The link was cut off or not opened from the CLI. Run `cloider login` again. |
+| `invalid profile name "..."` | `2` | Profile names may contain only letters, digits, `.`, `_` and `-`. |
+
+## Next steps
+
+- [Configuration](/cli/configuration): every global flag, environment variable and file.
+- [Output and scripting](/cli/output-and-scripting): JSON output, exit codes and CI.
+- [Auth and profiles commands](/cli/commands/auth-and-profiles): the full reference for `login`, `logout` and `profile`.
+- [API tokens](/account/api-tokens): create and revoke tokens in the dashboard.
+
+<FAQ items={[
+  {q: 'How do I log in to the Cloider CLI?', a: 'Run cloider login. It opens the Authorize Cloider CLI page in your browser, where you pick the account and Read and write or Read only and click Authorize CLI. The dashboard creates an API token and hands it to the CLI, which saves it in ~/.cloider/token.'},
+  {q: 'How do I log in on a server without a browser?', a: 'Run cloider login --no-browser. Open the printed link on another device, authorize the CLI, copy the token the page shows and paste it at the Token: prompt.'},
+  {q: 'How do I authenticate the CLI in CI?', a: 'Create an API token under Access Control, API Tokens, store it as a CI secret and expose it as the CLOIDER_TOKEN environment variable. No cloider login is needed. CLOIDER_TOKEN_FILE works the same way with a token stored in a file.'},
+  {q: 'Which token wins when several are set?', a: 'The --token-file flag, then CLOIDER_TOKEN, then CLOIDER_TOKEN_FILE, then the current profile\'s token file written by cloider login. The first one that is set is used.'},
+  {q: 'Can I use the CLI with several Cloider accounts?', a: 'Yes. A token belongs to one account, so log in once per account with cloider login --profile <name>, then switch with cloider profile use <name>, the --profile flag or the CLOIDER_PROFILE environment variable.'},
+  {q: 'Where does the CLI store my token?', a: 'In plain text with mode 0600 in ~/.cloider/token for the default profile and ~/.cloider/tokens/<profile> for other profiles. CLOIDER_CONFIG_DIR moves the whole directory.'},
+  {q: 'Does cloider logout revoke the token?', a: 'Yes. It revokes the token on Cloider and deletes the token file the CLI wrote. A token file you supplied yourself is revoked but left in place.'},
+  {q: 'Can the CLI create API tokens or invite members?', a: 'No. Members and API tokens are managed in the dashboard only, so a leaked token can\'t grant more access. cloider token list and cloider member list show them.'}
+]} />

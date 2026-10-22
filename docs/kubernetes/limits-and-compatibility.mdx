@@ -1,0 +1,143 @@
+---
+title: Kubernetes limits and compatibility on Cloider
+sidebar_label: Limits and compatibility
+sidebar_position: 13
+description: Kubernetes versions, API compatibility, plan limits, naming rules and what works differently on Cloider's managed, serverless Kubernetes clusters.
+keywords: [kubernetes version, kubernetes compatibility, kubernetes limits, cloider limits, ingress not supported, ha control plane, kubectl version skew]
+---
+
+Cloider clusters run standard Kubernetes, so manifests, Helm charts and tools written for Kubernetes work on them. A few things work differently because Cloider manages the control plane, the nodes and the network for you. This page lists the versions, the limits that the platform enforces, and the differences to plan for.
+
+## Kubernetes versions
+
+| | |
+| --- | --- |
+| **Versions offered** | `1.34`, `1.33` and `1.32`, newest first. The newest is the default |
+| **Where the list comes from** | `GET /api/options` returns it as `cluster_versions`. The CLI's `--version`, the Terraform `version` attribute and the MCP `version` parameter are checked against it |
+| **Upgrades** | Not in place. A cluster keeps the version it was created with; create a new cluster to move to another version |
+| **Exact version** | Run `kubectl version` to see the patch version a cluster runs |
+
+```bash
+kubectl version
+```
+
+```text title="Output"
+Client Version: v1.34.1
+Server Version: v1.34.1
+```
+
+### Moving to a new version
+
+Since there is no in-place upgrade, a version change is a migration:
+
+1. Create a new cluster, for example `production-2`, with the new version.
+2. Deploy your workloads into it, ideally from the same manifests, Helm values or Terraform configuration.
+3. Copy the data of your PersistentVolumeClaims if you have any.
+4. Switch your [targets](/kubernetes/expose-services) to the new cluster's Services (`cloider target update <domain> <target-id> --cluster production-2 --service shop/web`) and update DNS records for load balancer IPs.
+5. [Delete](/kubernetes/delete-a-cluster) the old cluster.
+
+Check your manifests for APIs that were removed in the new version before you move, with the [Kubernetes deprecation guide](https://kubernetes.io/docs/reference/using-api/deprecation-guide/).
+
+## Tool compatibility
+
+| Tool | Notes |
+| --- | --- |
+| `kubectl` | Use a version within one minor version of the cluster's (the standard Kubernetes version skew policy) |
+| Helm | Helm 3. Preinstalled in the [browser terminal](/kubernetes/web-terminal-and-exec) |
+| Terraform | The `kubernetes` and `helm` providers, configured from `cloider_cluster`'s `kube_config`. The `helm` provider 3.x takes `kubernetes` as an attribute |
+| Lens, k9s, kubectx, Kustomize, Skaffold, Tilt, Argo CD CLI | Work with the kubeconfig like with any cluster. See [Connect with kubectl](/kubernetes/connect-with-kubectl) |
+| CI systems | Use the kubeconfig as a secret, or `cloider cluster exec` with an API token |
+
+## What works as on any Kubernetes cluster
+
+- The standard Kubernetes API: Deployments, StatefulSets, Jobs, CronJobs, Services, ConfigMaps, Secrets, ServiceAccounts, RBAC, CustomResourceDefinitions and custom resources.
+- **Cluster admin access** through the kubeconfig's client certificate.
+- **Cluster DNS**: Services resolve as `<service>.<namespace>.svc.cluster.local`.
+- **The metrics API**: the metrics server runs in every cluster, so `kubectl top` and the HorizontalPodAutoscaler work.
+- **PersistentVolumeClaims** with the storage classes Cloider provides. See [Persistent volumes](/kubernetes/persistent-volumes).
+- **Services of type `LoadBalancer`**, which get a public IP. See [Load balancers](/kubernetes/load-balancers).
+- **Helm charts and operators**. See [Helm](/kubernetes/helm).
+
+## What works differently
+
+### Ingress objects aren't served
+
+Ingress objects you create in a Cloider cluster aren't published, so they have no effect. To serve HTTP and HTTPS on a domain, create a [target](/kubernetes/expose-services), which routes a domain and path to a Service and provides the HTTPS certificate. For TCP and UDP, use a [LoadBalancer Service](/kubernetes/load-balancers).
+
+### Nodes are managed for you
+
+Your pods run on nodes that Cloider operates. `kubectl get nodes` lists the nodes your cluster can schedule onto, but you don't administer them: you can't add, remove, resize or log in to nodes, and there are no node pools. Nodes can change over time, so don't pin workloads to specific node names.
+
+Workloads built to administer nodes, such as node-level monitoring agents, CNI plugins, node provisioners or containers that need host access, are designed for clusters where you own the machines. On Cloider the nodes are managed for you, so design workloads that don't depend on host access.
+
+### A single control plane
+
+Every cluster has one control plane. A highly available control plane isn't available: the API rejects `is_ha: true` with `HA clusters are not supported at the moment!`. Your workloads can still run several replicas for availability.
+
+The control plane is sized for typical applications. Very large numbers of objects, or controllers that call the API server constantly, can make it slower.
+
+### The control plane is part of your compute bill
+
+The control plane and the cluster DNS are billed like your own pods, on the larger of their requests and their use, so a running cluster always has a small compute cost. Pausing the cluster stops it. See [How is a cluster billed?](/kubernetes/overview#how-is-a-cluster-billed).
+
+### Cloider components in `kube-system`
+
+Every cluster has a few components that Cloider installs and relies on, in `kube-system`: the cluster DNS, the metrics server and the `terminal` Deployment used by the browser terminal and `cloider cluster exec`. Don't delete or modify them.
+
+## Limits
+
+### Account and plan limits
+
+| Limit | Value |
+| --- | --- |
+| Clusters on the Free plan | 1 (paused clusters count, deleted ones don't) |
+| Clusters on a paid plan | No fixed limit in the API |
+| Creating clusters on a suspended account | Refused until the account is upgraded |
+| Read-only members and Read API tokens | Can list clusters, check status and download kubeconfigs, but not create, pause, resume or delete clusters, or run `exec` |
+
+### Names
+
+| Limit | Value |
+| --- | --- |
+| Cluster name characters | Lower case letters, digits and `-` |
+| Cluster name start and end | Starts with a letter, doesn't end with `-` |
+| Cluster name length | At least 2 characters |
+| Unique cluster names | Not required. Duplicate names get labels `name-1`, `name-2`, ... |
+| Target: Service name + namespace + cluster name | At most 57 characters together |
+| Target paths | Start with `/`; letters, digits and `/ _ . -` only |
+
+### Terminal and exec
+
+| Limit | Value |
+| --- | --- |
+| Browser terminal tabs | Up to 4 at a time |
+| `exec` stdin | 2 MiB |
+| `exec` timeout | Default 10 minutes, at most 1 hour |
+| Terminal URL token (`GET /api/clusters/{id}/terminal`) | Valid for about 2 minutes |
+| Terminal filesystem | Not persistent |
+
+### Operations
+
+| Operation | Limit |
+| --- | --- |
+| Rename a cluster | Not possible |
+| Change the Kubernetes version | Not possible in place |
+| Use `kubectl`, the kubeconfig, the terminal or `exec` | Only while the cluster is `Ready` |
+| CLI `--wait` | Waits up to `--timeout`, default 15 minutes |
+| Terraform | Create, update (pause and resume) and delete wait up to 20 minutes by default |
+
+Limits for other products are in [Limits and quotas](/reference/limits-and-quotas).
+
+## Next steps
+
+- [Troubleshooting](/kubernetes/troubleshooting) for the errors these limits produce.
+- [Expose services on a domain](/kubernetes/expose-services), the replacement for Ingress.
+- [Pricing](/reference/pricing).
+
+<FAQ items={[
+  {q: 'Which Kubernetes version does Cloider run?', a: 'New clusters can be created with Kubernetes 1.34, 1.33 or 1.32, newest first. kubectl version shows the exact server version of a cluster.'},
+  {q: 'Can I upgrade a Cloider cluster to a newer Kubernetes version?', a: 'Not in place. A cluster keeps the version it was created with. Create a new cluster with the newer version, deploy your workloads into it, switch your targets and DNS, then delete the old cluster.'},
+  {q: 'Is the Cloider Kubernetes control plane highly available?', a: 'No. Every cluster has a single control plane, and the API rejects requests for a highly available one. Run several replicas of your own workloads for availability.'},
+  {q: 'Can I use Ingress controllers on Cloider?', a: 'Ingress objects inside a Cloider cluster are not served. Use targets to route domains and paths to Services with automatic HTTPS, or a LoadBalancer Service for raw TCP and UDP.'},
+  {q: 'Can I manage the nodes of a Cloider cluster?', a: 'No. Nodes are operated by Cloider. kubectl get nodes lists them, but you cannot add, remove, resize or log in to them, and there are no node pools.'},
+]} />

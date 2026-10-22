@@ -1,0 +1,6 @@
+{
+  "shots": [
+    {"file": "cli/login-token.webp", "route": "/cli/login?host=build-01", "state": "the CLI login page opened without a port (cloider login --no-browser): the Copy your token view with the token box and the Copy token button, after authorizing", "actions": "keep the account and Read and write, click Authorize CLI"},
+    {"file": "cli/login-done.webp", "route": "/cli/login?result=done", "state": "the You're all set view the browser lands on after a successful cloider login", "actions": ""}
+  ]
+}

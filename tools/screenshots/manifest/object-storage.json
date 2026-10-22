@@ -1,0 +1,9 @@
+{
+  "shots": [
+    {"file": "object-storage/key-create.webp", "route": "/dashboard/buckets?tab=keys", "state": "Create Access Key dialog: Name ci-deploy, Buckets set to Only specific buckets with acme-assets picked, Permission Read & write", "actions": "Access Keys tab, click Create Access Key, fill the form"},
+    {"file": "object-storage/key-created.webp", "route": "/dashboard/buckets?tab=keys", "state": "Access key created dialog with the warning, the Access key, Secret key (fictional values), Endpoint and Region rows, and the AWS CLI profile snippet", "actions": "create the key from key-create.webp"},
+    {"file": "object-storage/deleted-files.webp", "route": "/dashboard/buckets/:bucket", "state": "Files tab of a versioned bucket with Show deleted files on, listing deleted files with their Deleted date and Restore buttons", "actions": "Files tab, turn on Show deleted files"},
+    {"file": "object-storage/lifecycle-rule-form.webp", "route": "/dashboard/buckets/:bucket", "state": "Add Lifecycle Rule dialog: ID expire-tmp, Prefix tmp/, Delete files after 7 days, Clean up unfinished uploads after 1 days, Enabled checked", "actions": "Lifecycle tab, click Add rule, fill the form"},
+    {"file": "object-storage/delete-dialog.webp", "route": "/dashboard/buckets/:bucket", "state": "Delete Bucket dialog, first step, warning that every file goes with the bucket and its name becomes free, with the I want to delete the bucket button", "actions": "Settings tab, click Delete bucket"}
+  ]
+}

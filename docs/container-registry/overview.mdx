@@ -1,0 +1,193 @@
+---
+title: Cloider Container Registry overview
+sidebar_label: Overview
+sidebar_position: 1
+description: The Cloider Container Registry stores private Docker and OCI images at registry.cloider.com. Learn projects, image names, tokens, limits and billing.
+keywords: [cloider container registry, private docker registry, oci registry, registry.cloider.com, docker push, container images]
+---
+
+The Cloider Container Registry is a private place to store your container images, at `registry.cloider.com`. You push images to it from your computer or your CI pipeline with `docker`, `podman` or any other OCI client, and pull them from [Kubernetes clusters](/kubernetes/overview), servers and laptops. Images are grouped in **projects**, and access is controlled with **registry tokens**.
+
+The registry speaks the standard OCI Distribution and Docker Registry HTTP API V2 protocol, so every tool that can talk to Docker Hub can talk to it. There is nothing to install.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **What it is** | A private, OCI and Docker Registry HTTP API V2 compatible container registry |
+| **Registry host** | `registry.cloider.com` |
+| **Image names** | `registry.cloider.com/<project>/<repository>:<tag>`, for example `registry.cloider.com/acme/api:1.0` |
+| **Unit you create** | A **project**, with a name that is unique across all of Cloider |
+| **Access** | Private by default. **Registry tokens** log in to push and pull. A project can allow **public pulls** without a token |
+| **Storage limit** | Per project, 1 to 20 GB, 5 GB by default. A push that would go past it is refused |
+| **Billing** | Pay-as-you-go for the storage your images use, per GB per month, billed by the hour. No charges for pushes, pulls or traffic |
+| **Clean up** | Untag or delete images, retention policies, and a nightly cleanup of untagged images |
+| **Protect tags** | Immutability rules, or the project wide **Immutable tags** setting |
+| **Managed with** | [Dashboard](/get-started/dashboard-tour), [CLI](/cli/commands/registry), [Terraform](/terraform/resources/registry), [REST API](/api/endpoints/registry), [MCP](/mcp/tools) |
+
+:::info[Beta]
+The registry is marked **Beta** in the dashboard sidebar. It is fully usable, and the features on these pages are the ones available today.
+:::
+
+## What is a container registry?
+
+A container registry is a server that stores container images and hands them out on request. When you run `docker push`, the image goes to a registry. When Kubernetes starts a pod, it pulls the image from a registry. Docker Hub is the best known public registry; the Cloider registry is a private one that belongs to your account.
+
+A few terms come up on every page of this section:
+
+| Term | What it means | Example |
+| --- | --- | --- |
+| **Image** | A packaged application: its files in **layers**, plus the configuration a container starts with. Built with `docker build` from a `Dockerfile` | the build of your `api` service |
+| **Repository** | A named collection of versions of one image. A repository name can contain slashes to group images | `api`, `web`, `team/worker` |
+| **Tag** | A human readable, movable label that points to one image in a repository | `1.0`, `latest`, `main-4f2a9c1` |
+| **Digest** | The content address of an image, a SHA-256 hash of its manifest. It never changes and identifies exactly one image | `sha256:4c7e...` (64 hex characters) |
+| **Manifest** | The small JSON document that lists an image's layers and configuration. The digest is the hash of the manifest | |
+| **Index** (multi-platform image) | A manifest that points to several images, one per platform, such as `linux/amd64` and `linux/arm64`. Built with `docker buildx` | `api:1.0` for amd64 and arm64 |
+| **Project** | The Cloider unit that holds repositories, with its own storage limit, access setting and policies | `acme` |
+
+A tag is like a branch name in git, and a digest is like a commit hash: a tag can be moved to a new image, a digest can't. Several tags can point to the same image, and an image can have no tag at all (it is then **untagged**).
+
+## How images are named on Cloider
+
+Every image in the registry has a full name made of the registry host, the project, the repository and a tag or digest:
+
+```text
+registry.cloider.com/acme/api:1.0
+└──────────┬───────┘ └┬─┘ └┬┘ └┬┘
+       host      project  repo  tag
+```
+
+| Part | Rules |
+| --- | --- |
+| Host | Always `registry.cloider.com` |
+| Project | The project's name. 3 to 63 lowercase letters, digits and `-`, with at least one letter. See [naming rules](/container-registry/create-a-project#project-naming-rules) |
+| Repository | You choose it when you tag and push. Lowercase letters, digits and the separators `.`, `_`, `__` and `-`, with `/` to nest, up to 255 characters. The repository is created by the first push to it |
+| Tag | Letters, digits, `_`, `.` and `-`, up to 128 characters, not starting with `.` or `-` |
+| Digest | `sha256:` followed by 64 hex characters. Pull by digest with `@`: `registry.cloider.com/acme/api@sha256:...` |
+
+The dashboard shows the prefix every image of a project starts with as the **Image prefix**, for example `registry.cloider.com/acme/`.
+
+## Projects
+
+A **project** is a namespace in the registry that you create and own. Its name becomes the first path segment of every image in it, so a project called `acme` holds images such as `registry.cloider.com/acme/api:1.0` and `registry.cloider.com/acme/web:2.3.1`.
+
+- **Names are global.** Project names are shared by every Cloider account, so you need a name nobody else has, and it can't be changed later. Pick something tied to your organization, like `acme` or `acme-staging`.
+- **Private or public pulls.** A project is private by default: pulling needs a token. With **Public pulls** turned on, anyone can pull its images without a token, and the project is listed publicly on the registry host. Pushing always needs a token.
+- **Storage limit.** Each project has a limit between 1 and 20 GB (5 GB by default). A push that would take the project past it is refused. You pay for what is stored, not for the limit.
+- **Policies.** Retention rules delete old images on a schedule, and immutability rules stop tags from being pushed over or deleted.
+
+Create one on [Create a project](/container-registry/create-a-project).
+
+### The apps project
+
+When you deploy your first [app](/apps/overview), Cloider creates an extra project in your account where every app's images are built into. It shows an **Apps** badge in the project list, and its name ends in `-apps`. This project is managed by Cloider:
+
+- It doesn't count toward the one project allowed on the free plan.
+- You can browse its repositories, but you can't delete it, its images or its policies. Cloider prunes old app images itself, always keeping what your apps run, and deleting an app deletes its images.
+- It has no **Policy** tab and no **Immutable tags** setting: Cloider manages its tags and cleanup.
+- Your apps get access to it automatically. You don't need a registry token for them, and nothing is added to your token list.
+
+The storage the apps project uses is billed like any other project.
+
+## Registry tokens and your registry username
+
+You log in to the registry with a **registry username** and the **secret** of a **registry token**:
+
+- The **username** belongs to your account and is the same for every token. The dashboard shows it on each project's **Overview** tab and when you create a token.
+- A **token** is a password with a scope: it reaches every project of the account or only the ones you pick, it can be **Pull only** or **Pull and push**, and it can expire. Its secret is shown once, when you create it.
+
+Docker keeps one login per registry host, and all projects share `registry.cloider.com`, so one token is what a machine logs in with. Give each machine, cluster or pipeline a token that covers every project it needs. `cloider registry login` creates such a token for your computer and logs docker in with it in one step. See [Registry tokens](/container-registry/tokens).
+
+## Which clients work with the registry?
+
+Any client that speaks the OCI Distribution or Docker Registry HTTP API V2 protocol works, including:
+
+- `docker` and `docker buildx` (multi-platform images and build cache)
+- `podman`, `buildah` and `skopeo`
+- `nerdctl` and `containerd`
+- `crane`, `oras` and `helm` for OCI artifacts
+- Kubernetes (any distribution), Docker Compose, Nomad and other runtimes that pull images
+- CI systems: GitHub Actions, GitLab CI, Bitbucket Pipelines, CircleCI, Jenkins
+
+See [Push and pull images](/container-registry/push-and-pull-images) for commands for each.
+
+## How is the container registry billed?
+
+The registry is billed by the storage your images take, per GB per month, charged by the hour. Cloider samples every project's stored bytes every few minutes and bills the average. Pushes, pulls and network traffic are free, and the storage limit itself costs nothing. Current prices are on [pricing](/reference/pricing), and [Usage and billing](/container-registry/usage-and-billing) shows how to follow a project's cost.
+
+## Limits
+
+| Limit | Value |
+| --- | --- |
+| Project name length | 3 to 63 characters |
+| Projects on the free plan | 1 (the apps project isn't counted) |
+| Storage limit per project | 1 to 20 GB, default 5 GB |
+| Registry tokens per account | 50 |
+| Token expiry | 1 to 3650 days, or never |
+| Retention rules per project | 15 |
+| Immutability rules per project | 15 (the **Immutable tags** setting uses one) |
+| Patterns per repository or tag selector | 20 |
+| Retention schedule | At most hourly, times in UTC |
+| Repository name length | 255 characters |
+| Tag length | 128 characters |
+
+See [Limits and quotas](/reference/limits-and-quotas) for every product.
+
+## A first push in one minute
+
+With the [CLI installed](/cli/install) and logged in:
+
+```bash
+cloider registry create acme --wait
+cloider registry login
+docker build -t registry.cloider.com/acme/api:1.0 .
+docker push registry.cloider.com/acme/api:1.0
+```
+
+Then list what you pushed:
+
+```bash
+cloider registry images acme api
+```
+
+The same steps in the dashboard and every other tool are on [Create a project](/container-registry/create-a-project) and [Push and pull images](/container-registry/push-and-pull-images).
+
+## Explore the container registry
+
+<Cards cols={2}>
+  <Card title="Create a project" href="/container-registry/create-a-project" icon="docker">
+    Choose a name, a storage limit and whether anyone can pull.
+  </Card>
+  <Card title="Push and pull images" href="/container-registry/push-and-pull-images" icon="download-outline">
+    docker, podman, buildx multi-platform builds and nerdctl.
+  </Card>
+  <Card title="Registry tokens" href="/container-registry/tokens" icon="key-variant">
+    Pull only or push tokens for people, CI and clusters.
+  </Card>
+  <Card title="Use with Kubernetes" href="/container-registry/use-with-kubernetes" icon="kubernetes">
+    Run your private images on Cloider clusters and anywhere else.
+  </Card>
+  <Card title="CI/CD pipelines" href="/container-registry/ci-cd" icon="source-branch">
+    Complete GitHub Actions and GitLab CI pipelines.
+  </Card>
+  <Card title="Repositories and tags" href="/container-registry/repositories-and-tags" icon="tag-outline">
+    Browse images, untag, delete and the nightly cleanup.
+  </Card>
+  <Card title="Retention policies" href="/container-registry/retention-policies" icon="history">
+    Delete old images automatically, with dry runs first.
+  </Card>
+  <Card title="Immutable tags" href="/container-registry/immutable-tags" icon="lock-outline">
+    Stop release tags from being pushed over or deleted.
+  </Card>
+</Cards>
+
+<FAQ items={[
+  {q: "What is the Cloider container registry address?", a: "The registry host is registry.cloider.com. Images are named registry.cloider.com/<project>/<repository>:<tag>, for example registry.cloider.com/acme/api:1.0."},
+  {q: "Is the Cloider registry compatible with Docker?", a: "Yes. The registry implements the OCI Distribution and Docker Registry HTTP API V2 protocol, so docker, podman, buildx, nerdctl, skopeo, crane, Kubernetes and CI systems work with it without any plugin."},
+  {q: "Are images in the registry private?", a: "Yes, by default. Pulling an image from a private project needs a registry token. You can turn on Public pulls for a project so anyone can pull its images without a token; pushing always needs a token."},
+  {q: "How much does the container registry cost?", a: "You pay only for the storage your images take, per GB per month, billed by the hour. Pushes, pulls and traffic are free, and the storage limit itself costs nothing. Current prices are on the pricing page."},
+  {q: "Why is my project name already taken?", a: "Project names are shared by every Cloider account, because they are part of the image address on the shared host registry.cloider.com. Choose a more specific name, such as your organization name with a suffix."},
+  {q: "Can I rename a project?", a: "No. A project name can't be changed once the project is created, because it is part of every image's address. Create a new project, push your images to it, and delete the old one."},
+  {q: "What is the project with the Apps badge?", a: "It is the apps project, created when you deploy your first app. Every app's images are built into it. Cloider manages it: you can browse it, but you can't delete it, its images or its policies, and it doesn't count toward the free plan's project limit."},
+  {q: "Can I store Helm charts or other OCI artifacts?", a: "The registry is OCI compatible, so OCI artifacts such as Helm charts pushed with helm push oci:// can be stored next to images. The dashboard lists them in the Repositories tab with their type."}
+]} />

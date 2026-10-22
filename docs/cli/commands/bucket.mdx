@@ -1,0 +1,791 @@
+---
+title: cloider bucket command reference
+sidebar_label: bucket
+sidebar_position: 4
+description: Reference for cloider bucket, to manage S3 compatible buckets, upload and download files, versions, policies, lifecycle rules and S3 access keys from the terminal.
+keywords: [cloider bucket, cloider bucket upload, cloider bucket download, cloider bucket key create, s3 cli, object storage cli, bucket policy, lifecycle rules]
+---
+
+`cloider bucket` manages your [S3 compatible object storage](/object-storage/overview): buckets and their settings, the files in them, previous versions of files, bucket policies, lifecycle rules, and the S3 access keys that let other tools reach your buckets.
+
+```text
+cloider bucket <command> [flags]
+```
+
+**Alias:** `cloider buckets`. Buckets are named by their bucket name or id. Files are moved with presigned URLs, so their bytes go straight between your machine and the bucket, never through the API.
+
+## Subcommands
+
+**Buckets**
+
+| Command | Description |
+| --- | --- |
+| [`cloider bucket list`](#cloider-bucket-list) | List buckets |
+| [`cloider bucket get`](#cloider-bucket-get) | Show a bucket, its endpoint and URL |
+| [`cloider bucket create`](#cloider-bucket-create) | Create a bucket |
+| [`cloider bucket delete`](#cloider-bucket-delete) | Delete a bucket and every file in it |
+| [`cloider bucket status`](#cloider-bucket-status) | Print a bucket's status |
+| [`cloider bucket usage`](#cloider-bucket-usage) | Show a bucket's storage use and cost this month |
+| [`cloider bucket regions`](#cloider-bucket-regions) | List the regions a bucket can be created in |
+| [`cloider bucket visibility`](#cloider-bucket-visibility) | Show or change whether anyone can read a bucket's files |
+| [`cloider bucket versioning`](#cloider-bucket-versioning) | Show or change whether a bucket keeps previous versions of its files |
+| [`cloider bucket policy get`, `set`, `delete`](#cloider-bucket-policy) | Show, set or remove a bucket's S3 policy |
+| [`cloider bucket lifecycle get`, `set`, `clear`](#cloider-bucket-lifecycle) | Show or replace a bucket's lifecycle rules |
+
+**Files**
+
+| Command | Description |
+| --- | --- |
+| [`cloider bucket ls`](#cloider-bucket-ls) | List a bucket's files and folders |
+| [`cloider bucket upload`](#cloider-bucket-upload) | Upload files to a bucket |
+| [`cloider bucket download`](#cloider-bucket-download) | Download files from a bucket |
+| [`cloider bucket rm`](#cloider-bucket-rm) | Delete files, or whole folders with `--prefix` |
+| [`cloider bucket mkdir`](#cloider-bucket-mkdir) | Create an empty folder |
+| [`cloider bucket versions`](#cloider-bucket-versions) | List the versions a file has, newest first |
+| [`cloider bucket restore`](#cloider-bucket-restore) | Make a previous version of a file the current one, or undelete it |
+| [`cloider bucket deleted`](#cloider-bucket-deleted) | List deleted files a versioned bucket can still restore |
+| [`cloider bucket rm-versions`](#cloider-bucket-rm-versions) | Permanently delete versions of a file |
+
+**Access keys**
+
+| Command | Description |
+| --- | --- |
+| [`cloider bucket key list`](#cloider-bucket-key-list) | List access keys |
+| [`cloider bucket key create`](#cloider-bucket-key-create) | Create an access key, its secret is shown once |
+| [`cloider bucket key update`](#cloider-bucket-key-update) | Change an access key's label, buckets or permission |
+| [`cloider bucket key delete`](#cloider-bucket-key-delete) | Delete an access key, anything using it loses access |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## cloider bucket list
+
+List the account's buckets with their region, status, access, size and creation time.
+
+```text
+cloider bucket list [flags]
+```
+
+```bash
+cloider bucket list
+```
+
+```text title="Output"
+NAME           REGION         STATUS   ACCESS    SIZE       CREATED
+acme-assets    eu-central-2   Ready    public    1.2 GiB    2026-09-05 10:20
+acme-backups   eu-central-2   Ready    private   48.7 GiB   2026-09-05 10:24
+```
+
+**SIZE** is sampled periodically, not live. `-o wide` adds an **ID** column after the name, `-q` prints the bucket names, and `-o json` the API's list (`hashed_id`, `bucket_name`, `region`, `public`, `status`, `size_bytes`, `size_sampled_at`, `endpoint`, `url`, `policy`, `created_at`). Unlike other `list` commands, `bucket list` has no `ls` alias, because [`cloider bucket ls`](#cloider-bucket-ls) lists files.
+
+MCP tool: `list_buckets`.
+
+## cloider bucket get
+
+Show one bucket, with its S3 endpoint and its public URL.
+
+```text
+cloider bucket get <bucket> [flags]
+```
+
+```bash
+cloider bucket get acme-assets
+```
+
+```text title="Output"
+Name:      acme-assets
+Region:    eu-central-2
+Status:    Ready
+Access:    public
+Size:      1.2 GiB (as of 2026-10-20 06:00)
+Endpoint:  https://s3.eu-central-2.cloider.com
+URL:       https://acme-assets.s3.eu-central-2.cloider.com
+Policy:    none
+Created:   2026-09-05 10:20
+```
+
+**Endpoint** is what S3 tools connect to; **URL** is where a public bucket's files can be read over HTTPS. **Policy** says `none`, or ``set, see `cloider bucket policy get acme-assets` ``. MCP tool: `get_bucket`.
+
+## cloider bucket create
+
+Create a bucket. Its name is global across Cloider and can't be changed later: 3 to 63 lowercase letters, digits and dashes.
+
+```text
+cloider bucket create <name> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--region` | string | the first region | Region code, see [`cloider bucket regions`](#cloider-bucket-regions) |
+| `--public` | bool | `false` | Let anyone read its files over HTTPS |
+| `--versioning` | bool | `false` | Keep previous versions of overwritten and deleted files |
+| `-w, --wait` | bool | `false` | Wait until the bucket is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider bucket create acme-backups --versioning
+```
+
+```text title="Output"
+✓ Created bucket acme-backups
+```
+
+```bash
+cloider bucket create acme-assets --public --wait
+```
+
+```text title="Output"
+✓ Created bucket acme-assets
+✓ Bucket acme-assets is ready
+```
+
+`-q` prints the bucket's name and `-o json` the full bucket object. See [Create a bucket](/object-storage/create-a-bucket). MCP tool: `create_bucket`.
+
+## cloider bucket delete
+
+Delete a bucket and every file in it.
+
+```text
+cloider bucket delete <bucket> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the bucket is gone |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The command asks you to type the bucket's name to confirm; pass `--yes` to skip it.
+
+```bash
+cloider bucket delete acme-old
+```
+
+```text title="Output"
+This permanently deletes bucket acme-old.
+Type acme-old to confirm: acme-old
+✓ Deleting bucket acme-old
+```
+
+See [Delete a bucket](/object-storage/delete-a-bucket) for buckets with data protection. MCP tool: `delete_bucket`.
+
+## cloider bucket status
+
+Print a bucket's status and nothing else.
+
+```text
+cloider bucket status <bucket> [flags]
+```
+
+```bash
+cloider bucket status acme-assets
+```
+
+```text title="Output"
+Ready
+```
+
+With `-o json` it prints `{"status": "Ready"}`.
+
+## cloider bucket usage
+
+Show a bucket's average storage this month, its cost so far, forecasts, and one line per day.
+
+```text
+cloider bucket usage <bucket> [flags]
+```
+
+```bash
+cloider bucket usage acme-backups
+```
+
+```text title="Output"
+Bucket:               acme-backups
+Month:                2026-10
+Average storage:      48.24 GiB
+Cost so far:          $0.09
+Forecast this month:  $0.93
+Forecast next month:  $0.94
+
+DATE         STORAGE     COST
+2026-10-01   47.90 GiB   $0.03
+2026-10-02   48.12 GiB   $0.03
+2026-10-03   48.70 GiB   $0.03
+```
+
+See [Usage and billing](/object-storage/usage-and-billing).
+
+## cloider bucket regions
+
+List the regions a bucket can be created in, with their S3 endpoints.
+
+```text
+cloider bucket regions [flags]
+```
+
+```bash
+cloider bucket regions
+```
+
+```text title="Output"
+CODE           NAME     ENDPOINT
+eu-central-2   Europe   https://s3.eu-central-2.cloider.com
+```
+
+MCP tool: `list_bucket_regions`.
+
+## cloider bucket visibility
+
+Show whether a bucket is public or private, or change it. A public bucket lets anyone read its files over HTTPS; a private one needs an access key or a presigned URL.
+
+```text
+cloider bucket visibility <bucket> [public|private] [flags]
+```
+
+```bash
+cloider bucket visibility acme-assets
+```
+
+```text title="Output"
+public
+```
+
+```bash
+cloider bucket visibility acme-backups private
+```
+
+```text title="Output"
+✓ Bucket acme-backups is now private
+```
+
+Making a bucket public asks `Anyone will be able to read every file in ... Continue? [y/N]`; pass `--yes` to skip it. `-o json` on the read form prints `{"public": true}`. See [Public and private buckets](/object-storage/public-and-private-buckets). MCP tool: `set_bucket_visibility`.
+
+## cloider bucket versioning
+
+Show whether a bucket keeps previous versions of its files, or turn it on or off. Once versioning has been on, turning it off **suspends** it: versions already kept stay until they are deleted or a lifecycle rule expires them.
+
+```text
+cloider bucket versioning <bucket> [on|off] [flags]
+```
+
+```bash
+cloider bucket versioning acme-backups
+```
+
+```text title="Output"
+Off
+```
+
+```bash
+cloider bucket versioning acme-backups on
+```
+
+```text title="Output"
+✓ Versioning of acme-backups is Enabled
+```
+
+The state is `Enabled`, `Suspended`, or `Off` for a bucket that was never versioned. `on` and `off` also accept `true`, `yes`, `enable`, `enabled` and `false`, `no`, `disable`, `disabled`. See [Versioning](/object-storage/versioning). MCP tools: `get_bucket_versioning`, `set_bucket_versioning`.
+
+## cloider bucket policy
+
+Show, set or remove a bucket's S3 bucket policy, a JSON document that grants or denies S3 actions to access keys. Principals in a policy are access key ids, see [`cloider bucket key list`](#cloider-bucket-key-list).
+
+| Command | Description |
+| --- | --- |
+| `cloider bucket policy get <bucket>` | Print a bucket's policy |
+| `cloider bucket policy set <bucket> -f <policy.json>` | Replace a bucket's policy (`-f -` reads stdin) |
+| `cloider bucket policy delete <bucket>` | Remove a bucket's policy. Alias: `rm` |
+
+`set` flags:
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --file` | string | (required) | Policy file, `-` for stdin |
+
+```bash
+cloider bucket policy get acme-assets
+```
+
+```json title="Output"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {"AWS": ["CLDRZ8Q4M2X7KD1PLW0B"]},
+      "Action": ["s3:GetObject"],
+      "Resource": ["arn:aws:s3:::acme-assets/*"]
+    }
+  ]
+}
+```
+
+A bucket without a policy prints `Bucket acme-assets has no policy.` (or `null` with `-o json`). The policy prints as JSON by default, and as YAML with `-o yaml`.
+
+```bash
+cloider bucket policy set acme-assets -f policy.json
+cat policy.json | cloider bucket policy set acme-assets -f -
+cloider bucket policy delete acme-assets --yes
+```
+
+```text title="Output"
+✓ Set the policy of acme-assets
+✓ Removed the policy of acme-assets
+```
+
+The file must be valid JSON (`policy.json is not valid json` otherwise, exit code `2`); the API checks the policy itself. `delete` asks for confirmation. See [Bucket policies](/object-storage/bucket-policies). MCP tools: `set_bucket_policy`, `delete_bucket_policy` (the policy is in `get_bucket`).
+
+## cloider bucket lifecycle
+
+Show or replace a bucket's lifecycle rules, which expire files, previous versions and unfinished uploads after a number of days.
+
+| Command | Description |
+| --- | --- |
+| `cloider bucket lifecycle get <bucket>` | List a bucket's lifecycle rules |
+| `cloider bucket lifecycle set <bucket> -f <rules.json>` | Replace every lifecycle rule of a bucket (`-f -` reads stdin) |
+| `cloider bucket lifecycle clear <bucket>` | Remove every lifecycle rule of a bucket |
+
+`set` flags:
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --file` | string | (required) | Rules file, `-` for stdin |
+
+A rules file is a JSON array of rules, or an object `{"rules": [...]}`. Each rule has:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | string | A name for the rule |
+| `prefix` | string | Only files whose key starts with this. Empty for the whole bucket |
+| `enabled` | bool | Whether the rule runs |
+| `expire_days` | int | Delete files this many days after they were written. `0` turns it off |
+| `noncurrent_days` | int | Delete previous versions this many days after they were replaced. `0` turns it off |
+| `abort_multipart_days` | int | Abort unfinished multipart uploads after this many days. `0` turns it off |
+
+```json title="rules.json"
+[
+  {"id": "tmp", "prefix": "tmp/", "enabled": true, "expire_days": 7, "noncurrent_days": 0, "abort_multipart_days": 1},
+  {"id": "old-versions", "prefix": "", "enabled": true, "expire_days": 0, "noncurrent_days": 30, "abort_multipart_days": 0}
+]
+```
+
+```bash
+cloider bucket lifecycle set acme-backups -f rules.json
+```
+
+```text title="Output"
+✓ acme-backups now has 2 lifecycle rule(s)
+```
+
+```bash
+cloider bucket lifecycle get acme-backups
+```
+
+```text title="Output"
+PREFIX   ENABLED   EXPIRE   NONCURRENT   ABORT UPLOADS
+tmp/     yes       7d       -            1d
+-        yes       -        30d          -
+```
+
+`-o wide` adds the rule **ID** column. `set` replaces every rule. If the bucket has rules set through the S3 API with options the CLI doesn't show, `get` warns about them and `set` and `clear` ask before replacing them. `clear` always asks for confirmation; pass `--yes` to skip. See [Lifecycle rules](/object-storage/lifecycle-rules). MCP tools: `get_bucket_lifecycle`, `set_bucket_lifecycle`.
+
+## cloider bucket ls
+
+List the files and folders in a bucket, or in a folder of it.
+
+```text
+cloider bucket ls <bucket> [prefix] [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<bucket>` | Name or id of the bucket |
+| `[prefix]` | Folder to list, for example `images/`. A trailing `/` is added if missing |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-r, --recursive` | bool | `false` | List everything under the prefix, not just its first level |
+
+```bash
+cloider bucket ls acme-assets
+```
+
+```text title="Output"
+KEY           SIZE      MODIFIED
+images/       DIR       -
+site/         DIR       -
+favicon.ico   4.2 KiB   2026-10-02 18:11
+robots.txt    67 B      2026-10-02 18:11
+```
+
+```bash
+cloider bucket ls acme-assets images/ -r
+```
+
+```text title="Output"
+KEY                     SIZE        MODIFIED
+images/hero.jpg         412.8 KiB   2026-10-12 09:03
+images/logo.png         18.5 KiB    2026-10-02 18:11
+images/icons/cart.svg   1.1 KiB     2026-10-02 18:11
+```
+
+`-q` prints the keys only. `-o json` prints `{"prefix", "folders", "objects"}` (no `folders` with `-r`), each object with `key`, `name`, `size` and `last_modified`. MCP tool: `list_bucket_objects`.
+
+## cloider bucket upload
+
+Upload files to a bucket, up to 5 GB each.
+
+```text
+cloider bucket upload <bucket> <path>... [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<bucket>` | Name or id of the bucket |
+| `<path>...` | One or more local files, or directories with `-r` |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--prefix` | string | the bucket's root | Folder to upload into, for example `images/` |
+| `--key` | string | | Exact key for a single file |
+| `-r, --recursive` | bool | `false` | Upload directories with what is in them |
+
+A file lands at `<prefix><file name>`, or at `--key`. With `-r`, a directory's contents land under the prefix, keeping their paths inside the directory (`.DS_Store` files are skipped). The content type is set from the file extension.
+
+```bash
+cloider bucket upload acme-assets logo.png --prefix images/
+```
+
+```text title="Output"
+✓ logo.png → images/logo.png
+```
+
+```bash
+cloider bucket upload acme-assets ./dist -r --prefix site/
+```
+
+```text title="Output"
+✓ dist/index.html → site/index.html
+✓ dist/assets/app.js → site/assets/app.js
+✓ dist/assets/app.css → site/assets/app.css
+✓ Uploaded 3 files (148.6 KiB) to acme-assets
+```
+
+```bash
+cloider bucket upload acme-backups dump.sql.gz --key orders/2026-10-20.sql.gz
+```
+
+`-q` prints each uploaded key. A file over 5 GB is refused with a hint to use an S3 tool.
+
+:::tip[Large syncs]
+Each file costs one API call, and the API allows 100 a minute, so the CLI paces transfers. For many files or very large ones, create an access key with `cloider bucket key create --label sync --print-env` and use any S3 tool, such as `aws s3 sync` or `rclone`, against the bucket's endpoint. See [S3 tools](/object-storage/s3-tools).
+:::
+
+MCP tool: `upload_bucket_objects`.
+
+## cloider bucket download
+
+Download files from a bucket.
+
+```text
+cloider bucket download <bucket> <key>... [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<bucket>` | Name or id of the bucket |
+| `<key>...` | One or more keys, or folder prefixes with `-r` |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-d, --dest` | string | the current directory | Where to write: a file or directory, `-` for stdout |
+| `--version-id` | string | | Download this version of the file (one file only) |
+| `-r, --recursive` | bool | `false` | Download everything under the given folder prefixes |
+
+One file is written to `--dest` (a file name, a directory, or `-` for stdout), else into the current directory under its own name. Several files, or `-r` with folder prefixes, are written into the `--dest` directory keeping their paths below the prefix. Files are written through a temporary file, so an interrupted download never leaves half a file, and a key containing `../` can't write outside the destination.
+
+```bash
+cloider bucket download acme-assets images/logo.png
+```
+
+```text title="Output"
+✓ images/logo.png → logo.png
+```
+
+```bash
+cloider bucket download acme-backups orders/2026-10-20.sql.gz --dest - | gunzip | head
+cloider bucket download acme-assets site/ -r --dest ./site
+cloider bucket download acme-backups orders/latest.sql.gz --version-id Ux8Lw0q7M2Nn1pZ5t9QvKc4RbYdE6sAa
+```
+
+MCP tool: `download_bucket_objects`.
+
+## cloider bucket rm
+
+Delete files, or everything under a folder with `--prefix`.
+
+```text
+cloider bucket rm <bucket> [key]... [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--prefix` | string, repeatable | | Delete everything under this folder |
+
+Deleting folders asks `Delete everything under ... in ...? [y/N]`; pass `--yes` to skip it. Deleting named files doesn't ask. An empty `--prefix` (the whole bucket) is refused: delete the bucket instead.
+
+```bash
+cloider bucket rm acme-assets images/old.png images/older.png
+```
+
+```text title="Output"
+✓ Deleted 2 files from acme-assets
+```
+
+```bash
+cloider bucket rm acme-assets --prefix tmp/ --yes
+```
+
+```text title="Output"
+✓ Deleted 1 folder from acme-assets
+```
+
+In a bucket with versioning on, a deleted file keeps its versions: see [`bucket deleted`](#cloider-bucket-deleted) and [`bucket restore`](#cloider-bucket-restore). MCP tool: `delete_bucket_objects`.
+
+## cloider bucket mkdir
+
+Create an empty folder.
+
+```text
+cloider bucket mkdir <bucket> <folder/> [flags]
+```
+
+```bash
+cloider bucket mkdir acme-assets uploads/2026
+```
+
+```text title="Output"
+✓ Created uploads/2026/ in acme-assets
+```
+
+MCP tool: `create_bucket_folder`.
+
+## cloider bucket versions
+
+List the versions a file has in a versioned bucket, newest first.
+
+```text
+cloider bucket versions <bucket> <key> [flags]
+```
+
+```bash
+cloider bucket versions acme-backups orders/latest.sql.gz
+```
+
+```text title="Output"
+VERSION ID                         SIZE       MODIFIED
+Ux8Lw0q7M2Nn1pZ5t9QvKc4RbYdE6sAa   48.2 MiB   2026-10-20 03:00   latest
+8sQmV2rT5xLpK0wN3jHcYbZ7fD1gE4uA   47.9 MiB   2026-10-19 03:00
+```
+
+A delete marker shows `deleted` as its size. When a file has many versions, only the newest are listed, with a warning. MCP tool: `list_bucket_object_versions`.
+
+## cloider bucket restore
+
+Make a previous version of a file the current one. Given the version id of a delete marker (see [`bucket deleted`](#cloider-bucket-deleted)), the file is undeleted.
+
+```text
+cloider bucket restore <bucket> <key> --version-id <id> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--version-id` | string | (required) | Version to restore, see [`bucket versions`](#cloider-bucket-versions) |
+
+```bash
+cloider bucket restore acme-backups orders/latest.sql.gz --version-id 8sQmV2rT5xLpK0wN3jHcYbZ7fD1gE4uA
+```
+
+```text title="Output"
+✓ Restored orders/latest.sql.gz in acme-backups
+```
+
+MCP tool: `restore_bucket_object_version`.
+
+## cloider bucket deleted
+
+List deleted files that a bucket with versioning can still restore, with the version id of each file's delete marker.
+
+```text
+cloider bucket deleted <bucket> [prefix] [flags]
+```
+
+```bash
+cloider bucket deleted acme-assets images/
+```
+
+```text title="Output"
+KEY                 DELETED            MARKER VERSION ID
+images/old/         DIR                -
+images/banner.png   2026-10-18 12:30   Qm3Zt8Lw1Nn5pX7r9VbKc2RyYdE4sAa0
+```
+
+Undelete one with `cloider bucket restore acme-assets images/banner.png --version-id Qm3Zt8Lw1Nn5pX7r9VbKc2RyYdE4sAa0`. MCP tool: `list_deleted_bucket_objects`.
+
+## cloider bucket rm-versions
+
+Permanently delete specific versions of a file. This is the only way, besides lifecycle rules, to destroy data kept by versioning.
+
+```text
+cloider bucket rm-versions <bucket> <key> --version-id <id>... [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--version-id` | string, repeatable | (required) | Version to delete |
+
+The command asks `Permanently delete N versions of ...? This can't be undone. [y/N]`; pass `--yes` to skip it.
+
+```bash
+cloider bucket rm-versions acme-backups orders/latest.sql.gz --version-id 8sQmV2rT5xLpK0wN3jHcYbZ7fD1gE4uA --yes
+```
+
+```text title="Output"
+✓ Deleted 1 version of orders/latest.sql.gz
+```
+
+Buckets with data protection may refuse to delete versions. See [Data protection](/object-storage/data-protection). MCP tool: `delete_bucket_object_versions`.
+
+## cloider bucket key list
+
+List the account's S3 access keys, which buckets each opens and its permission.
+
+```text
+cloider bucket key list [flags]
+```
+
+**Alias:** the group is also `cloider bucket keys`.
+
+```bash
+cloider bucket key list
+```
+
+```text title="Output"
+ACCESS KEY             LABEL           BUCKETS       PERMISSION     STATUS   CREATED
+CLDRZ8Q4M2X7KD1PLW0B   ci-deploy       acme-assets   Read & Write   Ready    2026-09-12 14:03
+CLDRP4N8R2Y6U0I5O9A1   backup-reader   all buckets   Read           Ready    2026-10-01 08:45
+```
+
+`-o wide` adds the key's **ID**. Keys are named in other commands by their access key id, label or id. See [Access keys](/object-storage/access-keys). MCP tool: `list_bucket_keys`.
+
+## cloider bucket key create
+
+Create an access key for S3 tools. The secret key is shown **once**.
+
+```text
+cloider bucket key create --label <label> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--label` | string | (required) | What the key is for |
+| `--bucket` | string, repeatable | | Bucket the key opens. Without it, the key opens every bucket |
+| `--all` | bool | `false` | Open every bucket of the account, including ones created later. Can't be combined with `--bucket` |
+| `--read-only` | bool | `false` | Only read, never write or delete |
+| `--print-env` | bool | `false` | Print `AWS_*` shell exports instead |
+
+```bash
+cloider bucket key create --label ci-deploy --bucket acme-assets
+```
+
+```text title="Output"
+✓ Created access key ci-deploy
+Access key:  CLDRZ8Q4M2X7KD1PLW0B
+Secret key:  wJ4lrXUtnFEMI2K7MDENGbPxRfiCYEXAMPLEKEY1
+Endpoint:    https://s3.eu-central-2.cloider.com
+Region:      eu-central-2
+Buckets:     acme-assets
+Permission:  Read & Write
+! The secret key is not shown again, keep it now.
+```
+
+`--print-env` prints shell exports that the AWS CLI and most S3 SDKs read, so you can create a key and use it in one go:
+
+```bash
+eval "$(cloider bucket key create --label sync --bucket acme-assets --print-env)"
+aws s3 sync ./dist s3://acme-assets
+```
+
+```text title="Output of --print-env"
+export AWS_ACCESS_KEY_ID=CLDRZ8Q4M2X7KD1PLW0B
+export AWS_SECRET_ACCESS_KEY=wJ4lrXUtnFEMI2K7MDENGbPxRfiCYEXAMPLEKEY1
+export AWS_ENDPOINT_URL=https://s3.eu-central-2.cloider.com
+export AWS_REGION=eu-central-2
+```
+
+`-q` prints the access key id and the secret key on two lines; `-o json` prints the API's answer (`{"key": {...}, "secret_key": "..."}`). MCP tool: `create_bucket_key`.
+
+## cloider bucket key update
+
+Change an access key's label, the buckets it opens, or its permission. Only the flags you pass are changed.
+
+```text
+cloider bucket key update <key> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<key>` | Access key id, label or id of the key |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--label` | string | | New label |
+| `--bucket` | string, repeatable | | Replace the buckets the key opens |
+| `--all` | bool | | Open every bucket of the account. Can't be combined with `--bucket` |
+| `--read-only` | bool | | Only read. `--read-only=false` gives write access back |
+
+```bash
+cloider bucket key update ci-deploy --bucket acme-assets --bucket acme-backups
+cloider bucket key update backup-reader --all --read-only=false
+```
+
+```text title="Output"
+✓ Updated access key ci-deploy
+```
+
+Without any flag it fails with `nothing to change, pass --label, --bucket, --all or --read-only`. MCP tool: `update_bucket_key`.
+
+## cloider bucket key delete
+
+Delete an access key. Anything using it loses access immediately.
+
+```text
+cloider bucket key delete <key> [flags]
+```
+
+**Alias:** `cloider bucket key rm`. The command asks you to type the access key id to confirm; pass `--yes` to skip it.
+
+```bash
+cloider bucket key delete ci-deploy
+```
+
+```text title="Output"
+This permanently deletes access key CLDRZ8Q4M2X7KD1PLW0B.
+Type CLDRZ8Q4M2X7KD1PLW0B to confirm: CLDRZ8Q4M2X7KD1PLW0B
+✓ Deleted access key ci-deploy
+```
+
+MCP tool: `delete_bucket_key`.
+
+## Related
+
+- [Object storage overview](/object-storage/overview) and [Manage files](/object-storage/manage-files)
+- [S3 tools](/object-storage/s3-tools) and [SDKs](/object-storage/sdks)
+- [Terraform `cloider_bucket`](/terraform/resources/bucket) and [`cloider_bucket_key`](/terraform/resources/bucket-key)
+
+<FAQ items={[
+  {q: 'How do I create a bucket with the Cloider CLI?', a: 'Run cloider bucket create acme-assets. Add --public to let anyone read its files, --versioning to keep previous versions, and --region to pick a region from cloider bucket regions.'},
+  {q: 'How do I upload a folder to a bucket?', a: 'Run cloider bucket upload acme-assets ./dist -r --prefix site/. Files keep their paths below the folder. For very large syncs, create an access key with --print-env and use aws s3 sync or rclone.'},
+  {q: 'How do I download a file to stdout?', a: 'Use --dest -: cloider bucket download acme-backups dump.sql.gz --dest - | gunzip.'},
+  {q: 'How do I get S3 credentials for the AWS CLI?', a: 'Run eval "$(cloider bucket key create --label sync --bucket acme-assets --print-env)". It exports AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL and AWS_REGION, which the AWS CLI and most SDKs read.'},
+  {q: 'How do I restore a deleted file?', a: 'In a bucket with versioning on, list deleted files with cloider bucket deleted acme-assets, then run cloider bucket restore acme-assets <key> --version-id <marker version id>.'},
+  {q: 'How do I delete a folder in a bucket?', a: 'Run cloider bucket rm acme-assets --prefix tmp/ --yes. It deletes everything under the folder.'}
+]} />

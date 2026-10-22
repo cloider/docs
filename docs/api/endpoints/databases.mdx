@@ -1,0 +1,681 @@
+---
+title: Managed databases API endpoints
+sidebar_label: Databases
+sidebar_position: 3
+description: Cloider API reference for PostgreSQL, MySQL, MongoDB and Redis databases, create, connect, password, CA certificate, backups, restore, resize, SSL, trusted sources and exec.
+keywords: [cloider database api, managed postgresql api, mysql api, mongodb api, redis api, database password api, database backups api, database restore api]
+---
+
+These endpoints manage Cloider [managed databases](/databases/overview): PostgreSQL, MySQL, MongoDB and Redis. You create a database, read its connection details and password, change who can connect, turn SSL on, resize it, list and restore backups, pause and resume it, run queries with `exec`, and delete it.
+
+All paths are relative to `https://cloider.com/api`. See [Authentication](/api/authentication) for the token header.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/databases`](#list-databases) | Read |
+| POST | [`/databases`](#create-a-database) | Write |
+| GET | [`/databases/:hashed_id`](#get-a-database) | Read |
+| GET | [`/databases/:hashed_id/status`](#get-a-databases-status) | Read |
+| GET | [`/database/password?id=`](#get-the-password) | Read |
+| GET | [`/database/cert?id=`](#get-the-ca-certificate) | Read |
+| PUT | [`/databases/:hashed_id/trusted-sources`](#replace-the-trusted-sources) | Write |
+| PUT | [`/databases/:hashed_id/ssl`](#turn-ssl-on-or-off) | Write |
+| PUT | [`/databases/:hashed_id/plan`](#resize-to-a-larger-plan) | Write |
+| PUT | [`/databases/:hashed_id/label`](#rename-a-database) | Write |
+| GET | [`/database/backups?id=`](#list-backups) | Read |
+| POST | [`/databases/:hashed_id/restore`](#restore-a-backup) | Write |
+| POST | [`/databases/:hashed_id/pause`](#pause-a-database) | Write |
+| POST | [`/databases/:hashed_id/resume`](#resume-a-database) | Write |
+| DELETE | [`/databases/:hashed_id`](#delete-a-database) | Write |
+| GET | [`/databases/:hashed_id/insights`](#get-insights) | Read |
+| POST | [`/databases/:hashed_id/exec`](#run-a-query-with-exec) | Write |
+| GET | [`/databases/:hashed_id/terminal`](#web-terminal-endpoints) | Write |
+| POST | [`/databases/:hashed_id/terminal/wake`](#web-terminal-endpoints) | Write |
+| POST | [`/databases/:hashed_id/terminal/heartbeat`](#web-terminal-endpoints) | Write |
+
+Note the three endpoints under `/database/` (singular): they take the database id in the `id` query parameter instead of the path.
+
+## The database object
+
+```json
+{
+  "hashed_id": "d7f2m",
+  "database_name": "orders-db",
+  "database_label": "orders-db",
+  "database_user": "orders",
+  "service": "PostgreSQL",
+  "database_version": "18",
+  "status": "Ready",
+  "ssl": true,
+  "database_plan": "Standard",
+  "trusted_sources": [
+    {"name": "api", "code": "a8q2w", "type": "App"},
+    {"name": "203.0.113.0/24", "code": "203.0.113.0/24", "type": "Custom"}
+  ],
+  "created_at": "2026-10-03T12:44:09.210571Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The database's id |
+| `database_name` | string | The name you gave it. It is also the name of the database inside the engine, and part of the host name |
+| `database_label` | string | A name unique among the account's databases. Starts as the name, `-1`, `-2` appended when taken, and can be changed |
+| `database_user` | string | The user the application connects as |
+| `service` | string | The engine: `PostgreSQL`, `MySQL`, `MongoDB` or `Redis` |
+| `database_version` | string | The engine's major version |
+| `status` | string | `Creating`, `Starting`, `Ready`, `Pausing`, `Paused`, `Upgrading`, `Terminating`, `Terminated` or `Failed` |
+| `ssl` | boolean | Whether connections must use TLS |
+| `database_plan` | string | The plan, which sets CPU, memory and storage |
+| `trusted_sources` | object list | Who can connect. See [Replace the trusted sources](#replace-the-trusted-sources) |
+| `created_at` | string | When the database was created |
+
+`GET /databases/:hashed_id` adds three connection fields: `database_port`, `host` and `private_host`.
+
+## List databases
+
+```http
+GET /databases
+```
+
+Returns the account's databases, newest first, without deleted ones. The list doesn't include the port or host names; get a single database for those.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/databases \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "hashed_id": "d7f2m",
+    "database_name": "orders-db",
+    "database_label": "orders-db",
+    "database_user": "orders",
+    "service": "PostgreSQL",
+    "database_version": "18",
+    "status": "Ready",
+    "ssl": true,
+    "database_plan": "Standard",
+    "trusted_sources": [{"name": "Allow Everything", "code": "*", "type": "Anywhere"}],
+    "created_at": "2026-10-03T12:44:09.210571Z"
+  },
+  {
+    "hashed_id": "c4r8n",
+    "database_name": "cache",
+    "database_label": "cache",
+    "database_user": "app",
+    "service": "Redis",
+    "database_version": "8",
+    "status": "Paused",
+    "ssl": false,
+    "database_plan": "Hobby",
+    "trusted_sources": [{"name": "api", "code": "a8q2w", "type": "App"}],
+    "created_at": "2026-09-28T07:15:51.044902Z"
+  }
+]
+```
+
+## Create a database
+
+```http
+POST /databases
+```
+
+Creates a database and starts provisioning it. The request returns at once with the new id; the database then goes through `Creating` and `Starting` to `Ready`. [Poll its status](#get-a-databases-status) until it is `Ready`.
+
+**Access:** Read & Write token.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database_name` | string | Yes | 2 to 64 characters: lower case letters, digits and `-`, starting with a letter and not ending with `-`. Reserved: `mysql`, `information_schema`, `performance_schema`, `sys`, `postgres`, `template0`, `template1`, `admin`, `local`, `config` |
+| `database_user` | string | Yes | 2 to 64 characters: lower case letters, digits and `_`, starting with a letter and not ending with `_`. Reserved: `root`, `mysql`, `postgres`, `admin` |
+| `service` | string | Yes | `PostgreSQL`, `MySQL`, `MongoDB` or `Redis` |
+| `database_version` | string | Yes | A version of that engine from `GET /options`, today `18` for PostgreSQL, `9` for MySQL, `8` for MongoDB and Redis |
+| `database_plan` | string | Yes | A plan name from `GET /options` `database_plans`, for example `Hobby` or `Standard`. See [pricing](/reference/pricing) |
+| `trusted_sources` | object list | No | Who can connect, in the format described [below](#replace-the-trusted-sources). Leave it empty and nobody can connect over the network until you add a source |
+| `ssl` | boolean | No | `true` to require TLS. Default `false` |
+
+```bash
+curl -X POST https://cloider.com/api/databases \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "database_name": "orders-db",
+    "database_user": "orders",
+    "service": "PostgreSQL",
+    "database_version": "18",
+    "database_plan": "Standard",
+    "ssl": true,
+    "trusted_sources": [{"name": "Allow Everything", "code": "*", "type": "Anywhere"}]
+  }'
+```
+
+```json title="Response"
+{"hashed_id": "d7f2m"}
+```
+
+The password is generated by Cloider. Read it with [`GET /database/password`](#get-the-password) once the database is `Ready`.
+
+### Errors
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `database_name` | `Database name must not be empty`, `Database name can not be upper case`, `Database name can not start with numbers`, `Database name must not have special characters except "-"`, `Database name must be at least 2 characters`, `Database name must not exceed 64 characters`, `Database name is reserved` |
+| `400` | `database_user` | `Database username must not be empty`, `Database username must not have special characters except "_"`, `Database username is reserved`, `Database username must not exceed 64 characters` |
+| `400` | `database_version` | `database engine must be selected!`, `Invalid database type!`, `Invalid database version!`, `This database engine isn't available at the moment!` |
+| `400` | `_` | `Invalid database plan` |
+| `400` | `_` | `Free plan users can not create more than one database. UPGRADE NOW!` |
+| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `400` | `_` | `You have read-only access to this account, you can not create databases!` (a Restricted member) |
+| `403` | `_` | `This API token is read only!` |
+
+## Get a database
+
+```http
+GET /databases/:hashed_id
+```
+
+Returns one database with everything you need to connect: the public host, the private host and the port.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/databases/d7f2m \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "hashed_id": "d7f2m",
+  "database_name": "orders-db",
+  "database_label": "orders-db",
+  "database_user": "orders",
+  "service": "PostgreSQL",
+  "database_version": "18",
+  "status": "Ready",
+  "database_plan": "Standard",
+  "trusted_sources": [{"name": "Allow Everything", "code": "*", "type": "Anywhere"}],
+  "created_at": "2026-10-03T12:44:09.210571Z",
+  "database_port": "20417",
+  "ssl": true,
+  "host": "orders-db-d7f2m.db.cloider.com",
+  "private_host": "orders-db-d7f2m.db.cloider.internal"
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `host` | The public host name, `<name>-<id>.db.cloider.com`. Reachable from the internet, for sources in `trusted_sources` |
+| `private_host` | The private host name, `<name>-<id>.db.cloider.internal`, for apps and Kubernetes clusters in the same account |
+| `database_port` | The port, as a string. Each database has its own port, so read it from here rather than assuming the engine's default |
+
+Put the parts together into a connection URL, for example for PostgreSQL:
+
+```bash
+DB=$(curl -s https://cloider.com/api/databases/d7f2m -H "Authorization: Bearer $CLOIDER_TOKEN")
+PASSWORD=$(curl -s "https://cloider.com/api/database/password?id=d7f2m" -H "Authorization: Bearer $CLOIDER_TOKEN")
+
+export DATABASE_URL="postgresql://$(jq -r .database_user <<<"$DB"):$PASSWORD@$(jq -r .host <<<"$DB"):$(jq -r .database_port <<<"$DB")/$(jq -r .database_name <<<"$DB")?sslmode=require"
+psql "$DATABASE_URL" -c "select version()"
+```
+
+[Connect to a database](/databases/connect) explains public and private endpoints for every engine.
+
+## Get a database's status
+
+```http
+GET /databases/:hashed_id/status
+```
+
+Returns the status as **plain text**, for example `Ready`. Poll it after creating, resuming, resizing, restoring or changing SSL.
+
+**Access:** any token.
+
+```bash
+until [ "$(curl -s https://cloider.com/api/databases/d7f2m/status \
+  -H "Authorization: Bearer $CLOIDER_TOKEN")" = "Ready" ]; do sleep 5; done
+```
+
+| After | The status goes through | Until |
+| --- | --- | --- |
+| Create or restore | `Creating`, `Starting` | `Ready` |
+| Resume | `Starting` | `Ready` |
+| Turn SSL on or off | `Starting` (the database restarts) | `Ready` |
+| Resize | `Upgrading` | `Ready` |
+| Pause | `Pausing` | `Paused` |
+| Delete | `Terminating` | `Terminated` |
+
+## Get the password
+
+```http
+GET /database/password?id=:hashed_id
+```
+
+Returns the password of the database's user as **plain text**.
+
+**Access:** any token, including read only tokens. Treat any token that can call this as a secret.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `id` | Yes | The database's `hashed_id` |
+
+```bash
+curl "https://cloider.com/api/database/password?id=d7f2m" \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```text title="Response"
+Xk29fQ7pLm3vT8wZ
+```
+
+| Status | Body |
+| --- | --- |
+| `404` | `Not Found`, no database has that id |
+| `403` | `Forbidden`, the database belongs to another account |
+| `502` | `Failed to fetch database password`, the database isn't reachable, for example while it is paused or still being created |
+
+These errors are plain text, not JSON.
+
+## Get the CA certificate
+
+```http
+GET /database/cert?id=:hashed_id
+```
+
+Returns the certificate authority (CA) certificate, in PEM format, that the database's TLS certificate is signed with. Clients use it to verify the server, for example with PostgreSQL's `sslmode=verify-full`. Only available when SSL is on.
+
+**Access:** any token.
+
+```bash
+curl -s "https://cloider.com/api/database/cert?id=d7f2m" \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" -o orders-db-ca.pem
+
+psql "postgresql://orders@orders-db-d7f2m.db.cloider.com:20417/orders-db?sslmode=verify-full&sslrootcert=orders-db-ca.pem"
+```
+
+```text title="Response"
+-----BEGIN CERTIFICATE-----
+MIIDBTCCAe2gAwIBAgIQ...
+-----END CERTIFICATE-----
+```
+
+`404 Not Found` when the database doesn't exist or SSL is off, `403 Forbidden` for another account's database, `502 Failed to fetch database CA certificate` when it can't be read. See [SSL/TLS](/databases/ssl-tls).
+
+## Replace the trusted sources
+
+```http
+PUT /databases/:hashed_id/trusted-sources
+```
+
+Replaces the list of sources allowed to connect to the database. Connections from anywhere else are dropped. The new list is applied in the background within moments.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `trusted_sources` | object list | Yes | The complete new list. Send every source you want to keep |
+
+Each source has three fields:
+
+| `type` | `code` | `name` |
+| --- | --- | --- |
+| `Anywhere` | `*` | `Allow Everything` |
+| `Custom` | An IPv4 CIDR range, for example `203.0.113.0/24`, or `/32` for one address | The same CIDR |
+| `MyIP` | Your public address as a `/32` | A label of your choice |
+| `App` | The app's `hashed_id` | The app's name, exactly |
+| `Cluster` | The cluster's `hashed_id` | The cluster's name, exactly |
+
+```bash
+curl -X PUT https://cloider.com/api/databases/d7f2m/trusted-sources \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "trusted_sources": [
+      {"name": "production", "code": "p8w2d", "type": "Cluster"},
+      {"name": "api", "code": "a8q2w", "type": "App"},
+      {"name": "203.0.113.0/24", "code": "203.0.113.0/24", "type": "Custom"}
+    ]
+  }'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+The API stores the list as given and doesn't validate it: an invalid CIDR or a misspelled name is accepted but allows nothing, and an empty list allows nobody. See [Trusted sources](/databases/trusted-sources) for how each type is matched.
+
+## Turn SSL on or off
+
+```http
+PUT /databases/:hashed_id/ssl
+```
+
+Requires TLS for every connection (`true`) or allows plain connections (`false`). Applying it restarts the database: its status goes to `Starting` and back to `Ready`, and open connections are dropped.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `ssl` | boolean | Yes | `true` to require TLS, `false` to turn it off |
+
+```bash
+curl -X PUT https://cloider.com/api/databases/d7f2m/ssl \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ssl": true}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+## Resize to a larger plan
+
+```http
+PUT /databases/:hashed_id/plan
+```
+
+Moves the database to a larger plan with more CPU, memory and storage. The status goes to `Upgrading` while the resize is applied, then back to `Ready`. The database is billed on the new plan only once the resize is done.
+
+**Access:** Read & Write token. The database must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database_plan` | string | Yes | A plan larger than the current one, in the order of `GET /options` `database_plans` |
+
+```bash
+curl -X PUT https://cloider.com/api/databases/d7f2m/plan \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"database_plan": "Pro"}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+Storage can grow but never shrink, so there is no way to move to a smaller plan. To get a smaller database, create one and move the data.
+
+| Status | Message |
+| --- | --- |
+| `400` | `The database must be running to be upgraded.` |
+| `400` | `Invalid database plan` |
+| `400` | `A database can only be upgraded to a larger plan.` |
+| `400` | `This plan isn't available at the moment!` |
+| `400` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `403` | `This API token is read only!` |
+
+See [Resize a database](/databases/resize).
+
+## Rename a database
+
+```http
+PUT /databases/:hashed_id/label
+```
+
+Changes the database's label, the name shown in the dashboard and used by the CLI. The `database_name`, and so the host name and the database inside the engine, stays the same.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database_label` | string | Yes | 2 to 64 characters, lower case letters, digits and `-`, starting with a letter. Unique among the account's databases |
+
+```bash
+curl -X PUT https://cloider.com/api/databases/d7f2m/label \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"database_label": "orders-primary"}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+Errors are on `database_label`: the naming rules (`Database label can not be upper case` and the like) and `Database label already exists`.
+
+## List backups
+
+```http
+GET /database/backups?id=:hashed_id
+```
+
+Returns the database's backups, newest first, as a list of timestamps in the form `YYYY-MM-DD_HH-MM` (UTC). Backups are taken daily. A new database has no backups until its first one has run.
+
+**Access:** any token.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `id` | Yes | The database's `hashed_id` |
+
+```bash
+curl "https://cloider.com/api/database/backups?id=d7f2m" \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+["2026-10-20_02-00", "2026-10-19_02-00", "2026-10-18_02-00"]
+```
+
+`404 Not Found` and `403 Forbidden` (plain text) as for the password; `502 Failed to fetch database backups` when the list can't be read. See [Backups and restore](/databases/backups-and-restore).
+
+## Restore a backup
+
+```http
+POST /databases/:hashed_id/restore
+```
+
+Restores a backup into a **new** database. The source database isn't touched: Cloider creates a copy with the same engine, version, plan, user, trusted sources and SSL setting, seeded from the backup, and labels it `<source label>-<backup date>`. Point your application at the new database when it is `Ready`.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `backup` | string | Yes | A timestamp from [`GET /database/backups`](#list-backups), for example `2026-10-19_02-00` |
+
+```bash
+curl -X POST https://cloider.com/api/databases/d7f2m/restore \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"backup": "2026-10-19_02-00"}'
+```
+
+```json title="Response"
+{"hashed_id": "h3k9w", "database_label": "orders-db-2026-10-19-02-00"}
+```
+
+Poll `GET /databases/h3k9w/status` until it is `Ready`. The restored database is a separate database, billed like any other, so delete it when you don't need it any more. On the Free plan, which allows one database, a restore is refused.
+
+| Status | Message |
+| --- | --- |
+| `400` | `Invalid backup selected!` (not in the `YYYY-MM-DD_HH-MM` form) |
+| `400` | `Free plan users can not create more than one database. UPGRADE NOW!` |
+| `400` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `403` | `This API token is read only!` |
+| `404` | `Not Found` (plain text) |
+
+## Pause a database
+
+```http
+POST /databases/:hashed_id/pause
+```
+
+Stops the database and keeps its data. The status goes to `Pausing`, then `Paused`. A paused database is still billed for its storage; see [Pause, resume and delete](/databases/pause-resume-and-delete).
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/databases/d7f2m/pause \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's database list, with this database `Pausing`. The endpoint doesn't check the current status, so pause only a `Ready` database.
+
+## Resume a database
+
+```http
+POST /databases/:hashed_id/resume
+```
+
+Starts a paused database. The status goes to `Starting`, then `Ready`, with the same host, port, password and data.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/databases/d7f2m/resume \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the database list, with this database `Starting`.
+
+## Delete a database
+
+```http
+DELETE /databases/:hashed_id
+```
+
+Deletes the database and its data. This can't be undone. Restore a backup into a new database first if you might need the data. The status goes to `Terminating`, then `Terminated`, and the database disappears from `GET /databases`.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/databases/d7f2m \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the database list, with this database `Terminating`.
+
+## Get insights
+
+```http
+GET /databases/:hashed_id/insights
+```
+
+Returns the database's resource usage: today's averages, this month's statistics and one entry per day for the last 31 days at least. These are the charts of the dashboard's **Insights** tab.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/databases/d7f2m/insights \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response (trimmed)"
+{
+  "date": "2026-10-20",
+  "month": "October 2026",
+  "today": {
+    "cpu": 42.5, "memory": 318.2, "storage": 1.4,
+    "disk_read": 10240, "disk_write": 52310, "net_rx": 8120, "net_tx": 15403,
+    "connections": 6.2
+  },
+  "connections_max": 100,
+  "month_stats": {
+    "cpu": {"avg": 38.1, "max": 410, "max_date": "2026-10-14", "min": 3, "min_date": "2026-10-02"},
+    "connections": {"avg": 5.8, "max": 31, "max_date": "2026-10-14", "min": 0, "min_date": "2026-10-04"}
+  },
+  "daily": [
+    {
+      "date": "2026-10-19",
+      "stats": {
+        "cpu": {"avg": 40.2, "max": 210, "min": 4},
+        "memory": {"avg": 312.9, "max": 401.3, "min": 290.1}
+      }
+    }
+  ]
+}
+```
+
+| Metric | Unit |
+| --- | --- |
+| `cpu` | millicores (1000 = one core) |
+| `memory` | MiB |
+| `storage` | GiB used (not the volume size) |
+| `disk_read`, `disk_write`, `net_rx`, `net_tx` | bytes per second |
+| `connections` | open connections |
+
+`today` is `null` before today's first sample, a metric in `month_stats` is `null` when there is no data for it yet, and a day without samples has no `stats`. `connections_max` is the engine's connection limit. See [Insights](/databases/insights).
+
+## Run a query with exec
+
+```http
+POST /databases/:hashed_id/exec
+```
+
+Runs one query or command with the engine's own client inside the database's environment, connected as the database user, and streams back the output and exit code. The client is `psql` for PostgreSQL, `mysql` for MySQL, `mongosh` for MongoDB and `redis-cli` for Redis. `cloider db exec` uses this endpoint.
+
+**Access:** Read & Write token. The database must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `command` | string list | One of the two | The query. For PostgreSQL, MySQL and MongoDB the items are joined with spaces and run as one statement (`psql -c`, `mysql -e`, `mongosh --eval`). For Redis they are the command and its arguments, for example `["GET", "greeting"]` |
+| `stdin` | string (base64) | One of the two | A script to run, base64 encoded, up to 2 MiB. With no `command`, the client reads its statements from it |
+| `timeout` | integer | No | Seconds before the command is stopped. Default `600`, at most `3600` |
+
+```bash
+curl -N -X POST https://cloider.com/api/databases/d7f2m/exec \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"command": ["SELECT count(*) FROM orders"]}'
+```
+
+```text title="Response"
+: open
+
+event: stdout
+data: IGNvdW50IAotLS0tLS0tCiAgMTI4NAooMSByb3cpCgo=
+
+event: exit
+data: 0
+
+event: end
+data: 1
+
+```
+
+Run a migration file:
+
+```bash
+curl -N -X POST https://cloider.com/api/databases/d7f2m/exec \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg stdin "$(base64 < migration.sql)" '{stdin: $stdin}')"
+```
+
+The response is the same event stream as [cluster exec](/api/endpoints/clusters#run-a-command-with-exec): base64 `stdout` and `stderr` chunks, then `exit`, `timeout` or `error`, then `end`. PostgreSQL runs with `ON_ERROR_STOP`, so a failing statement ends the script with a non zero exit code.
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `command` | `Give a query to run, or a script on stdin!`, `The command can't contain NUL bytes!`, `The command is longer than 64 KiB!` |
+| `400` | `stdin` | `stdin is bigger than 2 MiB!` |
+| `400` | `timeout` | `The timeout can be an hour at most!` |
+| `403` | `_` | `This API token is read only!` |
+| `404` | `_` | `Database not found!` |
+| `409` | `_` | `This database is paused. Resume it to run a command!`, `This database is being deleted!`, `This database is not ready yet!`, `This database isn't running right now!` |
+| `503` | `_` | `The command could not be started, try again in a moment!` |
+
+## Web terminal endpoints
+
+The dashboard's **Terminal** tab opens the engine's interactive client in the browser. Three endpoints drive it. For scripts, [exec](#run-a-query-with-exec) is simpler.
+
+| Endpoint | What it does | Response |
+| --- | --- | --- |
+| `GET /databases/:hashed_id/terminal` | Returns the terminal's URL | `{"url": "https://cloider.com/terminal?kind=database&..."}` |
+| `POST /databases/:hashed_id/terminal/wake` | Starts the terminal, which sleeps when unused, and answers once it accepts connections | `200` |
+| `POST /databases/:hashed_id/terminal/heartbeat` | Tells Cloider the terminal is still in use so it isn't put to sleep | `204` |
+
+All three need a Read & Write token (`403 Terminals need a Read & Write API token!` for the URL with a read only token) and a `Ready` database; otherwise they answer `409` with the same messages as exec. Wake answers `503 The terminal could not be started, try again in a moment!` when it can't start the terminal. With an API token, the URL carries a terminal token that is valid for 2 minutes. See [Terminal and exec](/databases/terminal-and-exec).
+
+## Related
+
+- [Create a database](/databases/create-a-database) with every tool
+- [Connect to a database](/databases/connect)
+- [cloider db](/cli/commands/db) commands
+- [cloider_database](/terraform/resources/database) Terraform resource

@@ -1,0 +1,104 @@
+---
+title: S3 API compatibility of Cloider buckets
+sidebar_label: S3 compatibility
+sidebar_position: 13.5
+description: The S3 API operations Cloider buckets support, what is managed with Cloider's own tools, what isn't offered, and the differences from Amazon S3 that matter.
+keywords: [s3 compatible api, s3 compatibility, supported s3 operations, s3 signature v4, path style, virtual hosted style, object lock not supported, s3 differences]
+---
+
+Cloider buckets implement the S3 REST API, so tools and SDKs written for Amazon S3 work with them once pointed at Cloider's endpoint. This page lists what is supported, what is handled by Cloider's own tools instead of the S3 API, what isn't offered, and the differences from Amazon S3 to keep in mind.
+
+## Connection
+
+| | |
+| --- | --- |
+| **Endpoint** | `https://s3.eu-central-2.cloider.com` |
+| **Region** | `eu-central-2`. Sign requests for this region |
+| **Protocol** | HTTPS |
+| **Authentication** | AWS Signature Version 4, in the `Authorization` header or as a presigned query string. Anonymous requests for downloads from public buckets |
+| **Addressing** | Virtual hosted style (`https://<bucket>.s3.eu-central-2.cloider.com/<key>`) and path style (`https://s3.eu-central-2.cloider.com/<bucket>/<key>`) |
+| **Credentials** | [Access keys](/object-storage/access-keys) created in Cloider. AWS IAM users, roles, STS and session tokens don't exist on Cloider |
+
+## Supported S3 operations
+
+These operations work with an access key that has the needed permission (read only keys can do the reading ones, read and write keys all of them):
+
+| Area | Operations |
+| --- | --- |
+| Objects | `PutObject`, `GetObject` (including range requests), `HeadObject`, `CopyObject`, `DeleteObject`, `DeleteObjects` |
+| Listing | `ListObjectsV2`, `ListObjects`, `ListObjectVersions` |
+| Multipart uploads | `CreateMultipartUpload`, `UploadPart`, `CompleteMultipartUpload`, `AbortMultipartUpload`, `ListMultipartUploads`, `ListParts` |
+| Object tags | `PutObjectTagging`, `GetObjectTagging`, `DeleteObjectTagging` |
+| Object metadata | `GetObjectAttributes`, user metadata (`x-amz-meta-*`), `Content-Type`, `Cache-Control`, `Content-Disposition`, `Content-Encoding` |
+| Versioning | `GetBucketVersioning`, `PutBucketVersioning`, and `versionId` on reads and deletes |
+| Lifecycle | `GetBucketLifecycleConfiguration`, `PutBucketLifecycleConfiguration`, `DeleteBucketLifecycle` |
+| Bucket | `GetBucketLocation`, `HeadBucket` |
+| Presigned URLs | Presigned `GET` and `PUT` |
+
+Versioning and lifecycle changes made through the S3 API show up in the dashboard and the CLI. Lifecycle rules that use options Cloider's tools don't show are kept until rules are saved from those tools, see [Lifecycle rules](/object-storage/lifecycle-rules#rules-set-through-the-s3-api).
+
+## Managed with Cloider's tools, not the S3 API
+
+These are bucket level controls that access keys can't use. Manage them in the dashboard, with the `cloider` CLI, Terraform, the REST API or MCP:
+
+| What | S3 operations that are refused | Cloider's way |
+| --- | --- | --- |
+| Creating and deleting buckets | `CreateBucket`, `DeleteBucket` | [Create a bucket](/object-storage/create-a-bucket), [Delete a bucket](/object-storage/delete-a-bucket) |
+| Public access | ACL and public access block operations | [Public and private buckets](/object-storage/public-and-private-buckets) |
+| Bucket policies | `PutBucketPolicy`, `GetBucketPolicy`, `DeleteBucketPolicy` | [Bucket policies](/object-storage/bucket-policies) |
+| Credentials | IAM and STS | [Access keys](/object-storage/access-keys) |
+
+This keeps a leaked access key from making a bucket public, rewriting its policy or deleting it.
+
+## Not offered
+
+| Feature | Notes |
+| --- | --- |
+| Object Lock, retention, legal hold | Not offered. See [Data protection](/object-storage/data-protection) for alternatives |
+| Storage classes and lifecycle transitions | Not available. Lifecycle rules delete data, they don't move it |
+| Static website hosting | A bucket serves files, not a website: no index or error documents. Host sites as [apps](/apps/overview) |
+| Custom domains for buckets | Files are served on the bucket's own address |
+| Bucket CORS configuration | Not available from Cloider's tools. Browser uploads with presigned URLs work, see [Troubleshooting](/object-storage/troubleshooting#browser-uploads-with-presigned-urls-fail) |
+| IP address conditions in bucket policies | `aws:SourceIp` isn't supported yet |
+| Default upload checksums of new AWS SDKs | Set checksum calculation to `when_required`, see below |
+
+## Differences from Amazon S3
+
+### Checksums with AWS tools from 2025
+
+The AWS CLI from version 2.23 and AWS SDKs released since January 2025 add CRC checksums to every upload by default. Cloider's storage doesn't accept them, so set `request_checksum_calculation = when_required` and `response_checksum_validation = when_required` (or the environment variables `AWS_REQUEST_CHECKSUM_CALCULATION` and `AWS_RESPONSE_CHECKSUM_VALIDATION`). See [Checksum errors on upload](/object-storage/troubleshooting#checksum-errors).
+
+### Bucket names
+
+Bucket names follow Amazon's rules with two differences: dots aren't allowed, and the names are unique across Cloider rather than across AWS. See [Choose a bucket name](/object-storage/create-a-bucket#choose-a-bucket-name).
+
+### Object keys in Cloider's tools
+
+S3 tools can use any valid S3 key. The dashboard, the `cloider` CLI and the REST API refuse keys that start with `/` or contain `//`, because different S3 clients turn those into different paths. Such keys created by S3 tools still exist, but are best avoided.
+
+### Single uploads up to 5 GB
+
+As on Amazon S3, a single `PutObject` takes up to 5 GB. Larger files need a multipart upload, which the AWS CLI, rclone and the SDKs' upload managers do automatically.
+
+### Restoring versions with CopyObject
+
+`CopyObject` with a `versionId` in the copy source can occasionally report success while the previous version stays current on a versioned bucket. To make an earlier version current, download it and upload it again (what the dashboard's **Restore** does), or check the result with `ListObjectVersions`. See [Versioning](/object-storage/versioning#restore-with-s3-tools).
+
+### Bucket policies
+
+Policies use AWS's JSON, but principals are Cloider access key ids instead of IAM ARNs, Allow statements can only grant object actions, and a few condition keys aren't available. See the [policy reference](/object-storage/bucket-policies#policy-reference).
+
+## Tested tools
+
+The examples in these docs cover:
+
+- [AWS CLI](/object-storage/s3-tools#aws-cli), [rclone](/object-storage/s3-tools#rclone), [s3cmd](/object-storage/s3-tools#s3cmd), [MinIO client](/object-storage/s3-tools#minio-client-mc), [Cyberduck](/object-storage/s3-tools#cyberduck-and-other-desktop-apps) and [restic](/object-storage/s3-tools#other-tools),
+- the AWS SDKs for [JavaScript, Python, Go, PHP, Java, Ruby and .NET](/object-storage/sdks),
+- Terraform's `aws` provider for objects and the `s3` state backend, see [Terraform state backend](/terraform/guides/state-backend).
+
+<FAQ items={[
+  {q: 'Is Cloider fully compatible with Amazon S3?', a: 'Cloider buckets support the S3 operations applications use: objects, listing, multipart uploads, tags, versioning, lifecycle rules and presigned URLs, with Signature Version 4. Bucket creation, deletion, public access and policies are managed with Cloider\'s own tools instead of the S3 API, and object lock, storage classes and website hosting aren\'t offered.'},
+  {q: 'Does Cloider support path style S3 requests?', a: 'Yes. Both path style (https://s3.eu-central-2.cloider.com/<bucket>/<key>) and virtual hosted style (https://<bucket>.s3.eu-central-2.cloider.com/<key>) work.'},
+  {q: 'Which signature version does Cloider use?', a: 'AWS Signature Version 4, in the Authorization header or as presigned URL query parameters, signed for the region eu-central-2.'},
+  {q: 'Can I host a static website in a Cloider bucket?', a: 'Not as a website: buckets have no index or error documents and no custom domains. A public bucket serves individual files by URL, which suits assets. Deploy the website itself as a Cloider app.'},
+]} />

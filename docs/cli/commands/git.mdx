@@ -1,0 +1,163 @@
+---
+title: cloider git command reference
+sidebar_label: git
+sidebar_position: 8
+description: Reference for cloider git, to connect GitHub, GitLab and Bitbucket accounts, list connected installations, repositories and branches, and disconnect an account.
+keywords: [cloider git, cloider git connect, github integration, gitlab integration, bitbucket integration, deploy from git cli, git repositories]
+---
+
+`cloider git` connects your GitHub, GitLab or Bitbucket accounts to Cloider and shows what [apps can deploy from](/apps/deploy-from-git): the connected accounts (installations), the repositories they give access to, and each repository's branches. Once an account is connected, [`cloider app create`](/cli/commands/app#cloider-app-create) creates an app from one of its repositories.
+
+```text
+cloider git <command> [flags]
+```
+
+Every subcommand takes the provider as its first argument: `github`, `gitlab` or `bitbucket` (any case).
+
+## Subcommands
+
+| Command | Description |
+| --- | --- |
+| [`cloider git connect`](#cloider-git-connect) | Connect a git account, in the browser |
+| [`cloider git installations`](#cloider-git-installations) | List the connected accounts of a git provider |
+| [`cloider git repos`](#cloider-git-repos) | List the repositories a connected account gives access to |
+| [`cloider git branches`](#cloider-git-branches) | List a repository's branches |
+| [`cloider git disconnect`](#cloider-git-disconnect) | Disconnect a git account |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## A typical flow
+
+```bash
+cloider git connect github                  # approve in the browser
+cloider git repos github                    # what Cloider can see
+cloider git branches github acme/api        # pick a branch
+cloider app create --git github --repo acme/api --branch main
+```
+
+## cloider git connect
+
+Connect a GitHub, GitLab or Bitbucket account. This finishes in the browser: the provider asks you to approve access and sends you back to the dashboard, where you must be signed in to Cloider.
+
+```text
+cloider git connect <github|gitlab|bitbucket> [flags]
+```
+
+```bash
+cloider git connect github
+```
+
+```text title="Output"
+Opening the browser to connect GitHub. If it doesn't open, visit:
+  https://cloider.com/api/git/github/connect?return=%2Fdashboard%2Fapps%2Fnew-app
+Once connected, `cloider git repos github` lists what apps can deploy from.
+```
+
+You can connect several accounts of the same provider, for example your own and your company's. There is no way to finish the connection without a browser. MCP tool: `connect_git_provider` (it returns the link to open).
+
+## cloider git installations
+
+List the connected accounts (installations) of a provider.
+
+```text
+cloider git installations <github|gitlab|bitbucket> [flags]
+```
+
+```bash
+cloider git installations github
+```
+
+```text title="Output"
+ACCOUNT    TYPE           STATUS   CONNECTED
+acme       Organization   Active   2026-08-29 09:12
+jane-doe   User           Active   2026-09-02 18:40
+```
+
+**STATUS** is `Suspended` when the account was suspended on the provider's side. With no account connected, the command says ``No GitHub account is connected yet, run `cloider git connect github`.`` `-o wide` adds the installation **ID**. MCP tool: `list_git_installations`.
+
+## cloider git repos
+
+List the repositories a connected account gives Cloider access to.
+
+```text
+cloider git repos <github|gitlab|bitbucket> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--installation` | string | the only one | Connected account, by id or account name. Required when several are connected |
+
+```bash
+cloider git repos github --installation acme
+```
+
+```text title="Output"
+REPOSITORY   DEFAULT BRANCH   LANGUAGE     VISIBILITY
+acme/api     main             Go           private
+acme/web     main             TypeScript   private
+acme/blog    main             JavaScript   public
+```
+
+When the provider lists only part of the repositories, the CLI warns `Only the first N repositories are listed.` With several accounts connected and no `--installation`, it fails with exit code `2` and names them: `several GitHub accounts are connected (acme, jane-doe), pick one with --installation`. MCP tool: `list_git_repositories`.
+
+## cloider git branches
+
+List a repository's branches with their latest commit.
+
+```text
+cloider git branches <github|gitlab|bitbucket> <owner/repo> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--installation` | string | the only one | Connected account, by id or account name |
+
+```bash
+cloider git branches github acme/api
+```
+
+```text title="Output"
+BRANCH           COMMIT
+main             9f3c2e1
+staging          4b7a0d9
+feature/export   e1d5c3a
+```
+
+`-o json` prints each branch's full commit SHA. MCP tool: `list_git_branches`.
+
+## cloider git disconnect
+
+Disconnect a git account. Apps deploying from it stop deploying on push.
+
+```text
+cloider git disconnect <github|gitlab|bitbucket> <installation> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<installation>` | The connected account, by account name or id |
+
+The command asks `Disconnect the GitHub account ...? Apps deploying from it stop deploying on push. [y/N]`; pass `--yes` to skip it.
+
+```bash
+cloider git disconnect github jane-doe --yes
+```
+
+```text title="Output"
+✓ Disconnected GitHub account jane-doe
+```
+
+MCP tool: `disconnect_git_installation`.
+
+## Related
+
+- [Deploy from git](/apps/deploy-from-git)
+- [`cloider app create`](/cli/commands/app#cloider-app-create) and [`cloider app git`](/cli/commands/app#cloider-app-git)
+- [`cloider deploy --git`](/cli/commands/deploy)
+
+<FAQ items={[
+  {q: 'How do I connect GitHub to Cloider from the CLI?', a: 'Run cloider git connect github. Your browser opens, you approve access on GitHub, and you land back in the dashboard. Then cloider git repos github lists what you can deploy.'},
+  {q: 'Can I connect several GitHub accounts?', a: 'Yes. Each connected user or organization is an installation. When several are connected, pass --installation with the account name to cloider git repos, cloider git branches and cloider app create.'},
+  {q: 'Does Cloider support GitLab and Bitbucket?', a: 'Yes. Every cloider git command takes github, gitlab or bitbucket as its provider.'},
+  {q: 'What happens when I disconnect a git account?', a: 'Apps that deploy from its repositories stop deploying on push. The apps themselves keep running.'}
+]} />

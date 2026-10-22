@@ -1,0 +1,183 @@
+---
+title: Troubleshoot Cloider Object Storage
+sidebar_label: Troubleshooting
+sidebar_position: 14
+description: "Fix common Cloider Object Storage errors: SignatureDoesNotMatch, AccessDenied, checksum errors with new AWS tools, NoSuchBucket and dashboard messages."
+keywords: [SignatureDoesNotMatch, AccessDenied s3, InvalidAccessKeyId, XAmzContentSHA256Mismatch, AWS_REQUEST_CHECKSUM_CALCULATION, s3 checksum error, NoSuchBucket, s3 cors error, RequestTimeTooSkewed]
+---
+
+This page lists the errors people actually hit with Cloider buckets, what causes each one, and how to fix it. Errors from S3 tools and SDKs come first, then messages from the dashboard, the `cloider` CLI and the API.
+
+If your problem isn't here, run the failing command with debug output (`aws ... --debug`, `rclone ... -vv`, `cloider ... --debug`), and contact [support](/account/support) with the bucket's name, the tool and the full error.
+
+## Quick checks
+
+Most S3 problems come from one of these settings. Compare your tool's configuration with this list first:
+
+| Setting | Correct value |
+| --- | --- |
+| Endpoint | `https://s3.eu-central-2.cloider.com` (with `https://`, without the bucket name) |
+| Region | `eu-central-2` |
+| Access key id | Starts with `CLDR`, 20 characters |
+| Secret key | 40 letters and digits, exactly as shown when the key was created |
+| Bucket name | Lowercase, exactly as in the dashboard |
+| Checksums (AWS CLI and SDKs from 2025) | `request_checksum_calculation = when_required`, `response_checksum_validation = when_required` |
+
+## Checksum errors on upload {#checksum-errors}
+
+**Symptom:** with a recent AWS CLI (2.23 or later) or an AWS SDK released since January 2025, every upload fails, while listing and downloading work. The error is typically `XAmzContentSHA256Mismatch`, `InvalidRequest`, `InvalidArgument` or a message about a checksum or `x-amz-checksum` / `x-amz-trailer` header.
+
+**Cause:** those versions add a CRC checksum to every upload by default (and validate checksums on downloads). Cloider's storage doesn't accept these default upload checksums.
+
+**Fix:** tell the tool to send checksums only when the S3 API requires them.
+
+<Tabs groupId="checksum-fix">
+<TabItem value="config" label="AWS config file" default>
+
+```ini title="~/.aws/config"
+[profile cloider]
+region = eu-central-2
+endpoint_url = https://s3.eu-central-2.cloider.com
+request_checksum_calculation = when_required
+response_checksum_validation = when_required
+```
+
+</TabItem>
+<TabItem value="env" label="Environment variables">
+
+```bash
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+```
+
+These work for the AWS CLI and every AWS SDK, including tools built on them.
+
+</TabItem>
+<TabItem value="sdk" label="SDK options">
+
+| SDK | Client option |
+| --- | --- |
+| JavaScript v3 | `requestChecksumCalculation: "WHEN_REQUIRED"`, `responseChecksumValidation: "WHEN_REQUIRED"` |
+| Python (boto3 1.36+) | `Config(request_checksum_calculation="when_required", response_checksum_validation="when_required")` |
+| Go v2 | `o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired` and `o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired` |
+| PHP | `'request_checksum_calculation' => 'when_required'`, `'response_checksum_validation' => 'when_required'` |
+| Java v2 | `.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)`, `.responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)` |
+| Ruby | `request_checksum_calculation: "when_required"`, `response_checksum_validation: "when_required"` |
+| .NET | `RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED`, `ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED` |
+
+</TabItem>
+</Tabs>
+
+Older tool versions don't add these checksums and don't need the setting. Full examples are in [S3 tools](/object-storage/s3-tools) and [SDKs](/object-storage/sdks).
+
+## SignatureDoesNotMatch {#signaturedoesnotmatch}
+
+**Symptom:** `An error occurred (SignatureDoesNotMatch) ... The request signature we calculated does not match the signature you provided.`
+
+The storage computed a different signature than the client sent. Common causes:
+
+1. **Wrong secret key.** A copy and paste error, an extra space or newline, or the secret of another key. Secrets are shown only once: if in doubt, [create a new key](/object-storage/access-keys).
+2. **Secret and access key id from different keys.** Check that the id (`CLDR...`) belongs to the secret you use.
+3. **A presigned URL used differently than it was signed.** A presigned PUT signed with a `Content-Type` must be sent with exactly that `Content-Type`. A presigned URL must be used with the method it was made for (GET or PUT), and its query string must not be changed or re-encoded.
+4. **A proxy or framework changes the request.** Some HTTP proxies, CDNs or middlewares add, remove or rewrite headers after signing. Test from a plain terminal with the AWS CLI to rule this out.
+5. **A key with special characters in the object name** that a client encodes differently than it signed. Try a simple key such as `test.txt` to narrow it down.
+
+## AccessDenied {#accessdenied}
+
+**Symptom:** `An error occurred (AccessDenied) ... Access Denied`, or HTTP `403`.
+
+The request was signed correctly, but isn't allowed. Check, in order:
+
+| Check | How |
+| --- | --- |
+| The key opens this bucket | `cloider bucket key list` shows each key's buckets. A key limited to specific buckets doesn't reach buckets created later |
+| The key may write | Uploads, deletes, tagging, versioning and lifecycle changes need a **Read & write** key. **Read only** keys can only list and download |
+| A bucket policy denies it | `cloider bucket policy get <bucket>` shows the policy. Deny statements override everything |
+| The action is one keys can never do | Creating or deleting buckets (`aws s3 mb`, `rclone mkdir`), and reading or changing bucket policies through the S3 API, are refused for every key |
+| The request has no key | Without a key, only downloads from a [public bucket](/object-storage/public-and-private-buckets) are allowed. Listing is never public unless a policy allows it |
+
+Typical cases:
+
+- **rclone fails with AccessDenied on copy or sync.** rclone tries to create the bucket first. Set `no_check_bucket = true` in the remote, or pass `--s3-no-check-bucket`.
+- **`aws s3 mb` fails.** Create buckets in the dashboard or with `cloider bucket create`.
+- **`aws s3api get-bucket-policy` fails.** Policies aren't readable through the S3 API. Use the dashboard or the CLI.
+- **A public file URL answers 403.** The bucket is private, the key is misspelled (keys are case sensitive), or a space or special character isn't URL encoded.
+- **Uploads under one folder fail, others work.** A policy Deny covers that prefix.
+
+## InvalidAccessKeyId
+
+**Symptom:** `The AWS Access Key Id you provided does not exist in our records.`
+
+The access key id doesn't exist: the key was deleted (possibly during a rotation), it is mistyped, or the tool still uses AWS credentials from another profile or environment variable. Check which credentials the tool uses (`aws configure list --profile cloider`), and compare with `cloider bucket key list`.
+
+## RequestTimeTooSkewed
+
+**Symptom:** `The difference between the request time and the current time is too large.`
+
+Signed requests carry a timestamp, and the computer's clock is far off. Sync the clock (enable NTP, or `sudo timedatectl set-ntp true` on Linux) and try again. Containers use the host's clock.
+
+## NoSuchBucket and NoSuchKey
+
+- **`NoSuchBucket`**: the bucket name is misspelled, the bucket was deleted, or the tool appends the bucket name to the endpoint twice (an endpoint must not contain the bucket name when the tool also gets it separately).
+- **`NoSuchKey`** (HTTP `404`): no object under that key. Keys are case sensitive and have no leading `/`. On a versioned bucket, the file may have been deleted: see [Restore a deleted file](/object-storage/versioning#restore-a-deleted-file).
+
+## The tool connects to amazonaws.com
+
+**Symptom:** `Could not connect to the endpoint URL: "https://acme-assets.s3.eu-central-2.amazonaws.com/..."`, `getaddrinfo ENOTFOUND ... amazonaws.com`, or an AWS error such as `The AWS Access Key Id you provided does not exist`.
+
+The endpoint isn't set, so the tool talks to Amazon S3. Set `endpoint_url` in the profile, `AWS_ENDPOINT_URL_S3` in the environment, or the endpoint option of your SDK. With AWS CLI versions older than 2.13, the `endpoint_url` setting in the config file is ignored: upgrade, or pass `--endpoint-url https://s3.eu-central-2.cloider.com` on every command.
+
+## Browser uploads with presigned URLs fail
+
+**Symptom:** the browser console shows a CORS error or `403` when a page uploads to a presigned URL.
+
+Uploads from browsers to presigned URLs work on Cloider: the dashboard's own file browser uploads this way. When they fail, the cause is almost always the request, not CORS itself (a failed request often surfaces as a CORS error in the console):
+
+- the `PUT` sends a different `Content-Type` than the URL was signed with,
+- the URL expired (check the `expiresIn` you used),
+- the key that signed the URL was deleted, is read only, or doesn't open the bucket,
+- the page uses `POST` or a form upload instead of a `PUT` with the file as the body.
+
+Compare the failing request in the browser's network tab with the [browser upload example](/object-storage/sdks#let-a-browser-upload-directly-to-the-bucket). Setting a bucket's own CORS rules isn't available from Cloider's tools.
+
+## Slow or interrupted transfers
+
+- **Many files with the `cloider` CLI are slow.** The CLI sends one API request per file and spaces requests out to stay within the API's limit. For hundreds or thousands of files, use `aws s3 sync` or `rclone` with an [access key](/object-storage/access-keys).
+- **Large uploads are interrupted.** Use a tool that does multipart uploads (the AWS CLI, rclone, the SDKs' upload managers), which retry single parts. Add a [lifecycle rule](/object-storage/lifecycle-rules) that cleans up unfinished uploads, since interrupted ones leave parts that use storage.
+- **Files over 5 GB can't be uploaded from the dashboard or the CLI.** Use an S3 tool.
+
+## Dashboard, CLI and API messages
+
+| Message | Cause and fix |
+| --- | --- |
+| `This bucket name is already taken` | Bucket names are shared by every Cloider account. Choose another. See [Create a bucket](/object-storage/create-a-bucket#choose-a-bucket-name) |
+| `Free plan users can not create more than one bucket. UPGRADE NOW!` | The Free plan allows one bucket |
+| `Buckets aren't available at the moment!` | Bucket creation is temporarily unavailable. Try again later |
+| `The bucket isn't ready!` | The bucket is still being created, failed, or is being deleted |
+| `The file browser isn't available for this bucket!` | The dashboard can't reach this bucket's files. Contact support with the bucket's name |
+| `Bucket not found!` | The bucket doesn't exist in the current account. Check the account you are in |
+| `Another change to this bucket is in progress, try again in a moment!` | Settings, policy and delete changes to one bucket run one at a time. Wait a moment |
+| `The bucket must be ready to change its settings.` | Wait until the bucket is **Ready** |
+| `The bucket's policy denies this, change the policy first.` | A Deny for everyone in the bucket policy blocks the change. Edit the policy |
+| `The bucket's policy allows everyone ("*"), remove those statements first.` | Remove public statements from the policy before making the bucket private |
+| `You have read-only access to this account, ...` | Your role in this account is read only. Ask the Owner or an Admin |
+| `This API token is read only!` | The API token has **Read** access. Use a **Read & Write** token |
+| `An account can have up to 50 access keys, delete one you no longer use!` | Delete unused keys |
+| `Files over 5 GB can't be uploaded from the dashboard, use an S3 client!` | Use an S3 tool for large files |
+| `The folder "..." holds over 10000 files, delete it with an S3 client!` | Use an S3 tool or a lifecycle rule |
+| A bucket shows **Failed** | Setting it up or deleting it didn't complete. Delete it from its **Settings** tab, and create it again if needed |
+| CLI exits with code `5` | Forbidden: the API token is read only, or your role is |
+| CLI exits with code `4` | Not found: no bucket or key with that name in this account |
+
+## Next steps
+
+- [Configure S3 tools correctly](/object-storage/s3-tools).
+- [Manage access keys](/object-storage/access-keys).
+- [See every reference troubleshooting topic](/reference/troubleshooting).
+
+<FAQ items={[
+  {q: 'Why does the AWS CLI fail to upload to Cloider but listing works?', a: 'Since version 2.23 the AWS CLI adds a checksum to every upload by default, which Cloider\'s storage doesn\'t accept. Set request_checksum_calculation = when_required and response_checksum_validation = when_required in the profile, or export AWS_REQUEST_CHECKSUM_CALCULATION=when_required and AWS_RESPONSE_CHECKSUM_VALIDATION=when_required.'},
+  {q: 'What causes SignatureDoesNotMatch on Cloider?', a: 'Usually a wrong or mistyped secret key, an access key id and secret from different keys, or a presigned URL sent with a different Content-Type or method than it was signed for. Recreate the key if you are unsure of the secret.'},
+  {q: 'Why do I get AccessDenied with a valid key?', a: 'The key may not open that bucket, may be read only, or a bucket policy may deny the action. Access keys also can never create or delete buckets or read bucket policies through the S3 API. Check cloider bucket key list and cloider bucket policy get <bucket>.'},
+  {q: 'Why does rclone fail with AccessDenied when copying to Cloider?', a: 'rclone tries to create the bucket before copying, which access keys aren\'t allowed to do. Set no_check_bucket = true in the rclone remote or pass --s3-no-check-bucket.'},
+]} />

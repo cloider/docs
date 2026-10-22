@@ -1,0 +1,382 @@
+---
+title: cloider_database resource (Terraform)
+sidebar_label: cloider_database
+sidebar_position: 2
+description: Create managed PostgreSQL, MySQL, MongoDB and Redis databases with the cloider_database Terraform resource, with trusted sources, SSL, resizing, pausing and import.
+keywords: [cloider_database, terraform postgresql, terraform mysql, terraform mongodb, terraform redis, managed database terraform, trusted sources terraform, database connection string terraform]
+---
+
+The `cloider_database` resource creates and manages a Cloider [managed database](/databases/overview): PostgreSQL, MySQL, MongoDB or Redis. Creating one waits until it is `Ready`, and its attributes then hold everything a client needs to connect: `host`, `private_host`, `port`, `user`, `password` and, with SSL on, `ca_certificate`. You control who may connect with `trusted_sources`, resize it with `plan`, and pause it with `paused`.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `name`, `engine` |
+| **Changes in place** | `plan` (to a larger plan), `label`, `ssl`, `trusted_sources`, `paused` |
+| **Changes that replace the database** | `name`, `engine`, `version`, `user`, and `plan` to a smaller plan |
+| **Sensitive attributes** | `password`, `ca_certificate` |
+| **Timeouts** | `create`, `update`, `delete`, 20 minutes each by default |
+| **Import ID** | The database id, such as `p0q9zm` |
+| **API** | [`/api/databases`](/api/endpoints/databases) |
+| **CLI equivalent** | [`cloider db`](/cli/commands/db) |
+
+:::warning[Replacing a database deletes its data]
+A replacement is a delete followed by a create. The new database is empty. Read every plan that touches a `cloider_database`, and use `lifecycle { prevent_destroy = true }` on databases that hold data you care about.
+:::
+
+## Example usage
+
+### Basic PostgreSQL database
+
+```hcl title="main.tf"
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+  plan   = "starter"
+}
+```
+
+This creates a PostgreSQL database with the newest version on offer, SSL on, a user called `orders_db_user`, and `trusted_sources = ["*"]` (anywhere), which is what the dashboard does by default.
+
+### Every engine
+
+```hcl title="main.tf"
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+}
+
+resource "cloider_database" "shop" {
+  name   = "shop-db"
+  engine = "mysql"
+}
+
+resource "cloider_database" "catalog" {
+  name   = "catalog-db"
+  engine = "mongodb"
+}
+
+resource "cloider_database" "cache" {
+  name   = "cache"
+  engine = "redis"
+}
+```
+
+### Allow only your cluster, your office and a CI runner
+
+```hcl title="main.tf"
+resource "cloider_cluster" "production" {
+  name = "production"
+}
+
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+  plan   = "standard"
+
+  trusted_sources = [
+    "cluster:${cloider_cluster.production.id}", # pods in the cluster, on the private host
+    "203.0.113.0/24",                            # the office network
+    "198.51.100.7/32",                           # one CI runner
+  ]
+}
+```
+
+A `cluster:<id>` or `app:<id>` source only matches connections that arrive on the database's `private_host`. See [Trusted sources](/databases/trusted-sources).
+
+### A production database: larger plan, custom user and label, protected
+
+```hcl title="main.tf"
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+  plan   = "standard"
+  user   = "orders_app"
+  label  = "orders-production"
+
+  trusted_sources = ["cluster:${cloider_cluster.production.id}"]
+
+  timeouts = {
+    create = "40m"
+    update = "40m"
+  }
+
+  # Refuses any plan that would delete or replace the database
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+```
+
+### Connection strings as outputs
+
+These are the formats the dashboard's DSN box shows (see [Connect to a database](/databases/connect)). They use `host`, for clients outside Cloider. Use `private_host` from your clusters and apps.
+
+```hcl title="outputs.tf"
+locals {
+  pg    = cloider_database.orders
+  mysql = cloider_database.shop
+  mongo = cloider_database.catalog
+  redis = cloider_database.cache
+}
+
+output "postgresql_url" {
+  value     = "postgresql://${local.pg.user}:${urlencode(local.pg.password)}@${local.pg.host}:${local.pg.port}/${local.pg.name}?sslmode=require"
+  sensitive = true
+}
+
+output "mysql_url" {
+  value     = "mysql://${local.mysql.user}:${urlencode(local.mysql.password)}@${local.mysql.host}:${local.mysql.port}/${local.mysql.name}"
+  sensitive = true
+}
+
+output "mongodb_url" {
+  value     = "mongodb://${local.mongo.user}:${urlencode(local.mongo.password)}@${local.mongo.host}:${local.mongo.port}/${local.mongo.name}?tls=true"
+  sensitive = true
+}
+
+# Redis has SSL off by default, so the scheme is redis://. With ssl = true use rediss://
+output "redis_url" {
+  value     = "${local.redis.ssl ? "rediss" : "redis"}://${local.redis.user}:${urlencode(local.redis.password)}@${local.redis.host}:${local.redis.port}/0"
+  sensitive = true
+}
+```
+
+```bash
+terraform output -raw postgresql_url
+```
+
+```text title="Output"
+postgresql://orders_db_user:...@orders-db-p0q9zm.db.cloider.com:20417/orders-db?sslmode=require
+```
+
+`urlencode()` matters: a password can contain characters that have a meaning in a URL.
+
+### Pass the credentials to a Kubernetes workload
+
+With the `kubernetes` provider configured from a [`cloider_cluster`](/terraform/resources/cluster), store the connection string and CA certificate as a Secret your pods read:
+
+```hcl title="main.tf"
+resource "kubernetes_secret_v1" "orders_db" {
+  metadata {
+    name      = "orders-db"
+    namespace = "default"
+  }
+
+  data = {
+    DATABASE_URL = "postgresql://${cloider_database.orders.user}:${urlencode(cloider_database.orders.password)}@${cloider_database.orders.private_host}:${cloider_database.orders.port}/${cloider_database.orders.name}?sslmode=require"
+
+    # For clients that verify the server's certificate
+    "ca.crt" = cloider_database.orders.ca_certificate
+  }
+}
+```
+
+### Redis with TLS
+
+Redis has SSL **off** by default. Turning it on makes the server accept TLS connections only, so every client then needs `rediss://` and the CA certificate:
+
+```hcl title="main.tf"
+resource "cloider_database" "cache" {
+  name            = "cache"
+  engine          = "redis"
+  ssl             = true
+  trusted_sources = ["cluster:${cloider_cluster.production.id}"]
+}
+```
+
+### Resize to a larger plan
+
+Changing `plan` to a larger one resizes the database in place. It restarts once and keeps its data:
+
+```hcl title="main.tf"
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+  plan   = "standard" # was "starter"
+}
+```
+
+See [Resize a database](/databases/resize) for what each plan offers.
+
+### Pause a database
+
+A paused database keeps its data and can't be connected to:
+
+```hcl title="main.tf"
+resource "cloider_database" "staging_orders" {
+  name   = "staging-orders"
+  engine = "postgresql"
+  paused = true
+}
+```
+
+### Pick the version from the options data source
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+locals {
+  postgresql = one([for e in data.cloider_options.current.database_engines : e if e.engine == "postgresql"])
+}
+
+resource "cloider_database" "orders" {
+  name    = "orders-db"
+  engine  = "postgresql"
+  version = local.postgresql.versions[0]
+
+  # A different version replaces the database, so keep the one it was created with
+  lifecycle {
+    ignore_changes = [version]
+  }
+}
+```
+
+## Argument reference
+
+| Argument | Type | Required | Default | Changing it | Description |
+| --- | --- | --- | --- | --- | --- |
+| `name` | String | Yes | | **Replaces** | The database's name, also the name of the database inside the server. Lower case letters, digits and `-`, starting with a letter, not ending with `-`, 2 to 64 characters. Some names are reserved, see [Limits](/reference/limits-and-quotas) |
+| `engine` | String | Yes | | **Replaces** | `postgresql`, `mysql`, `mongodb` or `redis` |
+| `version` | String | No | The newest version of the engine on offer | **Replaces** | The engine version, from the `versions` of the engine in [`cloider_options`](/terraform/data-sources/options)' `database_engines` |
+| `user` | String | No | `<name>_user` with `-` written as `_`, such as `orders_db_user` | **Replaces** | The user to connect as: lower case letters, digits and `_`, starting with a letter |
+| `plan` | String | No | `hobby` | In place to a larger plan, **replaces** to a smaller one | `hobby`, `starter`, `basic`, `standard`, `plus` or `pro`, smallest first. See `cloider pricing` and [Pricing](/reference/pricing) |
+| `label` | String | No | `name`, with a `-1`, `-2`... suffix when another database has that name | In place | The name the dashboard and CLI show. Lower case letters, digits and `-`, starting with a letter. Unique among your databases |
+| `ssl` | Bool | No | `true`, except `false` for Redis | In place, **restarts** the database | Whether connections must use TLS. On Redis, `true` makes the server accept TLS connections only |
+| `trusted_sources` | Set of String | No | `["*"]` | In place | Who may connect. At least one entry. See [Trusted source formats](#trusted-source-formats) |
+| `paused` | Bool | No | `false` | In place | Whether the database is paused |
+| `timeouts` | Object | No | 20 minutes each | | `create`, `update` and `delete` durations, such as `"40m"`. See [Timeouts](#timeouts) |
+
+### Trusted source formats
+
+| Value | Allows | Example |
+| --- | --- | --- |
+| `*` | Anywhere. Must be the only entry | `["*"]` |
+| An IPv4 CIDR | A network, or one address with `/32` | `"203.0.113.0/24"`, `"198.51.100.7/32"` |
+| `cluster:<id>` | Pods in one of your clusters, on the private host | `"cluster:${cloider_cluster.production.id}"` |
+| `app:<id>` | One of your apps, on the private host | `"app:a7k2mq"` |
+
+The provider checks these at plan time:
+
+- A CIDR must be written as the network it allows: `10.0.0.7/24` is refused with `Write "10.0.0.7/24" as 10.0.0.0/24, the network it allows.`, because the API would store it as `10.0.0.0/24` and every plan would show a change.
+- A single address needs `/32`. IPv6 isn't accepted.
+- `*` can't be combined with other entries: `'*' allows anywhere, so it can't be listed with other sources.`
+- At apply time, a `cluster:<id>` must be one of your clusters (`Unknown cluster`) and an `app:<id>` one of your apps (`Unknown app`).
+
+Apps aren't managed by Terraform, so take an app's id from `cloider app list -o wide`.
+
+## Attribute reference
+
+| Attribute | Type | Sensitive | Description |
+| --- | --- | --- | --- |
+| `id` | String | No | The database's id, such as `p0q9zm` |
+| `host` | String | No | The public host, for clients anywhere `trusted_sources` allows, such as `orders-db-p0q9zm.db.cloider.com` |
+| `private_host` | String | No | The private host, for your clusters and apps inside Cloider's network, such as `orders-db-p0q9zm.db.cloider.internal` |
+| `port` | Number | No | The port, the same on both hosts, such as `20417` |
+| `password` | String | Yes | The password of `user` |
+| `ca_certificate` | String | Yes | The PEM CA certificate that signs the server's TLS certificate. Null when `ssl` is off |
+| `status` | String | No | `Creating`, `Starting`, `Ready`, `Upgrading`, `Pausing`, `Paused` or `Terminating`. See [Status values](/reference/status-values) |
+| `created_at` | String | No | When the database was created, in RFC 3339 |
+| `version`, `user`, `label`, `ssl` | | No | The values in use, also when you didn't set them |
+
+The password is read once, when the database is created or imported, and kept in state. Treat the state as sensitive: anyone who can read it can connect to the database.
+
+## What replaces a database?
+
+These changes make Terraform plan `-/+ destroy and then create replacement`, which deletes the database and its data:
+
+- `name`, `engine`, `version` or `user`
+- `plan` to a **smaller** plan, because a database can only be resized up
+
+```text title="Output"
+  # cloider_database.orders must be replaced
+-/+ resource "cloider_database" "orders" {
+      ~ id              = "p0q9zm" -> (known after apply)
+      ~ plan            = "standard" -> "starter" # forces replacement
+        # (14 unchanged attributes hidden)
+    }
+```
+
+These changes are made in place, in this order, and the provider waits after each one that restarts the database:
+
+1. Resume, when `paused` goes from `true` to `false`
+2. `label`
+3. `trusted_sources`
+4. `ssl`, which restarts the database and waits until it is `Ready`
+5. `plan` to a larger plan, which restarts the database and waits until it is `Ready`. If the resize fails, the database goes back to `Ready` on the old plan and the apply fails with `Resizing database orders-db failed: It is still on Starter. Apply again to retry, or contact support if it keeps failing.`
+6. Pause, when `paused` goes from `false` to `true`
+
+## Paused databases
+
+A paused database can't be resized and can't change SSL, because both restart it. The provider refuses those changes at plan time, rather than failing halfway through an apply:
+
+```text title="Output"
+Error: Can't resize a paused database
+
+Resume it with paused = false to resize it, then pause it again.
+```
+
+You can resume and resize in the same apply: set `paused = false` and the new `plan` together, and the provider resumes first. Creating a database with `paused = true` creates it, waits until it is `Ready`, sets the label, then pauses it.
+
+## Timeouts
+
+| Operation | Default | What it waits for |
+| --- | --- | --- |
+| `create` | 20 minutes | The database to be `Ready` (and `Paused`, when created with `paused = true`) |
+| `update` | 20 minutes | A resize, an SSL change, a pause or a resume |
+| `delete` | 20 minutes | The database to be gone (`Terminated`) |
+
+If a create times out, the database still exists and is kept in state as tainted, so it isn't orphaned. Larger plans can take longer to create and resize, so raise `create` and `update` for them.
+
+## Import
+
+Import an existing database by its id. `cloider db list -o wide` shows the ids:
+
+```bash
+cloider db list -o wide
+```
+
+```text title="Output"
+ID       NAME        ENGINE         PLAN       STATUS   CREATED
+p0q9zm   orders-db   PostgreSQL 18  Standard   Ready    2026-09-02 14:12
+```
+
+With an `import` block (Terraform 1.5 or later):
+
+```hcl title="imports.tf"
+import {
+  to = cloider_database.orders
+  id = "p0q9zm"
+}
+
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+  plan   = "standard"
+}
+```
+
+With the `terraform import` command:
+
+```bash
+terraform import cloider_database.orders p0q9zm
+```
+
+The import reads every attribute, including the password and the CA certificate. Then run `terraform plan` and make the configuration match what was imported: in particular `plan`, `ssl` and `trusted_sources`, whose defaults (`hobby`, on, `["*"]`) may differ from the real database. A plan that shows `# forces replacement` after an import means the configuration doesn't match yet; fix it before applying.
+
+## Related
+
+- [`cloider_cluster`](/terraform/resources/cluster): a cluster to list in `trusted_sources`
+- [`cloider_options`](/terraform/data-sources/options): engines, versions and plans on offer
+- [Connect to a database](/databases/connect), [SSL/TLS](/databases/ssl-tls), [Trusted sources](/databases/trusted-sources)
+- [Back up a database to a bucket](/guides/back-up-a-database-to-a-bucket)
+
+<FAQ items={[
+  {q: 'How do I create a PostgreSQL database on Cloider with Terraform?', a: 'Add a cloider_database resource with name and engine = "postgresql", optionally plan, trusted_sources and ssl, and run terraform apply. The provider waits until the database is Ready, then exposes host, private_host, port, user and password.'},
+  {q: 'Can I resize a Cloider database with Terraform?', a: 'Yes, to a larger plan. Changing plan from starter to standard resizes the database in place with one restart, and the provider waits until it is Ready again. A smaller plan replaces the database, which deletes its data.'},
+  {q: 'Is SSL on by default for Cloider databases in Terraform?', a: 'Yes for PostgreSQL, MySQL and MongoDB. Redis has SSL off by default, and setting ssl = true makes the Redis server accept TLS connections only.'},
+  {q: 'How do I let only my Kubernetes cluster connect to the database?', a: 'Set trusted_sources = ["cluster:${cloider_cluster.production.id}"]. Cluster and app sources match connections that arrive on the private_host, so connect from the cluster with private_host.'},
+  {q: 'Why does Terraform want to replace my database?', a: 'Because name, engine, version or user changed, or plan moved to a smaller plan. None of those can change in place. The plan marks the attribute with # forces replacement. Put the value back, or use lifecycle { prevent_destroy = true } to make Terraform refuse the plan.'},
+  {q: 'Where is the database password stored?', a: 'In the password attribute, which is sensitive: Terraform hides it in plans and outputs, but stores it in plain text in the state. Read it with terraform output -raw if you expose it as an output.'},
+]} />

@@ -1,0 +1,510 @@
+---
+title: cloider cluster command reference
+sidebar_label: cluster
+sidebar_position: 2
+description: Reference for cloider cluster, to create, list, pause, resume and delete Kubernetes clusters, get kubeconfigs, list services, open a shell and run kubectl with exec.
+keywords: [cloider cluster, cloider cluster create, cloider cluster kubeconfig, cloider cluster exec, kubernetes cli, kubectl, cloider kubernetes]
+---
+
+`cloider cluster` manages your [serverless Kubernetes clusters](/kubernetes/overview): it creates, lists, pauses, resumes and deletes them, hands you their kubeconfig for `kubectl`, lists the services they expose, opens a shell with `kubectl` and `helm` inside the cluster, and runs one-off commands there for scripts and AI agents.
+
+```text
+cloider cluster <command> [flags]
+```
+
+**Alias:** `cloider clusters`. Every subcommand that takes `<cluster>` accepts the cluster's name, label or id (see [how commands find a resource](/cli/output-and-scripting#how-do-commands-find-a-resource)).
+
+## Subcommands
+
+| Command | Description |
+| --- | --- |
+| [`cloider cluster list`](#cloider-cluster-list) | List clusters |
+| [`cloider cluster get`](#cloider-cluster-get) | Show a cluster |
+| [`cloider cluster create`](#cloider-cluster-create) | Create a cluster |
+| [`cloider cluster delete`](#cloider-cluster-delete) | Delete a cluster and everything in it |
+| [`cloider cluster pause`](#cloider-cluster-pause) | Pause a cluster, stopping its compute until it is resumed |
+| [`cloider cluster resume`](#cloider-cluster-resume) | Resume a paused cluster |
+| [`cloider cluster status`](#cloider-cluster-status) | Print a cluster's status |
+| [`cloider cluster kubeconfig`](#cloider-cluster-kubeconfig) | Print a cluster's kubeconfig, write it to a file, or merge it into yours |
+| [`cloider cluster services`](#cloider-cluster-services) | List the services clusters expose, which domain targets can route to |
+| [`cloider cluster shell`](#cloider-cluster-shell) | Open a shell with kubectl inside a cluster |
+| [`cloider cluster exec`](#cloider-cluster-exec) | Run a command in the cluster's terminal (kubectl, helm), for scripts and AI agents |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags) (`-o`, `-q`, `--no-headers`, `-y`, `--profile`, `--token-file`, `--api-url`, `--no-color`, `--debug`).
+
+## cloider cluster list
+
+List the account's Kubernetes clusters with their Kubernetes version, status and creation time.
+
+```text
+cloider cluster list [flags]
+```
+
+**Alias:** `cloider cluster ls`. No flags besides the global ones.
+
+```bash
+cloider cluster list
+```
+
+```text title="Output"
+NAME         VERSION   STATUS   CREATED
+staging      1.34      Ready    2026-10-14 09:12
+production   1.34      Ready    2026-09-02 16:40
+load-test    1.33      Paused   2026-08-21 11:05
+```
+
+With ids:
+
+```bash
+cloider cluster list -o wide
+```
+
+```text title="Output"
+ID           NAME         VERSION   STATUS   CREATED
+k3m9x2p7q1   staging      1.34      Ready    2026-10-14 09:12
+p8d2w4n6r0   production   1.34      Ready    2026-09-02 16:40
+t4y6u8i0o2   load-test    1.33      Paused   2026-08-21 11:05
+```
+
+The **NAME** column is the cluster's label, the unique name you use in commands. `-q` prints the ids, and `-o json` the API's list of cluster objects (`hashed_id`, `cluster_name`, `cluster_label`, `cluster_version`, `is_ha`, `status`, `created_at`).
+
+```bash
+# Names of clusters that are not Ready
+cloider cluster list -o json | jq -r '.[] | select(.status != "Ready") | .cluster_label'
+```
+
+MCP tool: `list_clusters`.
+
+## cloider cluster get
+
+Show one cluster.
+
+```text
+cloider cluster get <cluster> [flags]
+```
+
+**Alias:** `cloider cluster show`.
+
+| Argument | Description |
+| --- | --- |
+| `<cluster>` | Name, label or id of the cluster |
+
+```bash
+cloider cluster get staging
+```
+
+```text title="Output"
+Name:     staging
+Label:    staging
+Version:  1.34
+Status:   Ready
+Created:  2026-10-14 09:12
+```
+
+**Name** is the name you created the cluster with; **Label** is the unique name the dashboard and the CLI show. They are the same unless you created two clusters with the same name, in which case the second one's label gets a suffix such as `staging-1`. `-o wide` adds an **ID** line, and `-o json` prints the cluster object.
+
+MCP tool: `get_cluster`.
+
+## cloider cluster create
+
+Create a Kubernetes cluster.
+
+```text
+cloider cluster create <name> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<name>` | Name of the new cluster: lowercase letters, digits and `-`, starting with a letter, no spaces |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--version` | string | the newest offered | Kubernetes version, for example `1.34`, `1.33` or `1.32` |
+| `-w, --wait` | bool | `false` | Wait until the cluster is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The CLI reads the versions Cloider currently offers before creating the cluster. A version that isn't offered fails with exit code `2` and lists the ones that are:
+
+```text
+Error: version 1.29 isn't offered, pick one of: 1.34, 1.33, 1.32
+```
+
+Create a cluster and return right away:
+
+```bash
+cloider cluster create staging
+```
+
+```text title="Output"
+✓ Creating cluster staging (Kubernetes 1.34)
+Follow it with `cloider cluster status staging`, or pass --wait next time.
+```
+
+Create a cluster on a specific version and wait until it is ready:
+
+```bash
+cloider cluster create staging --version 1.33 --wait
+```
+
+```text title="Output"
+✓ Creating cluster staging (Kubernetes 1.33)
+✓ Cluster staging is ready. Get its kubeconfig with `cloider cluster kubeconfig staging --merge`.
+```
+
+Capture the new cluster's id in a script:
+
+```bash
+CLUSTER_ID=$(cloider cluster create staging -q)
+cloider cluster create staging -o json     # {"hashed_id": "k3m9x2p7q1"}
+```
+
+Name rules are checked by the API. A name with upper case letters, for example, fails with:
+
+```text
+Error: cluster_name: Cluster name can not be upper case
+```
+
+See [Create a cluster](/kubernetes/create-a-cluster) for what happens during provisioning. MCP tool: `create_cluster`.
+
+## cloider cluster delete
+
+Delete a cluster and everything in it: workloads, volumes and load balancers.
+
+```text
+cloider cluster delete <cluster> [flags]
+```
+
+**Alias:** `cloider cluster rm`.
+
+| Argument | Description |
+| --- | --- |
+| `<cluster>` | Name, label or id of the cluster |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the cluster is gone |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The command asks you to type the cluster's name to confirm. Pass `--yes` to skip the question; without a terminal, `--yes` is required.
+
+```bash
+cloider cluster delete load-test
+```
+
+```text title="Output"
+This permanently deletes cluster load-test.
+Type load-test to confirm: load-test
+✓ Deleting cluster load-test
+```
+
+In a script, without a prompt, waiting until it is gone:
+
+```bash
+cloider cluster delete load-test --yes --wait
+```
+
+```text title="Output"
+✓ Deleting cluster load-test
+✓ Cluster load-test is deleted
+```
+
+:::danger[Deleting a cluster can't be undone]
+Everything in the cluster is deleted with it, including persistent volumes. See [Delete a cluster](/kubernetes/delete-a-cluster).
+:::
+
+MCP tool: `delete_cluster`.
+
+## cloider cluster pause
+
+Pause a cluster, stopping its compute until you resume it. A paused cluster keeps its configuration and volumes.
+
+```text
+cloider cluster pause <cluster> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<cluster>` | Name, label or id of the cluster |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the cluster is `Paused` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider cluster pause staging --wait
+```
+
+```text title="Output"
+✓ Pausing cluster staging
+✓ Cluster staging is Paused
+```
+
+See [Pause and resume](/kubernetes/pause-and-resume) for what keeps running and what a paused cluster costs. MCP tool: `pause_cluster`.
+
+## cloider cluster resume
+
+Resume a paused cluster.
+
+```text
+cloider cluster resume <cluster> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<cluster>` | Name, label or id of the cluster |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the cluster is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider cluster resume staging --wait
+```
+
+```text title="Output"
+✓ Resuming cluster staging
+✓ Cluster staging is Ready
+```
+
+MCP tool: `resume_cluster`.
+
+## cloider cluster status
+
+Print a cluster's current status, and nothing else, which makes it easy to use in scripts.
+
+```text
+cloider cluster status <cluster> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<cluster>` | Name, label or id of the cluster |
+
+```bash
+cloider cluster status staging
+```
+
+```text title="Output"
+Ready
+```
+
+```bash
+cloider cluster status staging -o json
+```
+
+```json title="Output"
+{
+  "hashed_id": "k3m9x2p7q1",
+  "status": "Ready"
+}
+```
+
+A cluster's status is one of `Pending`, `Creating`, `Starting`, `Ready`, `Pausing`, `Paused`, `Upgrading`, `Terminating`, `Terminated` or `Failed`. See [Status values](/reference/status-values).
+
+```bash
+# Wait in a script until a cluster is Ready, without --wait
+until [ "$(cloider cluster status staging)" = "Ready" ]; do sleep 5; done
+```
+
+## cloider cluster kubeconfig
+
+Print a cluster's kubeconfig, write it to a file, or merge it into your own kubeconfig so `kubectl` can use it. The kubeconfig contains the cluster's credentials; keep it private.
+
+```text
+cloider cluster kubeconfig <cluster> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<cluster>` | Name, label or id of the cluster |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --file` | string | stdout | Write to this file instead of stdout. With `--merge`: the kubeconfig to merge into |
+| `--merge` | bool | `false` | Merge into your kubeconfig instead of printing it |
+| `--context` | string | `cloider-<cluster>` | Context name to merge as |
+| `--use` | bool | `false` | With `--merge`, make it the current context |
+
+**Print it** to stdout, for example to save it yourself:
+
+```bash
+cloider cluster kubeconfig staging > staging.yaml
+KUBECONFIG=staging.yaml kubectl get nodes
+```
+
+**Write it to a file** (created with mode `0600`):
+
+```bash
+cloider cluster kubeconfig staging -f ~/.kube/staging.yaml
+```
+
+```text title="Output"
+✓ Wrote the kubeconfig of staging to /Users/jane/.kube/staging.yaml
+```
+
+**Merge it** into your kubeconfig. The cluster, its user and its context are all added under the name `cloider-<cluster>` (or `--context`), replacing an earlier entry of that name, so running it again is safe. The file is the first one listed in `$KUBECONFIG`, or `~/.kube/config`, or the file given with `-f`. The new context becomes the current one with `--use`, or when the kubeconfig had no current context yet.
+
+```bash
+cloider cluster kubeconfig staging --merge
+```
+
+```text title="Output"
+✓ Added context cloider-staging to /Users/jane/.kube/config
+Use it with `kubectl --context cloider-staging`, or `kubectl config use-context cloider-staging`.
+```
+
+```bash
+cloider cluster kubeconfig staging --merge --use && kubectl get nodes
+cloider cluster kubeconfig production --merge --context prod
+kubectl --context prod get pods -A
+```
+
+See [Connect with kubectl](/kubernetes/connect-with-kubectl). MCP tool: `get_cluster_kubeconfig`.
+
+## cloider cluster services
+
+List the Kubernetes Services your clusters expose, with their namespace and ports. These are what a [domain target](/cli/commands/target) can route traffic to.
+
+```text
+cloider cluster services [cluster] [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `[cluster]` | Optional. Name, label or id of one cluster. Without it, the services of every cluster are listed |
+
+```bash
+cloider cluster services
+```
+
+```text title="Output"
+CLUSTER      NAMESPACE    SERVICE   PORTS
+staging      default      web       80/TCP
+staging      shop         api       8080/TCP, 9090/TCP
+production   default      web       80/TCP, 443/TCP
+production   monitoring   grafana   3000/TCP
+```
+
+```bash
+cloider cluster services staging -o json
+```
+
+```json title="Output"
+[
+  {
+    "id": "k3m9x2p7q1",
+    "name": "staging",
+    "services": [
+      {"service": "web", "namespace": "default", "ports": [{"protocol": "TCP", "port": 80}]},
+      {"service": "api", "namespace": "shop", "ports": [{"protocol": "TCP", "port": 8080}, {"protocol": "TCP", "port": 9090}]}
+    ]
+  }
+]
+```
+
+See [Expose services](/kubernetes/expose-services). MCP tool: `list_cluster_services`.
+
+## cloider cluster shell
+
+Open an interactive shell in the cluster's web terminal, the same one the dashboard opens, with `kubectl` and `helm` already configured for the cluster. Exit the shell (`exit` or Ctrl-D) to end the session.
+
+```text
+cloider cluster shell <cluster> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<cluster>` | Name, label or id of the cluster |
+
+```bash
+cloider cluster shell staging
+```
+
+```text title="Output"
+Connected, exit the shell to end the session.
+$ kubectl get pods -A
+NAMESPACE     NAME                       READY   STATUS    RESTARTS   AGE
+default       web-6d4b9c7f5d-x2l8q       1/1     Running   0          3h
+...
+```
+
+A shell needs a terminal on both ends. Run from a script or with redirected input, it fails with `a shell needs a terminal on both ends` and exit code `2`; use [`cloider cluster exec`](#cloider-cluster-exec) instead. See [Web terminal and exec](/kubernetes/web-terminal-and-exec). There is no MCP tool for `shell`; agents use `cluster_exec`.
+
+## cloider cluster exec
+
+Run one command in the cluster's terminal, where `kubectl` and `helm` are already pointed at the cluster, and exit with the command's exit code. stdout and stderr stay separate and nothing is a terminal, so the output is exactly what the command printed. This is the scriptable counterpart of `shell`, made for scripts, CI and AI agents, and it needs no kubectl on your machine.
+
+```text
+cloider cluster exec [flags] <cluster> [--] <command> [args...]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<cluster>` | Name, label or id of the cluster |
+| `<command> [args...]` | The command to run. Several arguments run as they are. A single argument containing spaces is a command line, run with `sh -c`, so pipes, `&&` and `$VARS` work |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-i, --stdin` | bool | `false` | Send stdin to the command, up to 2 MiB |
+| `--timeout` | duration | `10m0s` | Stop the command after this long, from `1s` up to `1h` |
+
+**Flags for exec go before the cluster.** Everything after the cluster belongs to the command, flags included, and `--` may separate the two. So `-o` before the cluster is cloider's output format, and `-o` after it is kubectl's.
+
+```bash
+cloider cluster exec staging kubectl get pods -A
+cloider cluster exec staging -- kubectl logs deploy/api --tail 50
+cloider cluster exec staging helm list -A
+```
+
+Run a command line with a pipe:
+
+```bash
+cloider cluster exec staging "kubectl get pods -A | grep -v Running"
+```
+
+Apply a local manifest through stdin:
+
+```bash
+cloider cluster exec -i staging -- kubectl apply -f - < deploy.yaml
+```
+
+```text title="Output"
+deployment.apps/web configured
+service/web unchanged
+```
+
+Get one JSON object for a script or agent, with the exit code still set:
+
+```bash
+cloider cluster exec -o json staging kubectl get namespaces -o name
+```
+
+```json title="Output"
+{
+  "exit_code": 0,
+  "stdout": "namespace/default\nnamespace/kube-node-lease\nnamespace/kube-public\nnamespace/kube-system\n",
+  "stderr": "",
+  "timed_out": false
+}
+```
+
+Exit codes: the command's own; `127` when the command doesn't exist, `126` when it can't run, `124` when `--timeout` stopped it. Errors in the call itself (`missing <cluster>`, `--timeout must be between 1s and 1h`, `stdin is bigger than 2 MiB`) exit with `2`. If the connection drops, the command fails with `the connection dropped before the command finished, it may still be running`. See [exit codes of exec commands](/cli/output-and-scripting#exit-codes-of-exec-commands).
+
+MCP tool: `cluster_exec` (marked as destructive, since a command can change anything in the cluster).
+
+## Related
+
+- [Kubernetes overview](/kubernetes/overview) and [Create a cluster](/kubernetes/create-a-cluster)
+- [Connect with kubectl](/kubernetes/connect-with-kubectl)
+- [`cloider target`](/cli/commands/target) to route a domain to a cluster service
+- [Terraform `cloider_cluster`](/terraform/resources/cluster) for infrastructure as code
+
+<FAQ items={[
+  {q: 'How do I create a Kubernetes cluster with the Cloider CLI?', a: 'Run cloider cluster create staging --wait. Without --version you get the newest Kubernetes version Cloider offers; --version 1.33 picks another one. --wait returns once the cluster is Ready.'},
+  {q: 'How do I get a kubeconfig for my Cloider cluster?', a: 'Run cloider cluster kubeconfig staging --merge --use. It adds the cluster to ~/.kube/config (or the first file in $KUBECONFIG) as the context cloider-staging and makes it the current context. Without --merge it prints the kubeconfig, and -f writes it to a file.'},
+  {q: 'Can I run kubectl without installing it?', a: 'Yes. cloider cluster exec staging kubectl get pods -A runs kubectl in the cluster\'s terminal, where kubectl and helm are already configured. cloider cluster shell staging opens an interactive shell there.'},
+  {q: 'How do I pause a cluster from the CLI?', a: 'Run cloider cluster pause staging --wait, and cloider cluster resume staging --wait to start it again.'},
+  {q: 'How do I delete a cluster without a confirmation prompt?', a: 'Pass --yes: cloider cluster delete staging --yes. Without a terminal, --yes is required, otherwise the command fails with exit code 2.'}
+]} />

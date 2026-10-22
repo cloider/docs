@@ -1,0 +1,499 @@
+---
+title: Managed MySQL on Cloider
+sidebar_label: MySQL
+sidebar_position: 5
+description: "Use managed MySQL 9 on Cloider: connection limits per plan, TLS, caching_sha2_password, and examples for mysql, Node.js, Python, Go, PHP, Java and Ruby."
+keywords: [managed mysql, mysql hosting, mysql 9, mysql client, mysql2, pymysql, go-sql-driver, pdo mysql, laravel mysql, connector/j, caching_sha2_password, max_connections]
+---
+
+Cloider runs managed **MySQL 9**, the open source relational database used by WordPress, Laravel, Drupal and many other applications. Each MySQL database is its own server with its own storage, a database and a user created for you, server settings tuned to its plan, daily backups and optional TLS.
+
+<Logos items={[{src: '/img/logos/mysql.svg', alt: 'MySQL'}]} />
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Version** | MySQL 9 |
+| **Storage engine** | InnoDB |
+| **Topology** | One server, no replicas |
+| **Port** | Assigned per database (not 3306) |
+| **Database and user** | A database named after your Cloider database (for example `shop-db`) and the user you chose (for example `shop_db_user`) |
+| **Root access** | Not given out. The `root` and `mysql` users are reserved |
+| **Authentication** | `caching_sha2_password` |
+| **SSL** | On by default. With SSL off, TLS is turned off on the server |
+| **Max connections** | 20 (Hobby) to 200 (Pro), see [server settings per plan](#server-settings-per-plan) |
+| **Client** | `mysql` |
+| **Backups** | Daily, restored into a new database |
+
+## Create a MySQL database
+
+```bash
+cloider db create shop-db --engine mysql --plan standard --wait
+```
+
+Or in the dashboard, choose **MySQL v9** under **Database Engine**. See [create a database](/databases/create-a-database).
+
+## Connection details
+
+| Detail | Example |
+| --- | --- |
+| Public host | `shop-db-k7x2wd.db.cloider.com` |
+| Private host (Cloider apps and clusters) | `shop-db-k7x2wd.db.cloider.internal` |
+| Port | `22861` |
+| Database | `shop-db` |
+| User | `shop_db_user` |
+| Password | `cloider db password shop-db` |
+
+The connection string the dashboard shows:
+
+```text
+mysql://shop_db_user:PASSWORD@shop-db-k7x2wd.db.cloider.com:22861/shop-db
+```
+
+It has no SSL parameter, because `mysql://` parsers don't agree on one. Set TLS in your driver's options, as the examples below do.
+
+## Connect with the mysql client
+
+With SSL on (the default):
+
+```bash
+MYSQL_PWD="$(cloider db password shop-db)" \
+  mysql -h shop-db-k7x2wd.db.cloider.com -P 22861 -u shop_db_user shop-db --ssl-mode=REQUIRED
+```
+
+With SSL off:
+
+```bash
+MYSQL_PWD="$(cloider db password shop-db)" \
+  mysql -h shop-db-k7x2wd.db.cloider.com -P 22861 -u shop_db_user shop-db --ssl-mode=DISABLED --get-server-public-key
+```
+
+To verify the server certificate:
+
+```bash
+cloider db cert shop-db -f ca.crt
+mysql -h shop-db-k7x2wd.db.cloider.com -P 22861 -u shop_db_user -p shop-db --ssl-mode=VERIFY_IDENTITY --ssl-ca=ca.crt
+```
+
+The CLI can run the client for you, or run it inside Cloider without anything installed:
+
+```bash
+cloider db connect shop-db                 # runs mysql with the right flags
+cloider db shell shop-db                   # interactive mysql, nothing to install
+cloider db exec shop-db "SHOW TABLES;"     # one query
+cloider db exec -i shop-db < schema.sql    # a script
+```
+
+### Why --get-server-public-key?
+
+MySQL 9 authenticates with `caching_sha2_password`. When the connection isn't encrypted, the client needs the server's RSA public key to send the password safely, and asks for it with `--get-server-public-key`. With SSL on, the password travels inside TLS and no key is needed. Drivers have their own option for it:
+
+| Client | Option when SSL is off |
+| --- | --- |
+| `mysql`, `mysqldump` | `--get-server-public-key` |
+| Java (Connector/J) | `allowPublicKeyRetrieval=true` |
+| Python (PyMySQL) | Install the `cryptography` package |
+| Node.js (mysql2) | Nothing, it fetches the key itself |
+
+Keeping SSL on avoids all of this.
+
+## Connect from code
+
+From a Cloider app or cluster, use the **private** host, see [connect from a Cloider app or cluster](/databases/connect#connect-from-a-cloider-app-or-kubernetes-cluster). The examples verify the server with the CA certificate from `cloider db cert shop-db -f ca.crt`.
+
+<Tabs groupId="language">
+<TabItem value="node" label="Node.js" default>
+
+With [mysql2](https://sidorares.github.io/node-mysql2/docs) (`npm install mysql2`):
+
+```js title="db.js"
+import fs from "node:fs";
+import mysql from "mysql2/promise";
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,        // shop-db-k7x2wd.db.cloider.com
+  port: Number(process.env.DB_PORT), // 22861
+  user: "shop_db_user",
+  password: process.env.DB_PASSWORD,
+  database: "shop-db",
+  ssl: { ca: fs.readFileSync("ca.crt") },
+  connectionLimit: 5,
+});
+
+const [rows] = await pool.execute("SELECT id, sku, stock FROM products WHERE id = ?", [42]);
+console.log(rows);
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+With [PyMySQL](https://pymysql.readthedocs.io/) (`pip install pymysql cryptography`):
+
+```python title="db.py"
+import os
+import pymysql
+
+conn = pymysql.connect(
+    host=os.environ["DB_HOST"],            # shop-db-k7x2wd.db.cloider.com
+    port=int(os.environ["DB_PORT"]),       # 22861
+    user="shop_db_user",
+    password=os.environ["DB_PASSWORD"],
+    database="shop-db",
+    ssl={"ca": "ca.crt"},
+)
+
+with conn.cursor() as cur:
+    cur.execute("SELECT id, sku, stock FROM products WHERE id = %s", (42,))
+    print(cur.fetchone())
+conn.close()
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+With [go-sql-driver/mysql](https://github.com/go-sql-driver/mysql) (`go get github.com/go-sql-driver/mysql`):
+
+```go title="main.go"
+package main
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"database/sql"
+	"fmt"
+	"os"
+
+	"github.com/go-sql-driver/mysql"
+)
+
+func main() {
+	// Trust Cloider's CA for this connection
+	pem, err := os.ReadFile("ca.crt")
+	if err != nil {
+		panic(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(pem)
+	mysql.RegisterTLSConfig("cloider", &tls.Config{
+		RootCAs:    roots,
+		ServerName: "shop-db-k7x2wd.db.cloider.com",
+	})
+
+	dsn := "shop_db_user:" + os.Getenv("DB_PASSWORD") +
+		"@tcp(shop-db-k7x2wd.db.cloider.com:22861)/shop-db?tls=cloider&parseTime=true"
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(5)
+
+	var stock int
+	if err := db.QueryRow("SELECT stock FROM products WHERE id = ?", 42).Scan(&stock); err != nil {
+		panic(err)
+	}
+	fmt.Println(stock)
+}
+```
+
+`tls=true` would check the certificate against the system's CAs, which don't include Cloider's, so register the CA as above. `tls=skip-verify` encrypts without checking.
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+With PDO and the `pdo_mysql` extension:
+
+```php title="db.php"
+<?php
+$pdo = new PDO(
+    'mysql:host=shop-db-k7x2wd.db.cloider.com;port=22861;dbname=shop-db;charset=utf8mb4',
+    'shop_db_user',
+    getenv('DB_PASSWORD'),
+    [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::MYSQL_ATTR_SSL_CA => __DIR__ . '/ca.crt',
+    ]
+);
+
+$stmt = $pdo->prepare('SELECT id, sku, stock FROM products WHERE id = ?');
+$stmt->execute([42]);
+print_r($stmt->fetch(PDO::FETCH_ASSOC));
+```
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+With [MySQL Connector/J](https://dev.mysql.com/doc/connector-j/en/):
+
+```java title="Main.java"
+import java.sql.*;
+
+public class Main {
+    public static void main(String[] args) throws SQLException {
+        String url = "jdbc:mysql://shop-db-k7x2wd.db.cloider.com:22861/shop-db?sslMode=REQUIRED";
+
+        try (Connection conn = DriverManager.getConnection(url, "shop_db_user", System.getenv("DB_PASSWORD"));
+             PreparedStatement st = conn.prepareStatement("SELECT id, sku, stock FROM products WHERE id = ?")) {
+            st.setLong(1, 42);
+            try (ResultSet rs = st.executeQuery()) {
+                while (rs.next()) {
+                    System.out.println(rs.getString("sku") + " " + rs.getInt("stock"));
+                }
+            }
+        }
+    }
+}
+```
+
+To verify the certificate, import the CA into a trust store and use `sslMode=VERIFY_IDENTITY`:
+
+```bash
+keytool -importcert -alias cloider-ca -file ca.crt -keystore cloider.jks -storepass changeit -noprompt
+```
+
+```text
+jdbc:mysql://shop-db-k7x2wd.db.cloider.com:22861/shop-db?sslMode=VERIFY_IDENTITY&trustCertificateKeyStoreUrl=file:cloider.jks&trustCertificateKeyStorePassword=changeit
+```
+
+With SSL off, use `sslMode=DISABLED&allowPublicKeyRetrieval=true`.
+
+</TabItem>
+<TabItem value="ruby" label="Ruby">
+
+With the [mysql2 gem](https://github.com/brianmario/mysql2) (`gem install mysql2`):
+
+```ruby title="db.rb"
+require "mysql2"
+
+client = Mysql2::Client.new(
+  host: ENV.fetch("DB_HOST"),          # shop-db-k7x2wd.db.cloider.com
+  port: Integer(ENV.fetch("DB_PORT")), # 22861
+  username: "shop_db_user",
+  password: ENV.fetch("DB_PASSWORD"),
+  database: "shop-db",
+  sslca: "ca.crt",
+  ssl_mode: :verify_identity
+)
+
+client.prepare("SELECT id, sku, stock FROM products WHERE id = ?").execute(42).each { |row| puts row }
+```
+
+</TabItem>
+</Tabs>
+
+## Use MySQL with frameworks and ORMs
+
+<Tabs groupId="orm">
+<TabItem value="laravel" label="Laravel" default>
+
+```bash title=".env"
+DB_CONNECTION=mysql
+DB_HOST=shop-db-k7x2wd.db.cloider.com
+DB_PORT=22861
+DB_DATABASE=shop-db
+DB_USERNAME=shop_db_user
+DB_PASSWORD=PASSWORD
+MYSQL_ATTR_SSL_CA=/var/www/html/ca.crt
+```
+
+Laravel's default `config/database.php` passes `MYSQL_ATTR_SSL_CA` to PDO for the `mysql` connection. Then run `php artisan migrate`.
+
+</TabItem>
+<TabItem value="wordpress" label="WordPress">
+
+```php title="wp-config.php"
+define( 'DB_NAME', 'shop-db' );
+define( 'DB_USER', 'shop_db_user' );
+define( 'DB_PASSWORD', getenv( 'DB_PASSWORD' ) );
+define( 'DB_HOST', 'shop-db-k7x2wd.db.cloider.internal:22861' );
+define( 'MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL );
+```
+
+`DB_HOST` takes the port after a colon. Use the private host when WordPress runs on Cloider. See [WordPress on Kubernetes](/guides/wordpress-on-kubernetes).
+
+</TabItem>
+<TabItem value="prisma" label="Prisma">
+
+```prisma title="prisma/schema.prisma"
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+```
+
+```bash title=".env"
+DATABASE_URL="mysql://shop_db_user:PASSWORD@shop-db-k7x2wd.db.cloider.com:22861/shop-db?sslaccept=strict&sslcert=../ca.crt"
+```
+
+`sslcert` is the path to the CA certificate, relative to the `prisma` folder.
+
+</TabItem>
+<TabItem value="django" label="Django">
+
+```python title="settings.py"
+import os
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.mysql",
+        "HOST": os.environ["DB_HOST"],     # shop-db-k7x2wd.db.cloider.com
+        "PORT": os.environ["DB_PORT"],     # 22861
+        "NAME": "shop-db",
+        "USER": "shop_db_user",
+        "PASSWORD": os.environ["DB_PASSWORD"],
+        "OPTIONS": {"ssl": {"ca": "ca.crt"}, "charset": "utf8mb4"},
+    }
+}
+```
+
+</TabItem>
+<TabItem value="sqlalchemy" label="SQLAlchemy">
+
+```python title="db.py"
+import os
+from sqlalchemy import create_engine, text
+
+# mysql+pymysql://shop_db_user:PASSWORD@shop-db-k7x2wd.db.cloider.com:22861/shop-db
+engine = create_engine(
+    os.environ["DATABASE_URL"],
+    connect_args={"ssl": {"ca": "ca.crt"}},
+    pool_size=5,
+    pool_recycle=280,
+    pool_pre_ping=True,
+)
+
+with engine.connect() as conn:
+    print(conn.execute(text("SELECT count(*) FROM products")).scalar())
+```
+
+</TabItem>
+<TabItem value="gorm" label="GORM">
+
+```go title="db.go"
+package db
+
+import (
+	"os"
+
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+)
+
+// Register the "cloider" TLS config first, as in the Go example above
+func Open() (*gorm.DB, error) {
+	dsn := "shop_db_user:" + os.Getenv("DB_PASSWORD") +
+		"@tcp(shop-db-k7x2wd.db.cloider.com:22861)/shop-db?tls=cloider&charset=utf8mb4&parseTime=True"
+	return gorm.Open(mysql.Open(dsn), &gorm.Config{})
+}
+```
+
+</TabItem>
+<TabItem value="rails" label="Rails">
+
+```yaml title="config/database.yml"
+production:
+  adapter: mysql2
+  host: <%= ENV["DB_HOST"] %>
+  port: <%= ENV["DB_PORT"] %>
+  database: shop-db
+  username: shop_db_user
+  password: <%= ENV["DB_PASSWORD"] %>
+  sslca: ca.crt
+  ssl_mode: verify_identity
+  pool: 5
+```
+
+</TabItem>
+</Tabs>
+
+## MySQL features and limits on Cloider
+
+### Server settings per plan
+
+Cloider tunes MySQL's memory and connection settings to each plan. The most important ones:
+
+| Plan | `max_connections` | `innodb_buffer_pool_size` | `performance_schema` |
+| --- | --- | --- | --- |
+| Hobby | 20 | 64 MB | Off |
+| Starter | 40 | 128 MB | Off |
+| Basic | 75 | 512 MB | Off |
+| Standard | 100 | 512 MB | Off |
+| Plus | 150 | 1 GB | On |
+| Pro | 200 | 2 GB | On |
+
+`max_connections` is the most important limit for applications: every process, worker and connection pool counts against it. A Laravel app with 10 PHP workers, or a Node.js app with 4 instances and a pool of 5, already uses 10 to 20 connections. [Resizing](/databases/resize) applies the new plan's settings. Check the current values with:
+
+```sql
+SHOW VARIABLES WHERE Variable_name IN ('max_connections', 'innodb_buffer_pool_size', 'performance_schema');
+SHOW STATUS LIKE 'Threads_connected';
+```
+
+### The database and the user
+
+Cloider creates one database, named after your Cloider database, and one user. The `root` user is reserved for Cloider, so statements that need administrative privileges, such as `SET GLOBAL`, `SUPER` or creating objects with another user as `DEFINER`, aren't available.
+
+### Database names with hyphens
+
+A database name with a hyphen, such as `shop-db`, works as is in connection settings. Inside SQL, quote it with backticks:
+
+```sql
+USE `shop-db`;
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'shop-db';
+```
+
+### Character set
+
+MySQL 9 uses `utf8mb4` by default, which stores every Unicode character, emoji included. Keep it, and set `charset=utf8mb4` in drivers that ask for it.
+
+### Backups and restore
+
+Cloider backs up every MySQL database each night. A [restore](/databases/backups-and-restore) creates a new database with the tables, data, views, routines and triggers of your main database (`shop-db`). `DEFINER` clauses are removed during the restore, so views, routines and triggers are defined by the database user. Other databases and accounts you created aren't restored.
+
+## Import an existing MySQL database
+
+```bash
+# Dump from the old server: one database, no tablespace info, consistent InnoDB snapshot
+mysqldump -h old-db.example.com -u app -p --single-transaction --no-tablespaces \
+  --routines --triggers --set-gtid-purged=OFF app > app.sql
+
+# Remove DEFINER clauses, which need privileges the Cloider user doesn't have
+sed -E 's/DEFINER=`[^`]+`@`[^`]+`//g' app.sql > app-clean.sql
+
+# Load it into Cloider
+MYSQL_PWD="$(cloider db password shop-db)" \
+  mysql -h shop-db-k7x2wd.db.cloider.com -P 22861 -u shop_db_user --ssl-mode=REQUIRED shop-db < app-clean.sql
+```
+
+Or load it without opening the firewall: `cloider db exec -i shop-db < app-clean.sql` (scripts up to 2 MiB). See [migrate to Cloider](/guides/migrate-to-cloider).
+
+## Troubleshooting
+
+| Error | Cause and fix |
+| --- | --- |
+| `ERROR 2003 (HY000): Can't connect to MySQL server on '...' (110)` | Timed out: your IP isn't trusted. `cloider db trusted-sources shop-db --add-my-ip` |
+| `ERROR 1045 (28000): Access denied for user 'shop_db_user'@'...'` | Wrong password or user name. Copy both again from the Overview tab |
+| `ERROR 2061 (HY000): Authentication plugin 'caching_sha2_password' reported error: Authentication requires secure connection.` | SSL is off and the client didn't fetch the public key. Add `--get-server-public-key`, or turn SSL on |
+| `Public Key Retrieval is not allowed` (Java) | SSL is off. Add `allowPublicKeyRetrieval=true`, or turn SSL on |
+| `ERROR 2026 (HY000): SSL connection error` | The client requires TLS but SSL is off on the database, or the CA isn't trusted. Check the SSL mode and pass `--ssl-ca=ca.crt` |
+| `ERROR 1040 (HY000): Too many connections` | `max_connections` for the plan is reached. Lower pool sizes or [resize](/databases/resize) |
+| `Access denied; you need (at least one of) the PROCESS privilege(s)` from `mysqldump` | Add `--no-tablespaces` |
+| `Access denied; you need (at least one of) the SUPER or SET_USER_ID privilege(s)` | The dump contains `DEFINER` clauses. Strip them as shown above |
+| `ERROR 1064` near `-db` | A hyphenated database name used without backticks. Write `` `shop-db` `` |
+
+More in [database troubleshooting](/databases/troubleshooting).
+
+## Next steps
+
+- [WordPress on Kubernetes](/guides/wordpress-on-kubernetes)
+- [SSL/TLS](/databases/ssl-tls)
+- [Resize to raise the connection limit](/databases/resize)
+
+<FAQ items={[
+  {q: 'Which MySQL version does Cloider run?', a: 'Cloider runs MySQL 9 with the InnoDB storage engine and caching_sha2_password authentication.'},
+  {q: 'How many connections does a Cloider MySQL database accept?', a: 'It depends on the plan: 20 on Hobby, 40 on Starter, 75 on Basic, 100 on Standard, 150 on Plus and 200 on Pro. Resizing to a larger plan raises the limit.'},
+  {q: 'What port does Cloider MySQL use?', a: 'Each MySQL database gets its own port when it is created, not 3306. The port is in the connection details.'},
+  {q: 'Why does the mysql client need --get-server-public-key?', a: 'Only when SSL is off. MySQL 9 uses caching_sha2_password, which needs either an encrypted connection or the server\'s RSA public key to send the password. With SSL on, no extra flag is needed.'},
+  {q: 'Can I get root access to MySQL on Cloider?', a: 'No. You connect as the database user created with the database. The root user is reserved for Cloider.'},
+  {q: 'Can I run WordPress or Laravel on Cloider MySQL?', a: 'Yes. Give the application the host, port, database, user and password from the database\'s Overview tab, using the private host when the application runs on Cloider.'}
+]} />

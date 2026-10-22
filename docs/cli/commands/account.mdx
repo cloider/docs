@@ -1,0 +1,252 @@
+---
+title: cloider usage, billing, pricing, member, token and whoami
+sidebar_label: account
+sidebar_position: 13
+description: "Reference for the cloider account commands: usage and forecast, monthly bills, current prices, members, API tokens and whoami, and which account actions are dashboard only."
+keywords: [cloider usage, cloider billing, cloider pricing, cloider member list, cloider token list, cloider whoami, cloud cost cli, invoice cli]
+---
+
+These commands show what is going on in your Cloider account: what it costs this month (`usage`), past bills (`billing`), current prices (`pricing`), who has access (`member`), which API tokens exist (`token`), and who the CLI is acting as (`whoami`). Managing members and tokens is deliberately left to the dashboard, so these commands only read them.
+
+```text
+cloider usage | billing | pricing | member | token | whoami [flags]
+```
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| [`cloider usage`](#cloider-usage) | Show this month's cost so far, and the forecast, per resource |
+| [`cloider billing`](#cloider-billing) | List the account's monthly bills |
+| [`cloider billing show`](#cloider-billing-show) | Show a bill's items |
+| [`cloider pricing`](#cloider-pricing) | Show current prices |
+| [`cloider member list`](#cloider-member-list) | List the account's owner and members |
+| [`cloider member add`, `role`, `remove`](#cloider-member-add-role-and-remove) | Point to the dashboard, where members are managed |
+| [`cloider token list`](#cloider-token-list) | List API tokens |
+| [`cloider token create`, `revoke`](#cloider-token-create-and-revoke) | Point to the dashboard, where tokens are generated and revoked |
+| [`cloider whoami`](#cloider-whoami) | Show who the CLI acts as, and in which account |
+
+All commands also take the [global flags](/cli/configuration#global-flags).
+
+## cloider usage
+
+Show what each resource has cost this month so far, and what the month is forecast to cost.
+
+```text
+cloider usage [flags]
+```
+
+```bash
+cloider usage
+```
+
+```text title="Output"
+NAME           KIND               STATUS   MONTH TO DATE   FORECAST THIS MONTH
+production     cluster            Ready    $38.20          $61.75
+staging        cluster            Paused   $4.10           $4.60
+orders-db      database           Ready    $12.40          $19.85
+blog           app                Ready    $2.05           $3.30
+acme-backups   bucket             Ready    $0.09           $0.93
+acme           registry project   Ready    $0.01           $0.03
+Total                                      $56.85          $90.46
+```
+
+The **Total** row adds everything up (it is left out with `-q`). `-o json` prints the API's answer, grouped into `clusters`, `databases`, `apps`, `buckets` and `registry_projects`, each with its `monthly_usage` (`total_cost`, `forecast_this_month`, `forecast_next_month`, `days`).
+
+```bash
+# This month's forecast as a number
+cloider usage -o json | jq '[.. | .forecast_this_month? // empty] | add'
+```
+
+For one resource, see `cloider app usage`, `cloider bucket usage` and `cloider registry usage`. See [Usage](/account/usage) and the [billing model](/concepts/billing-model). MCP tool: `get_usage`.
+
+## cloider billing
+
+List the account's monthly bills. Only the account's **Owner** can see them.
+
+```text
+cloider billing [flags]
+```
+
+```bash
+cloider billing
+```
+
+```text title="Output"
+MONTH            AMOUNT   STATUS
+September 2026   $45.63   Unpaid
+August 2026      $38.10   Paid
+```
+
+MCP tool: `get_billing`.
+
+### cloider billing show
+
+Show one bill's items, by its month as `cloider billing` lists it.
+
+```text
+cloider billing show <month> [flags]
+```
+
+```bash
+cloider billing show "September 2026"
+```
+
+The table has one bold row per billed resource, such as `Cluster: "production"` with its service (`Kubernetes`, `App`, `Bucket`, `Registry` or the database engine) and amount. Below it come that resource's lines, for example compute, persistent volumes or load balancers, each with its description (average usage), quantity and unit (`Compute-Hour`, `GB-Hour`, `Hour`), unit price and amount. The last line is the total:
+
+```text title="Output (last line)"
+Total: $45.63 (unpaid)
+```
+
+Line descriptions can span several lines, which makes the table hard to read in a narrow terminal. For a script or a spreadsheet, use JSON:
+
+```bash
+cloider billing show "September 2026" -o json | jq -r '.items[] | [.description, .service_type, .amount] | @tsv'
+```
+
+A month without a bill fails with exit code `4` and lists the months there are: `no bill for "October 2026", there are: September 2026, August 2026`. `-o json` prints the bill. See [Billing](/account/billing) and current prices with [`cloider pricing`](#cloider-pricing).
+
+## cloider pricing
+
+Show Cloider's current prices: compute, volumes, load balancers and storage, and every database plan. This command works without logging in.
+
+```text
+cloider pricing [flags]
+```
+
+```bash
+cloider pricing
+```
+
+```text title="Output (prices shown as $X.XX)"
+SERVICE    UNIT                  PRICE
+cluster    compute unit          $X.XX
+cluster    volume per Gi         $X.XX
+cluster    load balancer         $X.XX
+cluster    cpu to memory ratio   1:X
+app        compute unit          $X.XX
+app        cpu to memory ratio   1:X
+bucket     storage per Gi        $X.XX
+registry   storage per Gi        $X.XX
+
+DATABASE     PLAN       PRICE      CPU   RAM   STORAGE   PAUSED
+MongoDB      Hobby      $X.XX/mo   ...   ...   ...       $X.XX/mo
+...
+PostgreSQL   Pro        $X.XX/mo   ...   ...   ...       $X.XX/mo
+```
+
+The first table has one row per billed unit; the second has one row per database engine and plan, ordered `Hobby`, `Starter`, `Basic`, `Standard`, `Plus`, `Pro`, with the plan's monthly price, CPU, RAM, storage and the monthly price while paused. Run the command for the actual figures, or see [Pricing](/reference/pricing). `-o json` prints the API's answer. MCP tool: `get_pricing`.
+
+## cloider member list
+
+List who has access to the account: the owner first, then every member with their role and status.
+
+```text
+cloider member list [flags]
+```
+
+**Aliases:** `cloider members`, `cloider member ls`.
+
+```bash
+cloider member list
+```
+
+```text title="Output"
+EMAIL                  ROLE         STATUS    NAME       ADDED
+billing@acme.example   Owner        Active    Acme Inc   -
+jane@example.com       Admin        Active    Jane Doe   2026-08-29 09:30
+sam@example.com        Restricted   Pending   -          2026-10-18 16:05
+```
+
+A member's role is `Admin` or `Restricted` (read only), and their status `Pending` (invited, not accepted yet), `Active` or `Deactivated`. `-o json` prints the API's list of members, without the owner row. See [Access control](/account/access-control) and [Accounts and roles](/concepts/accounts-and-roles). MCP tool: `list_members`.
+
+### cloider member add, role and remove
+
+Adding members, changing roles and removing members are done in the dashboard only. An API token can't do them, so a leaked token can't grant itself or anyone else more access. `cloider member add`, `cloider member role` and `cloider member remove` exist so the CLI tells you where to go:
+
+```bash
+cloider member add
+```
+
+```text title="Output"
+Error: Adding members is done in the dashboard, an API token can't do it: https://cloider.com/dashboard/access-control
+```
+
+They accept and ignore any arguments and flags, and exit with code `1`.
+
+## cloider token list
+
+List the account's API tokens. Owners and admins see every token of the account; other members see their own.
+
+```text
+cloider token list [flags]
+```
+
+**Aliases:** `cloider tokens`, `cloider token ls`.
+
+```bash
+cloider token list
+```
+
+```text title="Output"
+DESCRIPTION                    ACCESS         CREATED BY         LAST USED   CREATED            THIS CLI
+Cloider CLI on janes-macbook   Read & Write   jane@example.com   just now    2026-10-20 09:02   *
+GitHub Actions deploy          Read & Write   jane@example.com   3h ago      2026-09-14 11:40
+Grafana monitoring             Read           sam@example.com    12d ago     2026-09-30 08:15
+```
+
+**THIS CLI** marks the token the CLI is using right now. `-o wide` adds the token **ID**. See [API tokens](/account/api-tokens). MCP tool: `list_api_tokens`.
+
+### cloider token create and revoke
+
+Generating and revoking API tokens is done in the dashboard, under **Access Control**, **API Tokens**. `cloider token create` and `cloider token revoke` print the link:
+
+```text title="Output"
+Error: Generating API tokens is done in the dashboard, an API token can't do it: https://cloider.com/dashboard/access-control?tab=api-tokens
+```
+
+To revoke the CLI's own token, run [`cloider logout`](/cli/commands/auth-and-profiles#cloider-logout). To get a new token for the CLI, run [`cloider login`](/cli/commands/auth-and-profiles#cloider-login).
+
+## cloider whoami
+
+Show who the CLI acts as, in which account, with which access, and where the token came from.
+
+```text
+cloider whoami [flags]
+```
+
+```bash
+cloider whoami
+```
+
+```text title="Output"
+User:        jane@example.com
+Account:     billing@acme.example
+Role:        Admin
+Access:      Read & Write
+Token:       Cloider CLI on janes-macbook
+Profile:     acme
+API:         https://cloider.com/api
+Token from:  profile acme (/Users/jane/.cloider/tokens/acme)
+```
+
+**Access** is `Read` for a read only token or a Restricted member. `-o json` prints the API's answer with `user`, `account`, `role` and `token`:
+
+```bash
+cloider whoami -o json | jq -r '.role'
+```
+
+See [Authentication](/cli/authentication#check-who-you-are-logged-in-as-whoami). MCP tool: `whoami`.
+
+## Related
+
+- [Account and billing](/account)
+- [Auth and profiles commands](/cli/commands/auth-and-profiles)
+- [Billing model](/concepts/billing-model)
+
+<FAQ items={[
+  {q: 'How do I see what my Cloider account costs this month?', a: 'Run cloider usage. It lists every cluster, database, app, bucket and registry project with its cost so far and the forecast for the month, plus a total.'},
+  {q: 'How do I download my invoices with the CLI?', a: 'cloider billing lists the monthly bills and cloider billing show "September 2026" shows one bill\'s items. Only the account Owner can see bills. Use -o json to save them.'},
+  {q: 'Can I invite members or create API tokens with the CLI?', a: 'No. cloider member list and cloider token list show them, but adding members, changing roles and creating or revoking tokens is done in the dashboard under Access Control, so a leaked token can\'t grant more access.'},
+  {q: 'Does cloider pricing need a login?', a: 'No. cloider pricing works without a token and shows the current prices of compute, storage, load balancers and every database plan.'}
+]} />

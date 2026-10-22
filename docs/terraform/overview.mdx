@@ -1,0 +1,207 @@
+---
+title: Cloider Terraform provider overview
+sidebar_label: Overview
+sidebar_position: 1
+description: What the cloider/cloider Terraform and OpenTofu provider manages, what it doesn't, its requirements, versions, authentication and how it waits for resources.
+keywords: [cloider terraform, cloider terraform provider, cloider/cloider, opentofu cloider, infrastructure as code, terraform kubernetes cluster, terraform managed database, terraform s3 bucket]
+---
+
+The Cloider Terraform provider, `cloider/cloider` on the Terraform Registry, lets you describe your Cloider Kubernetes clusters, databases, buckets, container registry projects, domains and DNS records in code, and create, change and delete them with `terraform apply`. It works with both Terraform and OpenTofu, and talks to the same [REST API](/api/overview) as the dashboard and the [`cloider` CLI](/cli/overview), with an [API token](/account/api-tokens).
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Provider address** | `cloider/cloider` |
+| **Registry** | [registry.terraform.io/providers/cloider/cloider](https://registry.terraform.io/providers/cloider/cloider/latest/docs), also installable by OpenTofu |
+| **Works with** | Terraform 1.0 or later, OpenTofu 1.6 or later. `import` blocks need Terraform 1.5 or later |
+| **Plugin protocol** | Terraform plugin protocol 6.0 |
+| **Authentication** | A Cloider API token (`cldr_...`), from `token`, `token_file`, `CLOIDER_TOKEN`, `CLOIDER_TOKEN_FILE` or the CLI's `cloider login` |
+| **Resources** | 9: `cloider_cluster`, `cloider_database`, `cloider_bucket`, `cloider_bucket_key`, `cloider_registry`, `cloider_registry_token`, `cloider_domain`, `cloider_dns_record`, `cloider_target` |
+| **Data sources** | 3: `cloider_cluster`, `cloider_options`, `cloider_bucket_regions` |
+| **Default timeout** | 20 minutes for each create, update and delete that waits, changeable with a `timeouts` block |
+| **Cost** | The provider is free. You pay for the resources it creates, the same as when you create them in the dashboard. See [Billing model](/concepts/billing-model) |
+| **Source code and releases** | [github.com/cloider/terraform-provider-cloider](https://github.com/cloider/terraform-provider-cloider) |
+
+## What is Terraform?
+
+[Terraform](https://developer.hashicorp.com/terraform) is a tool for **infrastructure as code**: you write the resources you want in `.tf` files, and Terraform works out what to create, change or delete to make your account match. [OpenTofu](https://opentofu.org) is an open source fork of Terraform that reads the same files and uses the same providers. Everything on these pages works with both. Where a command differs, swap `terraform` for `tofu`.
+
+A **provider** is the plugin that teaches Terraform about one platform. The Cloider provider turns each `resource "cloider_..."` block into calls to the Cloider API, and records what it created in Terraform's **state**, so the next `terraform plan` can show you exactly what would change.
+
+Three commands do almost all the work:
+
+| Command | What it does |
+| --- | --- |
+| `terraform init` | Downloads the providers your configuration needs, once per folder |
+| `terraform plan` | Shows what would be created, changed or destroyed, without touching anything |
+| `terraform apply` | Shows the plan again and, after you type `yes`, makes the changes |
+
+`terraform destroy` deletes everything the configuration created. New to all of this? Follow [Get started with Terraform](/terraform/get-started) to create a cluster and a database in about ten minutes.
+
+## A first look
+
+This configuration creates a Kubernetes cluster called `staging` and a PostgreSQL database called `orders-db` that only that cluster may connect to:
+
+```hcl title="main.tf"
+terraform {
+  required_providers {
+    cloider = {
+      source  = "cloider/cloider"
+      version = "~> 0.1"
+    }
+  }
+}
+
+# Takes the token from CLOIDER_TOKEN, or from `cloider login` on your own machine
+provider "cloider" {}
+
+resource "cloider_cluster" "staging" {
+  name = "staging"
+}
+
+resource "cloider_database" "orders" {
+  name            = "orders-db"
+  engine          = "postgresql"
+  trusted_sources = ["cluster:${cloider_cluster.staging.id}"]
+}
+```
+
+`terraform apply` creates the cluster, waits until it is `Ready`, then creates the database and waits for it too. The cluster's `kube_config` and the database's `host`, `port`, `user` and `password` are then available to the rest of your configuration, for example to the [Kubernetes and Helm providers](/terraform/guides/kubernetes-and-helm).
+
+## What the provider manages
+
+| Resource | What it is | Product docs |
+| --- | --- | --- |
+| [`cloider_cluster`](/terraform/resources/cluster) | A serverless Kubernetes cluster, with its kubeconfig split into the parts the `kubernetes` and `helm` providers take | [Kubernetes](/kubernetes/overview) |
+| [`cloider_database`](/terraform/resources/database) | A managed PostgreSQL, MySQL, MongoDB or Redis database, with its connection details, trusted sources, SSL and plan | [Databases](/databases/overview) |
+| [`cloider_bucket`](/terraform/resources/bucket) | An S3 compatible object storage bucket, public or private, with or without versioning | [Object Storage](/object-storage/overview) |
+| [`cloider_bucket_key`](/terraform/resources/bucket-key) | An S3 access key for some or all of your buckets, read only or read and write | [Access keys](/object-storage/access-keys) |
+| [`cloider_registry`](/terraform/resources/registry) | A container registry project, with its visibility, storage limit and immutable tags setting | [Container Registry](/container-registry/overview) |
+| [`cloider_registry_token`](/terraform/resources/registry-token) | A token to push and pull images of some or all registry projects | [Registry tokens](/container-registry/tokens) |
+| [`cloider_domain`](/terraform/resources/domain) | A free subdomain under a Cloider root such as `cloider.app`, or a custom domain you own | [Domains](/domains/overview) |
+| [`cloider_dns_record`](/terraform/resources/dns-record) | A DNS record set (every value of one type at one name) on a custom domain | [DNS records](/domains/dns-records) |
+| [`cloider_target`](/terraform/resources/target) | A route from a path of a domain to a Service in a cluster, or to an app, over HTTPS | [Targets](/domains/targets) |
+
+| Data source | What it reads |
+| --- | --- |
+| [`cloider_cluster`](/terraform/data-sources/cluster) | An existing cluster by `id` or `name`, with its kubeconfig, for configurations that deploy into a cluster they don't own |
+| [`cloider_options`](/terraform/data-sources/options) | What can be created right now: Kubernetes versions, database engines, versions and plans, subdomain roots and nameservers |
+| [`cloider_bucket_regions`](/terraform/data-sources/bucket-regions) | The regions a bucket can be created in, with their S3 endpoints |
+
+## What the provider doesn't manage
+
+The provider covers the infrastructure that is natural to declare in code. These parts of Cloider are managed elsewhere:
+
+| Not in the provider | Use instead |
+| --- | --- |
+| **Apps** (App Engine): creating, deploying, environment variables, builds | The [dashboard](/apps/overview), [`cloider deploy`](/cli/commands/deploy) and [`cloider app`](/cli/commands/app), or the [API](/api/endpoints/apps). A target and a database's trusted sources can still refer to an existing app by its id (`app_id`, `app:<id>`) |
+| Files in buckets, bucket policies, lifecycle rules and data protection | The dashboard, the [CLI](/cli/commands/bucket), or any S3 tool. For files from Terraform, see [Object storage with the AWS provider](/terraform/guides/object-storage) |
+| Registry retention policies, repositories and tags | The dashboard or [`cloider registry`](/cli/commands/registry) |
+| Database backups and restores, terminals and exec | The dashboard or [`cloider db`](/cli/commands/db) |
+| Account members, roles and API tokens | The dashboard, see [Access control](/account/access-control) and [API tokens](/account/api-tokens). The CLI can list them with [`cloider member list` and `cloider token list`](/cli/commands/account) |
+| Billing, usage and pricing | The dashboard or the [CLI](/cli/commands/account) |
+| Support requests | The dashboard or [`cloider support`](/cli/commands/support) |
+
+An API token reaches exactly one account, so a provider block manages exactly one account. To manage several, see [Multiple accounts](/terraform/provider-configuration#manage-several-accounts-with-provider-aliases).
+
+## How does the provider authenticate?
+
+The provider sends a Cloider API token with every request. It takes the first token it finds, in this order:
+
+1. `token` in the provider block
+2. `token_file` in the provider block
+3. the `CLOIDER_TOKEN` environment variable
+4. the `CLOIDER_TOKEN_FILE` environment variable
+5. the token `cloider login` saved for the CLI profile in use (`profile` in the provider block, then `CLOIDER_PROFILE`, then the CLI's current profile)
+
+On your own computer, running [`cloider login`](/cli/authentication) once is enough and the provider block can stay empty. In CI, set `CLOIDER_TOKEN` from a secret. A **Read** token is enough for `terraform plan`, and `terraform apply` needs a **Read & Write** token. Every argument and variable is on [Provider configuration](/terraform/provider-configuration).
+
+Before planning anything, the provider checks the token with the API. A mistyped or revoked token fails straight away with `Cloider refused the API token`, rather than halfway through a plan.
+
+## How does the provider wait for resources?
+
+Creating a cluster or a database takes a few minutes, so the provider waits for it, the same way the CLI's `--wait` does:
+
+- **Create** of a cluster or database waits until its status is `Ready`. A `paused = true` resource is then paused, and the provider waits for `Paused`.
+- **Update** waits for each change that restarts something: a pause or resume, a database resize or a database SSL change.
+- **Delete** of a cluster, database, bucket or registry project waits until it is gone (`Terminated`).
+- Bucket keys, registry tokens, domains, DNS records and targets are created and deleted immediately, without waiting.
+
+Each wait is limited to **20 minutes** by default. Set a resource's `timeouts` attribute to wait longer or shorter:
+
+```hcl
+resource "cloider_database" "orders" {
+  name   = "orders-db"
+  engine = "postgresql"
+  plan   = "pro"
+
+  timeouts = {
+    create = "40m"
+    update = "40m"
+  }
+}
+```
+
+The provider checks the status every 5 seconds. If a wait fails or times out after the API already created the resource, the resource stays in Terraform's state marked as **tainted**, so it is not forgotten: the next `terraform apply` replaces it, or you can fix the cause and run `terraform untaint`.
+
+## Rate limits and retries
+
+The Cloider API allows 10 requests a second and 100 a minute per client (see [Rate limits](/api/rate-limits)). The provider paces its own requests to stay under that, so a large configuration refreshes more slowly instead of failing. When the API still answers `429 Too Many Requests`, the provider waits and retries, up to 4 attempts, and honors the `Retry-After` header.
+
+Reads are also retried on `502`, `503` and `504`, and on network errors. Writes are retried only on `429`, because a write that timed out may still have gone through. When a create times out with a `502` or `504`, the provider looks for the new bucket or registry project by name and adopts it. For other resources it tells you to check the dashboard for one to import or delete.
+
+## Versions and upgrades
+
+Pin the provider to a minor version range so that `terraform init -upgrade` only brings in compatible releases:
+
+```hcl
+terraform {
+  required_providers {
+    cloider = {
+      source  = "cloider/cloider"
+      version = "~> 0.1"
+    }
+  }
+}
+```
+
+Terraform records the exact version and its checksums in `.terraform.lock.hcl`. Commit that file, so that every machine and every CI run uses the same provider build. Prereleases (such as `0.2.0-rc1`) are published as prereleases, and Terraform only installs one when a configuration asks for that exact version.
+
+## Which tool should I use?
+
+| You want to... | Best tool |
+| --- | --- |
+| Keep long lived infrastructure (clusters, databases, buckets, DNS) reviewable in git, with plans in merge requests | **Terraform** |
+| Script one-off tasks, deploy an app, run `kubectl` in a cluster, upload files | The [CLI](/cli/overview) |
+| Click through a task once, or look at insights and logs | The [dashboard](/get-started/dashboard-tour) |
+| Build your own integration | The [REST API](/api/overview) |
+| Ask an AI agent to do it | The [MCP server](/mcp/overview) |
+
+They all act on the same resources, so you can mix them. A resource created in the dashboard can be [imported](/terraform/guides/import-existing-resources) into Terraform later. If you change a Terraform managed resource elsewhere, the next `terraform plan` shows the difference and offers to put it back.
+
+## Next steps
+
+<Cards cols={2}>
+  <Card title="Get started" href="/terraform/get-started" icon="rocket-launch-outline">
+    Install Terraform or OpenTofu, create a cluster and a database, read their outputs, destroy them.
+  </Card>
+  <Card title="Provider configuration" href="/terraform/provider-configuration" icon="cog-outline">
+    Every argument and environment variable, profiles, token files and several accounts.
+  </Card>
+  <Card title="Kubernetes and Helm" href="/terraform/guides/kubernetes-and-helm" icon="kubernetes">
+    Deploy into a Cloider cluster with the kubernetes and helm providers.
+  </Card>
+  <Card title="Store state in a bucket" href="/terraform/guides/state-backend" icon="bucket-outline">
+    Use a Cloider bucket as an S3 backend for Terraform state.
+  </Card>
+</Cards>
+
+<FAQ items={[
+  {q: 'Does Cloider have a Terraform provider?', a: 'Yes. The provider is cloider/cloider on the Terraform Registry. It manages Kubernetes clusters, PostgreSQL, MySQL, MongoDB and Redis databases, S3 compatible buckets and their access keys, container registry projects and their tokens, domains, DNS records and targets.'},
+  {q: 'Does the Cloider provider work with OpenTofu?', a: 'Yes. The provider works with OpenTofu 1.6 or later as well as Terraform 1.0 or later. Use the same required_providers block, with source = "cloider/cloider", and run tofu instead of terraform.'},
+  {q: 'Can I deploy Cloider apps with Terraform?', a: 'No. The provider has no app resource. Deploy apps with the dashboard, cloider deploy or the API. A cloider_target can route a domain to an existing app by its app_id, and a cloider_database can trust an app with app:<id> in trusted_sources.'},
+  {q: 'Which API token does the Terraform provider need?', a: 'A Read token is enough for terraform plan. terraform apply and terraform destroy need a Read & Write token. A token belongs to one account, so each provider block manages one account.'},
+  {q: 'How long does terraform apply wait for a Cloider cluster or database?', a: 'Up to 20 minutes by default, checking every 5 seconds until the status is Ready. Set timeouts = { create = "40m" } on the resource to wait longer.'},
+  {q: 'What happens if I change a resource in the dashboard that Terraform manages?', a: 'The next terraform plan reads the resource from the API and shows the difference. Applying puts it back to what the configuration says, or you can update the configuration to match.'},
+]} />

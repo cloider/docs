@@ -1,0 +1,332 @@
+---
+title: Cloider glossary of terms
+sidebar_label: Glossary
+sidebar_position: 5
+description: Definitions of the terms used in the Cloider docs, from account, API token and app to kubeconfig, trusted source, retention policy, target and MCP.
+keywords: [cloider glossary, cloider terms, kubeconfig meaning, trusted source, compute unit, retention policy, nameserver, mcp definition]
+toc_max_heading_level: 2
+---
+
+This glossary defines the terms used across the Cloider docs, in alphabetical order. Each entry links to the page that covers it in depth.
+
+## A
+
+### Access key
+A pair of credentials (an access key id starting with `CLDR` and a secret key) that lets S3 tools and SDKs reach your buckets. Access keys are managed in **Access Control**, **S3 Credentials**, and the secret is shown once. See [Access keys](/object-storage/access-keys).
+
+### Account
+The container for resources, usage and invoices. Every user has their own account, and can be a member of other accounts. See [Accounts and roles](/concepts/accounts-and-roles).
+
+### Admin
+A member role with full access to every resource and to members, but not to billing. See [Accounts and roles](/concepts/accounts-and-roles).
+
+### API
+Short for the Cloider REST API at `https://cloider.com/api`, which the dashboard, the CLI, Terraform and the MCP server all use. See [REST API](/api/overview).
+
+### API token
+A secret starting with `cldr_` that lets tools call the API as the member who generated it, in one account, with **Read** or **Read & Write** access. See [API tokens](/account/api-tokens).
+
+### App
+Your source code, built into a container image and run by Cloider on a free HTTPS subdomain, with no servers to manage. See [Apps overview](/apps/overview).
+
+### Apps project
+The container registry project Cloider creates in your account with your first app, where your apps' images are stored. It can't be deleted and doesn't count toward the trial's project limit. See [Container Registry overview](/container-registry/overview).
+
+### Auto deploy
+The option that makes an app imported from Git deploy a new version on every push to its branch. See [Deploy from Git](/apps/deploy-from-git).
+
+## B
+
+### Backup
+A copy of a database that Cloider takes daily and that you can restore. See [Backups and restore](/databases/backups-and-restore).
+
+### Bucket
+A container for files (objects) in Cloider Object Storage, reached through the S3 API. Bucket names are unique across all of Cloider. See [Create a bucket](/object-storage/create-a-bucket).
+
+### Bucket policy
+A JSON document, in the S3 policy language, that grants or denies access to a bucket's files. See [Bucket policies](/object-storage/bucket-policies).
+
+### Build
+One attempt to turn an app's source into a container image and run it. Builds are numbered `1`, `2`, `3`... per app. See [Builds and deployments](/apps/builds-and-deployments).
+
+### Build argument
+A value passed to a Dockerfile build, as an `ARG` or, when secret, as a build secret. It isn't visible to the running app. See [Build configuration](/apps/build-configuration).
+
+### Build variable
+An environment variable that buildpacks build an app without a Dockerfile in, such as `BP_NODE_RUN_SCRIPTS`. It isn't visible to the running app. See [Build configuration](/apps/build-configuration).
+
+### Buildpack
+A tool that builds a container image from source code without a Dockerfile, by detecting the language and installing what it needs. Cloider uses buildpacks for apps that have no Dockerfile. See [Build configuration](/apps/build-configuration).
+
+## C
+
+### CA certificate
+The certificate that signs a database's server certificate. Download it to let clients verify the server over SSL/TLS. See [SSL/TLS](/databases/ssl-tls).
+
+### CLI
+The `cloider` command line tool, which does from a terminal what the dashboard does. See [CLI overview](/cli/overview).
+
+### Cluster
+Short for a Cloider Kubernetes cluster: a standard Kubernetes API with its own control plane, with no nodes for you to manage. See [Kubernetes overview](/kubernetes/overview).
+
+### Compute unit
+The unit apps and clusters are billed in: one vCPU, or the memory paired with one vCPU at the current ratio, whichever a workload uses more of. See [Billing model](/concepts/billing-model).
+
+### Compute-Hour
+One compute unit used for one hour, the unit of compute lines on an invoice. See [Billing](/account/billing).
+
+### Context
+A named entry in a kubeconfig file that tells `kubectl` which cluster and credentials to use. `cloider cluster kubeconfig --merge` adds the context `cloider-<cluster>`. See [Connect with kubectl](/kubernetes/connect-with-kubectl).
+
+### Control plane
+The Kubernetes components that run a cluster: the API server, the cluster state and the controllers. Cloider runs it for you, and its usage is part of the cluster's compute. See [How Cloider works](/concepts/how-cloider-works).
+
+### Custom domain
+A domain you own, such as `example.com`, added to Cloider and pointed at Cloider's nameservers. See [Add a custom domain](/domains/add-a-custom-domain).
+
+## D
+
+### Dashboard
+The web interface at `cloider.com/dashboard`. See [Dashboard tour](/get-started/dashboard-tour).
+
+### Database
+A managed PostgreSQL, MySQL, MongoDB or Redis database that Cloider provisions, backs up and runs. See [Databases overview](/databases/overview).
+
+### Database plan
+The size of a database: **Hobby**, **Starter**, **Basic**, **Standard**, **Plus** or **Pro**, each with fixed CPU, RAM and storage and a monthly price. See [Create a database](/databases/create-a-database).
+
+### Deployment
+A Kubernetes object that keeps a number of identical pods running. Also, in apps, a version of the app going live. See [Deploy a workload](/kubernetes/deploy-a-workload).
+
+### Detection
+The step where Cloider inspects uploaded or imported source code to find its language, framework and port before the app is created. See [Build configuration](/apps/build-configuration).
+
+### DNS record
+An entry in a domain's DNS zone, such as an `A`, `CNAME`, `MX` or `TXT` record, that tells the internet where a name points. See [DNS records](/domains/dns-records).
+
+### Dockerfile
+A file of instructions to build a container image. If an app's source has one, Cloider builds it instead of using buildpacks. See [Build configuration](/apps/build-configuration).
+
+### Domain
+A domain name you use with Cloider: a free subdomain of `cloider.app` or a custom domain you own. See [Domains overview](/domains/overview).
+
+## E
+
+### Endpoint
+The address a service is reached at, for example the S3 endpoint `https://s3.eu-central-2.cloider.com` or a database's host and port. See [Connect to a database](/databases/connect).
+
+### Environment variable
+A named value given to a running app, such as `DATABASE_URL`. Changing one restarts the app. Secret variables are never listed back. See [Environment variables](/apps/environment-variables).
+
+### Exec
+Running one command inside an app's container, a cluster's terminal or a database client, and getting its output and exit code back, for example `cloider app exec blog uptime`. See [Terminal and exec](/apps/terminal-and-exec).
+
+### Exit code
+The number a CLI command ends with: `0` for success, `1` error, `2` usage, `3` not logged in, `4` not found, `5` forbidden. See [Output and scripting](/cli/output-and-scripting).
+
+## F
+
+### Forecast
+The Usage page's projection of a month's total cost, assuming current usage continues. See [Usage](/account/usage).
+
+### Free subdomain
+A name under `cloider.app`, such as `blog.cloider.app`, that you can claim for free and that comes with HTTPS. See [Free subdomains](/domains/free-subdomains).
+
+## G
+
+### GB-Hour
+One GB stored or provisioned for one hour, the unit of storage lines on an invoice. See [Billing](/account/billing).
+
+### Git installation
+A connection between your Cloider account and a GitHub, GitLab or Bitbucket account, through which apps are imported and auto deployed. See [Deploy from Git](/apps/deploy-from-git).
+
+## H
+
+### Helm
+The Kubernetes package manager, which installs applications packaged as charts. It works with Cloider clusters as with any cluster. See [Helm](/kubernetes/helm).
+
+### HTTPS certificate
+The TLS certificate that lets browsers reach a domain over HTTPS. Cloider manages them for free subdomains and custom domains. See [HTTPS certificates](/domains/https-certificates).
+
+## I
+
+### Id
+A resource's identifier in the API, a short string of lowercase letters and digits such as `q7m2x`. See [Resource lifecycle](/concepts/resource-lifecycle).
+
+### Image
+A container image: a packaged application stored in a registry and run as a container. See [Push and pull images](/container-registry/push-and-pull-images).
+
+### Immutable tag
+A registry tag protected by an immutability rule, so it can't be pushed over or deleted. See [Immutable tags](/container-registry/immutable-tags).
+
+### Ingress
+A Kubernetes object that routes HTTP traffic. Ingress objects in a Cloider cluster are not served; use targets instead. See [Expose services](/kubernetes/expose-services).
+
+### Insights
+Charts of a resource's CPU, memory and other metrics over time, on an app's or database's **Insights** tab. See [App insights](/apps/insights) and [Database insights](/databases/insights).
+
+### Invoice
+The monthly bill of an account, with one item per resource. Only the Owner sees invoices. See [Billing](/account/billing).
+
+## K
+
+### Kubeconfig
+The file that tells `kubectl` and other Kubernetes tools how to reach a cluster and authenticate. A Cloider kubeconfig is a cluster admin credential. See [Connect with kubectl](/kubernetes/connect-with-kubectl).
+
+### kubectl
+The standard Kubernetes command line tool. See [Connect with kubectl](/kubernetes/connect-with-kubectl).
+
+## L
+
+### Label
+The name a cluster, database or app is shown and found by: its name, with `-1`, `-2`... added when the account already has one of that name. See [Resource lifecycle](/concepts/resource-lifecycle).
+
+### Lifecycle rule
+A bucket rule that, after a number of days, deletes files, deletes previous versions of files, or cleans up unfinished multipart uploads, optionally only under a prefix. See [Lifecycle rules](/object-storage/lifecycle-rules).
+
+### Load balancer
+A public IP address in front of a Kubernetes Service of type `LoadBalancer`, billed for the time it is active. See [Load balancers](/kubernetes/load-balancers).
+
+## M
+
+### MCP
+The Model Context Protocol, a standard that lets AI agents call tools. `cloider mcp` is an MCP server offering a tool for each CLI command. See [MCP overview](/mcp/overview).
+
+### Member
+A user invited into another user's account with the role Admin or Restricted. See [Access control](/account/access-control).
+
+## N
+
+### Namespace
+A Kubernetes grouping of objects inside a cluster, such as `default` or `kube-system`. See [Deploy a workload](/kubernetes/deploy-a-workload).
+
+### Nameserver
+A DNS server that answers for a domain. Custom domains on Cloider are pointed at `ns1.cloider.com` to `ns4.cloider.com`. See [Nameservers](/domains/nameservers).
+
+## O
+
+### Object
+A file stored in a bucket, identified by its key (its path, such as `images/logo.png`). See [Manage files](/object-storage/manage-files).
+
+### Owner
+The user whose account it is: full access, including billing, and billed for every resource in it. See [Accounts and roles](/concepts/accounts-and-roles).
+
+## P
+
+### Pause
+Stopping a cluster's, database's or app's compute while keeping its data, to stop paying for compute. See [Resource lifecycle](/concepts/resource-lifecycle).
+
+### Persistent volume
+Storage that outlives the pod using it, claimed in a cluster with a PersistentVolumeClaim and billed per GiB. See [Persistent volumes](/kubernetes/persistent-volumes).
+
+### Plan
+For an account, **Free** (the trial) or **Paid**. For a database, its size from **Hobby** to **Pro**. See [Billing model](/concepts/billing-model) and [Create a database](/databases/create-a-database).
+
+### Pod
+The smallest Kubernetes unit: one or more containers running together. See [Deploy a workload](/kubernetes/deploy-a-workload).
+
+### Profile
+A named CLI login, one per account, stored in `~/.cloider`. Switch with `cloider profile use` or `--profile`. See [Switch accounts](/account/switch-accounts).
+
+### Public bucket
+A bucket whose files anyone can read with the URL, without a key. See [Public and private buckets](/object-storage/public-and-private-buckets).
+
+### PVC
+A PersistentVolumeClaim, the Kubernetes object a workload uses to ask for a persistent volume. See [Persistent volumes](/kubernetes/persistent-volumes).
+
+## R
+
+### Read token
+An API token that can only make read requests, whatever its creator's role. See [API tokens](/account/api-tokens).
+
+### Read & Write token
+An API token with its creator's full role, except for dashboard only actions. See [API tokens](/account/api-tokens).
+
+### Region
+Where a bucket's data is stored. Buckets are created in `eu-central-2` (Europe). See [How Cloider works](/concepts/how-cloider-works).
+
+### Registry project
+A private (or public) space in the Cloider container registry at `registry.cloider.com/<project>`, holding repositories of images. See [Create a project](/container-registry/create-a-project).
+
+### Registry token
+A credential for `docker login` and Kubernetes pull secrets, with pull or pull and push access to chosen projects. See [Registry tokens](/container-registry/tokens).
+
+### Repository
+A named set of images inside a registry project, such as `acme/api`, told apart by tags. See [Repositories and tags](/container-registry/repositories-and-tags).
+
+### Resize
+Moving a database to a larger plan. See [Resize](/databases/resize).
+
+### Restricted
+A member role with read-only access to resources. See [Accounts and roles](/concepts/accounts-and-roles).
+
+### Retention policy
+A registry project's rules for which images to keep, with a schedule; a run deletes the rest. See [Retention policies](/container-registry/retention-policies).
+
+## S
+
+### S3
+The object storage API Amazon S3 defined, which Cloider buckets speak, so S3 tools and SDKs work with them. See [S3 tools](/object-storage/s3-tools).
+
+### Secret
+A value stored so it is never listed back: secret environment variables, build arguments and build variables of apps. See [Environment variables](/apps/environment-variables).
+
+### Service
+A Kubernetes object that gives a stable name and port to a set of pods. Targets route domains to Services. See [Expose services](/kubernetes/expose-services).
+
+### Start command
+The command an app is started with. Left empty, the project's own Procfile or start script decides. See [Build configuration](/apps/build-configuration).
+
+### Status
+The state of a resource, such as **Creating**, **Ready** or **Paused**. See [Status values](/reference/status-values).
+
+### Subdomain
+A name under another domain, such as `blog.cloider.app` under `cloider.app`. Cloider gives apps free subdomains of `cloider.app`. See [Free subdomains](/domains/free-subdomains).
+
+### Suspended
+The state of an account whose trial ended without an upgrade. It can't create resources. See [Create an account](/get-started/create-an-account).
+
+## T
+
+### Tag
+A name for one image in a repository, such as `1.0` or `latest`. See [Repositories and tags](/container-registry/repositories-and-tags).
+
+### Target
+A route from a domain and path, such as `example.com/api`, to an app or a Service in a cluster. See [Targets](/domains/targets).
+
+### Terminal
+A shell in the browser (or `cloider ... shell`) inside an app's container, with `kubectl` and `helm` for a cluster, or with a database client. See [Web terminal and exec](/kubernetes/web-terminal-and-exec).
+
+### Terraform provider
+The `cloider/cloider` provider that manages Cloider resources with Terraform or OpenTofu. See [Terraform overview](/terraform/overview).
+
+### Toolset
+A group of MCP tools, such as `apps` or `databases`, that `cloider mcp --toolsets` can limit the server to. See [MCP tools](/mcp/tools).
+
+### Trial
+The first 14 days of a new account, with $25 of free credit and one cluster, database, bucket and registry project at a time. See [Create an account](/get-started/create-an-account).
+
+### Trusted source
+An address or Cloider resource allowed to connect to a database. See [Trusted sources](/databases/trusted-sources).
+
+### TTL
+Time to live: how long, in seconds, DNS resolvers may cache a record, from 60 to 172800 on Cloider. See [DNS records](/domains/dns-records).
+
+## U
+
+### Usage
+What resources have used and cost this month, on the **Usage** page. See [Usage](/account/usage).
+
+### User
+A person, identified by the email address of their Google or GitHub sign in. See [Accounts and roles](/concepts/accounts-and-roles).
+
+## V
+
+### Version
+For apps, a numbered build. For buckets with versioning on, a previous copy of a file. See [Builds and deployments](/apps/builds-and-deployments) and [Versioning](/object-storage/versioning).
+
+### Versioning
+A bucket setting that keeps previous versions of files when they are overwritten or deleted. Once on, it can only be suspended. See [Versioning](/object-storage/versioning).
+
+### Volume
+Short for persistent volume. See [Persistent volumes](/kubernetes/persistent-volumes).

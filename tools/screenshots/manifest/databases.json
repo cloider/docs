@@ -1,0 +1,8 @@
+{
+  "note": "Database screenshots not yet in shots.json. Same fields as shots.json; :database is the demo PostgreSQL database orders-db.",
+  "shots": [
+    {"file": "databases/pause-dialog.webp", "route": "/dashboard/databases", "state": "Pause Database dialog for orders-db, with the warning that the plan is no longer billed and the info box with the monthly storage price while paused, Cancel and Pause database buttons", "actions": "open the row menu (vertical dots) of orders-db and click Pause"},
+    {"file": "databases/delete-dialog.webp", "route": "/dashboard/databases/:database", "state": "Delete Database dialog at the second step: 'To confirm deleting the database, type orders-db' with the text field empty", "actions": "Settings tab, click Delete database, then I want to delete the database"},
+    {"file": "databases/restore-dialog.webp", "route": "/dashboard/databases/:database", "state": "Restore Backup confirmation dialog saying a new database is forked from the selected backup and the current database is left untouched, with Cancel and Create fork buttons", "actions": "Backups tab, keep the latest backup selected, click Restore"}
+  ]
+}

@@ -1,0 +1,183 @@
+---
+title: Install the Cloider CLI and log in
+sidebar_label: Install the CLI
+sidebar_position: 7
+description: Install the cloider command line tool on macOS, Linux or Windows, log in through the browser or with an API token, and check that it works.
+keywords: [install cloider cli, cloider login, cloider command line, cloider windows, cloider linux, cloider macos, api token login]
+---
+
+The `cloider` CLI is a single binary that manages Cloider from a terminal: apps, clusters, databases, buckets, registry projects, domains, DNS, support, usage and billing. This page installs it and logs it in. The full reference is in the [CLI section](/cli/overview).
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Platforms** | macOS and Linux (amd64 and arm64) with the install script, Windows (amd64 and arm64) from a zip |
+| **Install** | `curl -fsSL https://cloider.com/install.sh \| sh` |
+| **Log in** | `cloider login`, which creates an API token through the browser |
+| **Check** | `cloider whoami` |
+| **Updates** | Automatic, checked once a day. See [Updating](/cli/updating) |
+
+## Install on macOS or Linux
+
+Run the install script:
+
+```bash
+curl -fsSL https://cloider.com/install.sh | sh
+```
+
+```text title="Output"
+Downloading cloider 1.4.0 for linux/amd64
+Installed cloider 1.4.0 to /usr/local/bin/cloider
+Get started with: cloider login
+```
+
+The script downloads the latest release for your system, checks it against the release's SHA-256 checksums, and installs the `cloider` binary:
+
+- into `/usr/local/bin` if you can write there,
+- otherwise into `~/.local/bin`. If that directory isn't on your `PATH`, the script prints the `export PATH=...` line to add to your shell profile.
+
+You can change what it does with environment variables:
+
+| Variable | Effect | Example |
+| --- | --- | --- |
+| `CLOIDER_INSTALL_DIR` | Install into this directory | `curl -fsSL https://cloider.com/install.sh \| CLOIDER_INSTALL_DIR=$HOME/bin sh` |
+| `CLOIDER_VERSION` | Install this version instead of the latest | `curl -fsSL https://cloider.com/install.sh \| CLOIDER_VERSION=1.3.0 sh` |
+
+The script needs `curl` or `wget`, and `sha256sum` or `shasum`.
+
+## Install on Windows
+
+The install script doesn't run on Windows. Instead:
+
+1. Download the zip for your architecture (`amd64` for most PCs, `arm64` for ARM devices) from the Cloider CLI downloads at `https://cloider-cli.s3.eu-central-2.cloider.com/<version>/`. The latest version number is in `https://cloider-cli.s3.eu-central-2.cloider.com/latest.txt`.
+2. Extract `cloider.exe` into a folder of your choice, for example `C:\Tools\cloider`.
+3. Add that folder to your `Path` environment variable, then open a new terminal.
+
+More detail is in [CLI install](/cli/install).
+
+## Check the installation
+
+```bash
+cloider version
+```
+
+```text title="Output"
+cloider 1.4.0
+```
+
+## Log in
+
+The CLI calls the Cloider API with an **API token**. `cloider login` creates one for you and saves it, so you don't have to copy anything by hand.
+
+```bash
+cloider login
+```
+
+1. The CLI opens your browser on the **Authorize Cloider CLI** page. If you aren't signed in to Cloider, sign in with Google or GitHub first.
+2. Under **Account**, pick the account the CLI should work in. If you belong to several accounts, each shows your role in it.
+3. Under **Access permissions**, choose **Read and write** to manage resources, or **Read only** to only look. **Read and write** is unavailable for an account where your role is Restricted.
+4. Keep or change the **Description**, which is how the token is listed in **Access Control**. It defaults to `Cloider CLI on <your computer's name>`.
+5. Click **Authorize CLI**. The page says *You're all set*, and the terminal confirms:
+
+```text title="Output"
+✓ Logged in as jane@example.com in account jane@example.com (Read & Write)
+```
+
+<Screenshot
+  src="/img/screenshots/get-started/cli-login.webp"
+  url="/cli/login"
+  alt="The Authorize Cloider CLI page showing the Account selector, Access permissions with Read and write and Read only, a Description field and the Authorize CLI and Cancel buttons"
+  caption="The page cloider login opens. Authorization applies only to the selected account."
+/>
+
+The token is saved in plain text in `~/.cloider/token` (other profiles: `~/.cloider/tokens/<profile>`). Keep it private.
+
+### Log in on a machine without a browser
+
+On a server or over SSH, use `--no-browser`. The CLI prints a link; open it on any computer, authorize, and paste the token the page shows (*Copy your token*) back into the terminal:
+
+```bash
+cloider login --no-browser
+```
+
+### Log in with an existing API token
+
+If you already have a token from **Access Control**, **API Tokens** (for example in CI), pass it on stdin:
+
+```bash
+cloider login --with-token < token.txt
+```
+
+In CI you don't need to log in at all: set `CLOIDER_TOKEN` (or `CLOIDER_TOKEN_FILE`) and every command uses it.
+
+```bash
+export CLOIDER_TOKEN=cldr_xxxxxxxxxxxxxxxxxxxxxxxx
+cloider cluster list
+```
+
+The CLI takes the token from the first of these that is set: the `--token-file` flag, `CLOIDER_TOKEN`, `CLOIDER_TOKEN_FILE`, then the saved login. See [CLI authentication](/cli/authentication).
+
+## Check who you are logged in as
+
+```bash
+cloider whoami
+```
+
+```text title="Output"
+User:        jane@example.com
+Account:     jane@example.com
+Role:        Owner
+Access:      Read & Write
+Token:       Cloider CLI on janes-macbook
+Profile:     default
+API:         https://cloider.com/api
+Token from:  /Users/jane/.cloider/token
+```
+
+**Account** is the account the token works in, and **Access** is `Read` for a read only token or a Restricted member.
+
+## Work with several accounts
+
+A token belongs to one account. To use the CLI with several accounts, log in once per account under a **profile** name and switch between them:
+
+```bash
+cloider login --profile acme
+cloider profile use acme
+cloider --profile personal cluster list
+```
+
+See [Auth and profiles commands](/cli/commands/auth-and-profiles).
+
+## Log out
+
+```bash
+cloider logout
+```
+
+`cloider logout` revokes the token on Cloider and forgets it locally. Tokens can also be deleted in the dashboard under **Access Control**, **API Tokens**.
+
+## Troubleshooting
+
+| Message | Fix |
+| --- | --- |
+| `cloider: command not found` | The install directory isn't on your `PATH`. Add the line the install script printed, for example `export PATH="$HOME/.local/bin:$PATH"`, to your shell profile. |
+| `Invalid or revoked API token!` (exit code `3`) | The token was deleted or its member was removed. Run `cloider login` again. |
+| `This API token is read only!` (exit code `5`) | You logged in with **Read only**. Run `cloider login` again and choose **Read and write**. |
+| `CLOIDER_TOKEN or CLOIDER_TOKEN_FILE is set, and takes precedence over this login.` | Unset the variable, or use it on purpose. |
+| *This link is incomplete* in the browser | Run `cloider login` again; the link must come from the CLI. |
+
+## Next steps
+
+- [CLI overview](/cli/overview) and the [command reference](/cli/commands).
+- [Shell completion](/cli/shell-completion) for bash, zsh, fish and PowerShell.
+- [Deploy your first app](/get-started/deploy-your-first-app) with `cloider deploy`.
+- [Set up the MCP server](/mcp/setup) so an AI agent can use the CLI.
+
+<FAQ items={[
+  {q: 'How do I install the Cloider CLI?', a: 'On macOS or Linux, run curl -fsSL https://cloider.com/install.sh | sh. On Windows, download the zip for your architecture, extract cloider.exe and add its folder to your Path.'},
+  {q: 'How does cloider login work?', a: 'It opens the Authorize Cloider CLI page in your browser, where you pick the account and Read and write or Read only. Clicking Authorize CLI creates an API token for that account and hands it to the CLI, which saves it in ~/.cloider/token.'},
+  {q: 'How do I use the CLI in CI?', a: 'Create an API token in Access Control, API Tokens, store it as a secret in your CI system and expose it as the CLOIDER_TOKEN environment variable. No login step is needed.'},
+  {q: 'Where does the CLI store my token?', a: 'In plain text in ~/.cloider/token for the default profile and ~/.cloider/tokens/<profile> for other profiles. CLOIDER_CONFIG_DIR moves the whole directory.'},
+  {q: 'Does the CLI update itself?', a: 'Yes. It checks for a new version once a day and installs it before running your command. cloider update disable turns that off, and CLOIDER_AUTO_UPDATE=0 overrides it for one environment.'}
+]} />

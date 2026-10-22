@@ -1,0 +1,172 @@
+---
+title: cloider domain command reference
+sidebar_label: domain
+sidebar_position: 9
+description: Reference for cloider domain, to claim free cloider.app subdomains, add custom domains, check availability, see a domain's routes and delete domains.
+keywords: [cloider domain, cloider domain create, free subdomain, cloider.app, custom domain cli, nameservers, domain availability]
+---
+
+`cloider domain` manages the [domains](/domains/overview) of your account: free subdomains under `cloider.app`, and custom domains you own and point at Cloider's nameservers. Once you have a domain, [`cloider dns`](/cli/commands/dns) manages a custom domain's DNS records and [`cloider target`](/cli/commands/target) routes its paths to apps and cluster services.
+
+```text
+cloider domain <command> [flags]
+```
+
+**Alias:** `cloider domains`. Domains are named by their full domain name, such as `example.com` or `blog.cloider.app`; case and a trailing dot don't matter.
+
+## Subcommands
+
+| Command | Description |
+| --- | --- |
+| [`cloider domain list`](#cloider-domain-list) | List domains, whatever their status |
+| [`cloider domain get`](#cloider-domain-get) | Show a domain and its targets |
+| [`cloider domain check`](#cloider-domain-check) | Check whether a free subdomain can be claimed |
+| [`cloider domain create`](#cloider-domain-create) | Claim a free subdomain, or add a domain you own |
+| [`cloider domain delete`](#cloider-domain-delete) | Delete a domain, with its DNS records and targets |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## cloider domain list
+
+List the account's domains, whatever their status.
+
+```text
+cloider domain list [flags]
+```
+
+**Alias:** `cloider domain ls`.
+
+```bash
+cloider domain list
+```
+
+```text title="Output"
+DOMAIN             TYPE           STATUS    CREATED
+example.com        CustomDomain   Active    2026-09-01 10:00
+blog.cloider.app   Subdomain      Active    2026-09-14 10:02
+acme-shop.com      CustomDomain   Pending   2026-10-20 08:30
+```
+
+**TYPE** is `Subdomain` for a free subdomain and `CustomDomain` for a domain you own. **STATUS** is `Pending`, `Active`, `Failed` or `Suspended`; a new custom domain stays `Pending` until its nameservers point at Cloider. `-q` prints the domain names. MCP tool: `list_domains`.
+
+## cloider domain get
+
+Show a domain and the routes (targets) on it.
+
+```text
+cloider domain get <domain> [flags]
+```
+
+```bash
+cloider domain get example.com
+```
+
+```text title="Output"
+Domain:   example.com
+Type:     CustomDomain
+Status:   Active
+Created:  2026-09-01 10:00
+
+ROUTE             TARGET                     TARGET PATH   PROTOCOL
+example.com/      app web                    /             -
+example.com/api   production/shop/api:8080   /             TCP
+```
+
+See [`cloider target`](/cli/commands/target) for the targets table. `-o json` prints the domain with its `targets`. MCP tool: `get_domain`.
+
+## cloider domain check
+
+Check whether a free subdomain can be claimed. It succeeds (exit code `0`) when it can and fails (exit code `1`) with the reason when it can't, so you can use it in a script.
+
+```text
+cloider domain check <domain> [flags]
+```
+
+```bash
+cloider domain check blog.cloider.app
+```
+
+```text title="Output"
+✓ blog.cloider.app is available
+```
+
+```bash
+cloider domain check api.cloider.app
+```
+
+```text title="Output"
+Error: api.cloider.app is not available: ...
+```
+
+`-o json` prints `{"domain_name", "available", "reason"}` and still sets the exit code. MCP tool: `check_domain_availability`.
+
+## cloider domain create
+
+Claim a free subdomain, or add a domain you own. A name under `cloider.app` (for example `blog.cloider.app`) is claimed as a free subdomain; anything else is added as a custom domain, which you then point at Cloider's nameservers at your registrar.
+
+```text
+cloider domain create <domain> [flags]
+```
+
+Claim a free subdomain:
+
+```bash
+cloider domain create blog.cloider.app
+```
+
+```text title="Output"
+✓ Claimed blog.cloider.app
+Route it with `cloider target create blog.cloider.app --app <app>`.
+```
+
+Add a custom domain:
+
+```bash
+cloider domain create example.com
+```
+
+```text title="Output"
+✓ Added example.com
+Point it at these nameservers at your registrar:
+  ns1.cloider.com
+  ns2.cloider.com
+  ns3.cloider.com
+  ns4.cloider.com
+Then add records with `cloider dns create example.com ...` and routes with `cloider target create example.com ...`.
+```
+
+The domain is `Pending` until the nameserver change has reached the internet, which can take from minutes to a day or two depending on your registrar. See [Free subdomains](/domains/free-subdomains), [Add a custom domain](/domains/add-a-custom-domain) and [Nameservers](/domains/nameservers). `-o json` prints the API's answer. MCP tool: `create_domain`.
+
+## cloider domain delete
+
+Delete a domain, with its DNS records and targets. For a free subdomain this releases it; for a custom domain, Cloider stops answering for it.
+
+```text
+cloider domain delete <domain> [flags]
+```
+
+**Alias:** `cloider domain rm`. The command asks you to type the domain name; pass `--yes` to skip it.
+
+```bash
+cloider domain delete acme-shop.com
+```
+
+```text title="Output"
+This permanently deletes domain acme-shop.com.
+Type acme-shop.com to confirm: acme-shop.com
+✓ Deleted acme-shop.com
+```
+
+See [Delete a domain](/domains/delete-a-domain). MCP tool: `delete_domain`.
+
+## Related
+
+- [Domains overview](/domains/overview)
+- [`cloider dns`](/cli/commands/dns) and [`cloider target`](/cli/commands/target)
+- [Terraform `cloider_domain`](/terraform/resources/domain)
+
+<FAQ items={[
+  {q: 'How do I get a free subdomain with the Cloider CLI?', a: 'Check it with cloider domain check blog.cloider.app, claim it with cloider domain create blog.cloider.app, and route it to an app with cloider target create blog.cloider.app --app blog. cloider deploy also claims one automatically for a new app.'},
+  {q: 'How do I add my own domain?', a: 'Run cloider domain create example.com, then set the four nameservers it prints (ns1.cloider.com to ns4.cloider.com) at your registrar. The domain stays Pending until the change has propagated.'},
+  {q: 'What does deleting a domain delete?', a: 'The domain itself, its DNS records and its targets (routes). Apps and clusters it routed to keep running.'}
+]} />

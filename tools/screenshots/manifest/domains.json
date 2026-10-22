@@ -1,0 +1,7 @@
+{
+  "shots": [
+    {"file": "domains/custom-domain-nameservers.webp", "route": "/dashboard/domains/custom-domain", "state": "Add a domain you own, step Activate Cloider DNS: the Name Servers heading, the text Login into your domain provider and change your name servers to the following:, and ns1.cloider.com to ns4.cloider.com with copy icons, Back and Continue buttons", "actions": "type example.com in Domain or subdomain, click Check Availability, click Continue on Add DNS records (Optional)"},
+    {"file": "domains/target-form.webp", "route": "/dashboard/domains/:domain", "state": "Add a new target dialog for example.com with Target type Cluster, Cluster production, Namespace shop, Service api, Port 80, Path /api and Target path empty, Cancel and Save buttons", "actions": "click Add target, choose Cluster, pick production, shop, api and port 80, type /api in Path"},
+    {"file": "domains/delete-dialog.webp", "route": "/dashboard/domains/:domain", "state": "Delete Domain dialog, second step, for example.com: To confirm deleting the domain, type example.com, the name typed in the input, Cancel and Delete domain buttons", "actions": "click Delete domain in the Delete domain section, click I want to delete the domain, type example.com"}
+  ]
+}

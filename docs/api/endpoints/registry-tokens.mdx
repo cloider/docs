@@ -1,0 +1,207 @@
+---
+title: Registry tokens API endpoints
+sidebar_label: Registry tokens
+sidebar_position: 8
+description: Cloider API reference for container registry tokens, list, create with a one time secret for docker login, scope to projects, pull only, expiry, change and delete.
+keywords: [cloider registry token api, docker login token, pull only token, image pull secret, registry credentials api]
+---
+
+Registry tokens are the credentials `docker`, your CI and your Kubernetes clusters use to push and pull images from the Cloider [container registry](/container-registry/overview). A token reaches every project of the account or only the ones you choose, can be pull only, and can expire. These endpoints list, create, change and delete them. The dashboard shows them under **Access Control**, **Registry Tokens**.
+
+All paths are relative to `https://cloider.com/api`. See [Registry tokens](/container-registry/tokens) for using a token with `docker login` and Kubernetes.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/registry/tokens`](#list-registry-tokens) | Read |
+| POST | [`/registry/tokens`](#create-a-registry-token) | Write |
+| PUT | [`/registry/tokens/:hashed_id`](#change-a-registry-token) | Write |
+| DELETE | [`/registry/tokens/:hashed_id`](#delete-a-registry-token) | Write |
+
+An account can have up to **50** registry tokens.
+
+## How a registry login works
+
+A registry login is a username and a password:
+
+- The **username** is the account's registry username (the `username` field), the same for every token of the account. It never changes.
+- The **password** is the token's **secret**, returned once when the token is created. A login can reach what that token allows, and nothing more.
+
+```bash
+echo "$REGISTRY_SECRET" | docker login registry.cloider.com -u acme --password-stdin
+docker push registry.cloider.com/acme/api:1.4.2
+```
+
+## The registry token object
+
+```json
+{
+  "hashed_id": "t3n8q",
+  "label": "ci-deploy",
+  "username": "acme",
+  "all_projects": false,
+  "projects": ["r4c8z"],
+  "read_only": false,
+  "expires_at": "2027-10-20T09:31:12.551203Z",
+  "status": "Ready",
+  "created_at": "2026-10-20T09:31:12.551203Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The token's id in the API |
+| `label` | string | The name you gave it |
+| `username` | string | The username to log in with. Some older tokens show a longer username of their own: log in with it exactly as shown |
+| `all_projects` | boolean | `true` when the token reaches every project of the account, including projects created later |
+| `projects` | string list | When `all_projects` is `false`, the `hashed_id`s of the projects it reaches |
+| `read_only` | boolean | `true` for a pull only token |
+| `expires_at` | string or null | When the token stops working, or `null` for never |
+| `status` | string | `Creating`, `Ready`, `Terminating` or `Failed` |
+| `created_at` | string | When the token was created |
+
+The secret is never part of this object.
+
+## List registry tokens
+
+```http
+GET /registry/tokens
+```
+
+Returns the account's registry tokens, newest first.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/registry/tokens \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is a list of [registry token objects](#the-registry-token-object).
+
+## Create a registry token
+
+```http
+POST /registry/tokens
+```
+
+Creates a registry token and returns its secret. **The secret is shown only in this response.** Store it right away, for example as a CI secret or a Kubernetes pull secret.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `label` | string | Yes | A name for the token, 1 to 64 characters |
+| `all_projects` | boolean | No | `true` to reach every project of the account. Default `false` |
+| `projects` | string list | When `all_projects` is `false` | The `hashed_id`s of the projects the token reaches, at least one |
+| `read_only` | boolean | No | `true` for pull only. Default `false` (pull and push) |
+| `expires_in_days` | integer | No | Days until the token stops working, 1 to 3650. `0` or left out for never |
+
+At least one of the projects the token reaches must be `Ready`.
+
+```bash
+curl -X POST https://cloider.com/api/registry/tokens \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "ci-deploy", "projects": ["r4c8z"], "expires_in_days": 365}'
+```
+
+```json title="Response"
+{
+  "token": {
+    "hashed_id": "t3n8q",
+    "label": "ci-deploy",
+    "username": "acme",
+    "all_projects": false,
+    "projects": ["r4c8z"],
+    "read_only": false,
+    "expires_at": "2027-10-20T09:31:12.551203Z",
+    "status": "Ready",
+    "created_at": "2026-10-20T09:31:12.551203Z"
+  },
+  "secret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+Log in with it, or turn it into a Kubernetes pull secret:
+
+```bash
+RESPONSE=$(curl -s -X POST https://cloider.com/api/registry/tokens \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "prod-cluster", "projects": ["r4c8z"], "read_only": true}')
+
+kubectl create secret docker-registry cloider-registry \
+  --docker-server=registry.cloider.com \
+  --docker-username="$(jq -r .token.username <<<"$RESPONSE")" \
+  --docker-password="$(jq -r .secret <<<"$RESPONSE")"
+```
+
+### Errors
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `label` | `Name must not be empty`, `Name must not exceed 64 characters` |
+| `400` | `projects` | `Choose at least one project`, `One of the projects doesn't exist any more, reload and try again`, `Choose a project that is ready, or create one first` |
+| `400` | `expires_in_days` | `Expiry must be between 1 and 3650 days, or never` |
+| `400` | `_` | `An account can have up to 50 registry tokens, delete one you no longer use!` |
+| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `400` | `_` | `Operation failed, Couldn't create the registry token!` |
+| `403` | `_` | `This API token is read only!`, `You have read-only access to this account, you can not create registry tokens!` |
+
+## Change a registry token
+
+```http
+PUT /registry/tokens/:hashed_id
+```
+
+Changes a token's label, the projects it reaches and whether it is pull only. The secret, the username and the expiry stay the same. Send the full form: fields you leave out take their defaults.
+
+**Access:** Read & Write token. The registry token must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `label` | string | Yes | 1 to 64 characters |
+| `all_projects` | boolean | No | `true` for every project |
+| `projects` | string list | When `all_projects` is `false` | The project ids |
+| `read_only` | boolean | No | `true` for pull only |
+
+```bash
+curl -X PUT https://cloider.com/api/registry/tokens/t3n8q \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "ci-deploy", "all_projects": true, "read_only": false}'
+```
+
+The response is the updated list of registry tokens. Besides the validation errors of create, it can answer `400` with `The registry token must be ready to be changed.` or `Couldn't change the registry token, try again in a moment!`, in which case the token keeps its previous settings. The expiry can't be changed: create a new token instead.
+
+## Delete a registry token
+
+```http
+DELETE /registry/tokens/:hashed_id
+```
+
+Deletes a registry token. Logins with its secret stop working.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/registry/tokens/t3n8q \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the updated list of registry tokens.
+
+| Status | Message |
+| --- | --- |
+| `400` | `The registry token is busy, try again in a moment!` |
+| `400` | `Couldn't delete the registry token, try again in a moment!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not delete registry tokens!` |
+| `404` | `Not Found` (plain text) |
+
+## Related
+
+- [Registry tokens](/container-registry/tokens) in the dashboard, CLI and Terraform
+- [Use with Kubernetes](/container-registry/use-with-kubernetes) and [CI/CD](/container-registry/ci-cd)
+- [cloider_registry_token](/terraform/resources/registry-token) Terraform resource

@@ -1,0 +1,243 @@
+---
+title: DNS records API endpoints
+sidebar_label: DNS records
+sidebar_position: 13
+description: "Cloider API reference for DNS records on custom domains: list, create, update and delete A, AAAA, CNAME, ALIAS, MX, TXT, NS, CAA, HTTPS, SPF, SRV and PTR."
+keywords: [cloider dns api, create dns record api, a record api, cname api, mx record api, txt record api, dns ttl, authoritative dns api]
+---
+
+These endpoints manage the DNS records of a custom domain whose nameservers point to Cloider. A record says what a name under the domain resolves to: an `A` record for an IPv4 address, `MX` for mail, `TXT` for verification strings, and so on. Cloider's nameservers answer with your records shortly after you save them.
+
+All paths are relative to `https://cloider.com/api`. Records are created under their domain (`/domains/example.com/dns-records`) and then addressed by their numeric id (`/dns-records/1042`). See [DNS records](/domains/dns-records) for what each type is for.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/domains/:domain_name/dns-records`](#list-a-domains-records) | Read |
+| POST | [`/domains/:domain_name/dns-records`](#create-a-record) | Write |
+| GET | [`/dns-records/:record_id`](#get-a-record) | Read |
+| PUT | [`/dns-records/:record_id`](#update-a-record) | Write |
+| DELETE | [`/dns-records/:record_id`](#delete-a-record) | Write |
+
+Records can only be added to **custom domains**. A free subdomain such as `blog.cloider.app` is managed by Cloider, and adding a record to it answers `400 Can't add records on subdomains.`
+
+## The record object
+
+```json
+{
+  "id": 1042,
+  "domain_name": "example.com",
+  "record_type": "A",
+  "record_name": "www",
+  "record_value": "203.0.113.10\n203.0.113.11",
+  "ttl": 300,
+  "internal": false,
+  "created_at": "2026-10-02T08:15:27.300421Z",
+  "updated_at": "2026-10-02T08:15:27.300421Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | integer | The record's id |
+| `domain_name` | string | The domain it belongs to |
+| `record_type` | string | `A`, `AAAA`, `CNAME`, `ALIAS`, `MX`, `TXT`, `NS`, `CAA`, `HTTPS`, `SPF`, `SRV` or `PTR` |
+| `record_name` | string | The name relative to the domain: `www` for `www.example.com`, `_dmarc`, `*` for a wildcard, or empty for the domain itself (shown as `@` in the dashboard). `@` is saved as empty |
+| `record_value` | string | One or more values, one per line (`\n`). Each line becomes one answer |
+| `ttl` | integer | Time to live in seconds, 60 to 172800 |
+| `internal` | boolean | `true` for records Cloider manages for your targets. They are hidden by default and can't be changed through these endpoints |
+| `created_at`, `updated_at` | string | When the record was created and last changed |
+
+### One record per name and type
+
+A domain has at most one record of each type for each name. To give `www` two IPv4 addresses, put both in one `A` record, on separate lines, rather than creating two records. Creating a second one answers `A record already exists for 'www'. Instead of creating separate records, edit the existing record and add multiple values on separate lines.`
+
+Several names can use the same address: an `A` record for `www` and one for the domain itself can both hold `203.0.113.10`.
+
+One exception to one record per name and type: while the `A` record a custom domain was added with still points at Cloider, creating an `A` record with an empty `record_name` updates that record and answers with it, rather than refusing a second one.
+
+### Values per type
+
+| Type | Value format | Example |
+| --- | --- | --- |
+| `A` | A public IPv4 address. Private addresses are refused | `203.0.113.10` |
+| `AAAA` | An IPv6 address | `2001:db8::1` |
+| `CNAME` | One fully qualified host name. Not allowed on the domain itself, and not next to other records of the same name | `shop.myshopify.com` |
+| `ALIAS` | One fully qualified host name. Answered as the target's `A` and `AAAA` records, allowed on the domain itself, not next to `A`, `AAAA` or `CNAME` records of the same name | `myapp.herokuapp.com` |
+| `MX` | `priority hostname` | `10 mx1.mail.example.net` |
+| `TXT` | Text. Long values can be split over several lines | `v=spf1 include:_spf.example.net ~all` |
+| `NS` | A nameserver host name, ideally ending with a dot | `ns1.example.net.` |
+| `CAA` | `flags tag "value"`, tag `issue`, `issuewild` or `iodef` | `0 issue "letsencrypt.org"` |
+| `HTTPS` | `priority target [params]` | `1 . alpn="h2,h3"` |
+| `SPF` | Must start with `v=spf1` | `v=spf1 include:_spf.example.net ~all` |
+| `SRV` | `priority weight port target` | `10 5 5060 sip.example.com` |
+| `PTR` | A host name | `host.example.com` |
+
+## List a domain's records
+
+```http
+GET /domains/:domain_name/dns-records
+```
+
+Returns the records of one domain, sorted by type and name.
+
+**Access:** any token.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `internal` | No | `false` (default) for your own records, `true` for the records Cloider manages for targets, `all` for both |
+
+```bash
+curl https://cloider.com/api/domains/example.com/dns-records \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {"id": 1042, "domain_name": "example.com", "record_type": "A", "record_name": "www", "record_value": "203.0.113.10\n203.0.113.11", "ttl": 300, "internal": false, "created_at": "2026-10-02T08:15:27.300421Z", "updated_at": "2026-10-02T08:15:27.300421Z"},
+  {"id": 1043, "domain_name": "example.com", "record_type": "MX", "record_name": "", "record_value": "10 mx1.mail.example.net\n20 mx2.mail.example.net", "ttl": 3600, "internal": false, "created_at": "2026-10-02T08:16:02.118823Z", "updated_at": "2026-10-02T08:16:02.118823Z"}
+]
+```
+
+A domain that doesn't exist or belongs to another account answers with an empty list rather than an error.
+
+## Create a record
+
+```http
+POST /domains/:domain_name/dns-records
+```
+
+Creates a record and publishes it on Cloider's nameservers.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `record_type` | string | Yes | One of the types above |
+| `record_name` | string | No | The name relative to the domain. Empty for the domain itself |
+| `record_value` | string | Yes | One or more values separated by `\n`. Blank lines and surrounding spaces are removed |
+| `ttl` | integer | Yes | 60 to 172800 seconds. There is no default: `0` is refused |
+
+```bash
+curl -X POST https://cloider.com/api/domains/example.com/dns-records \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"record_type": "A", "record_name": "www", "record_value": "203.0.113.10\n203.0.113.11", "ttl": 300}'
+```
+
+The response is the new [record object](#the-record-object). More examples:
+
+```bash
+# Mail for the domain itself
+curl -X POST https://cloider.com/api/domains/example.com/dns-records \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"record_type": "MX", "record_name": "", "record_value": "10 mx1.mail.example.net\n20 mx2.mail.example.net", "ttl": 3600}'
+
+# DMARC policy
+curl -X POST https://cloider.com/api/domains/example.com/dns-records \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"record_type": "TXT", "record_name": "_dmarc", "record_value": "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com", "ttl": 3600}'
+
+# Only Let's Encrypt may issue certificates
+curl -X POST https://cloider.com/api/domains/example.com/dns-records \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"record_type": "CAA", "record_name": "", "record_value": "0 issue \"letsencrypt.org\"", "ttl": 3600}'
+```
+
+[Email DNS records](/domains/email-dns-records) covers MX, SPF, DKIM and DMARC in detail.
+
+### Errors
+
+Validation messages name the value they are about, so they can be shown as they are:
+
+| Status | Field | Example messages |
+| --- | --- | --- |
+| `400` | `record_type` | `Record type is required` |
+| `400` | `ttl` | `TTL must be between 60 and 172800 seconds` |
+| `400` | `record_value` | `Record value cannot be empty`, `Duplicate value found: 203.0.113.10` |
+| `400` | `record_value` | `Invalid IPv4 address: 203.0.113. Expected format: 192.168.1.1`, `Private IP address detected: 10.0.0.5. Consider if this is intended for public DNS`, `IPv6 address detected: 2001:db8::1. Use AAAA record type for IPv6 addresses` |
+| `400` | `record_value` | `CNAME records can only have one target. Remove additional values`, `IP address detected: 203.0.113.10. Use A record type for IPv4 addresses, not CNAME` |
+| `400` | `record_value` | `MX record missing priority or hostname: mx1.mail.example.net. Expected format: '10 mail.example.com'`, `MX record with priority 10 already exists for www` |
+| `400` | `record_value` | `SPF record must start with 'v=spf1': include:_spf.example.net`, `CAA record incomplete: 0 issue. Expected format: '0 issue "letsencrypt.org"'`, `SRV record must have exactly 4 parts: ...` |
+| `400` | `record_value` | `Duplicate record already exists with the same type, name, and value`, `A record already exists for 'www'. ...` |
+| `400` | `record_name` | `CNAME records cannot be used for the root domain (record name cannot be empty)`, `CNAME record cannot coexist with other record types for the same name: www`, `Cannot create A record: CNAME already exists for name: www` |
+| `400` | `_` | `Can't add records on subdomains.`, `Operation failed, couldn't create the DNS record!` |
+| `403` | `_` | `This API token is read only!` |
+| `404` | | `Not Found` (plain text), the domain isn't the account's |
+
+## Get a record
+
+```http
+GET /dns-records/:record_id
+```
+
+Returns one record. Internal records and records of other accounts answer `404 Not Found` (plain text).
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/dns-records/1042 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+## Update a record
+
+```http
+PUT /dns-records/:record_id
+```
+
+Replaces a record's type, name, value and TTL. Send all four fields, even the ones that don't change. The same validation as for creating applies, and the record keeps its id.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X PUT https://cloider.com/api/dns-records/1042 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"record_type": "A", "record_name": "www", "record_value": "203.0.113.10\n203.0.113.12", "ttl": 3600}'
+```
+
+The response is the updated record. `Operation failed, couldn't update the DNS record!` means it wasn't saved.
+
+## Delete a record
+
+```http
+DELETE /dns-records/:record_id
+```
+
+Deletes a record from Cloider's nameservers.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/dns-records/1042 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{"message": "DNS record deleted successfully"}
+```
+
+`400 Operation failed, couldn't delete the DNS record!` means nothing was deleted. `404 Not Found` for an unknown, internal or foreign record.
+
+## Check a record
+
+Records are served by `ns1.cloider.com` to `ns4.cloider.com`. Ask one of them directly to see a change without waiting for caches:
+
+```bash
+dig @ns1.cloider.com www.example.com A +short
+```
+
+```text title="Output"
+203.0.113.10
+203.0.113.12
+```
+
+Resolvers that cached the old answer keep it until its TTL runs out. Lower the TTL before a planned change.
+
+## Related
+
+- [DNS records](/domains/dns-records) and [email DNS records](/domains/email-dns-records)
+- [Domains](/api/endpoints/domains) and [targets](/api/endpoints/targets)
+- [cloider dns](/cli/commands/dns) and the [cloider_dns_record](/terraform/resources/dns-record) Terraform resource

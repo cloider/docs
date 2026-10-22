@@ -1,0 +1,173 @@
+---
+title: App insights, CPU, memory and cost per day
+sidebar_label: Insights
+sidebar_position: 9
+description: Read a Cloider app's average CPU and memory, daily usage charts, month to date cost and forecasts on the Insights tab, with cloider app usage or the REST API.
+keywords: [cloider app insights, app cpu usage, app memory usage, app cost, usage forecast, app metrics, cloider app usage]
+---
+
+The **Insights** tab shows how much CPU and memory an app uses and what it costs: averages for this month and today,
+the cost so far this month, a forecast for this month and next, and daily charts for the last 31 days. The same numbers
+come from `cloider app usage` and the REST API. They are the figures an app is billed on, so this page also explains how
+they are measured.
+
+## At a glance
+
+| Card or chart | Shows |
+| --- | --- |
+| **Avg. Usage (This Month)** | Average CPU in cores and memory in GB over the days of this month |
+| **Avg. Usage (Today)** | Average CPU and memory so far today |
+| **Cost to Date (This Month)** | What the app has cost since the first of the month |
+| **Cost Forecast** | The expected cost for **This Month** and **Next Month** at the current usage |
+| **CPU Usage** | Average cores per day, last 31 days |
+| **Memory Usage** | Average GB per day, last 31 days |
+| **Cost** | Cost per day, last 31 days |
+
+Usage is sampled every minute while the app runs. A new app shows **Usage is sampled every minute while the app runs,
+and shows here once the first samples are in.** until its first samples arrive.
+
+<Screenshot
+  src="/img/screenshots/apps/detail-insights.webp"
+  url="/dashboard/apps/blog-a7c2mq"
+  alt="The Insights tab of the blog app with average CPU and memory cards, cost to date, cost forecast, and daily CPU, memory and cost bar charts"
+  caption="Insights: averages, cost and 31 days of daily usage."
+/>
+
+## How is usage measured?
+
+Each sample reads the CPU and memory of the app's container. The terminal that the dashboard's **Terminal** tab opens
+isn't counted, only your app.
+
+- **CPU** is in cores: `0.25 cores` is a quarter of one CPU core on average.
+- **Memory** is in GB.
+- Samples are averaged over time, so a short spike barely moves a daily average.
+- A **paused** app has no container, so its samples are zero and it costs nothing for compute.
+
+Cost is calculated from the same averages: the larger of the CPU cores used and the memory used converted to cores at a
+fixed ratio, times the compute rate, times the time the app ran. The rate is on the [pricing page](/reference/pricing),
+and [the billing model](/concepts/billing-model) explains how daily costs become an invoice.
+
+## Read an app's usage
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the app.
+2. Go to the **Insights** tab.
+
+For every resource of the account at once, open [**Usage**](/account/usage) in the sidebar.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider app usage blog
+```
+
+```text title="Output"
+Month:                2026-10
+So far:               $1.84
+Forecast this month:  $2.91
+Forecast next month:  $2.88
+Daily usage is in -o json.
+```
+
+The daily figures, CPU in millicores and memory in MiB, are in the JSON:
+
+```bash
+cloider app usage blog -o json
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider doesn't read usage. Use the dashboard, the CLI or the API.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl https://cloider.com/api/apps/a7c2mq/usage \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the app with its usage. A trimmed example:
+
+```json title="Response"
+{
+  "hashed_id": "a7c2mq",
+  "app_label": "blog",
+  "status": "Ready",
+  "daily_usage": [
+    {
+      "resource_type": "app",
+      "date": "2026-10-19T00:00:00Z",
+      "total_cost": 0.0947,
+      "total_time_seconds": 86400,
+      "metrics": {"cpu": 38.5, "memory": 212.4, "compute_cost": 0.0947}
+    }
+  ],
+  "monthly_usage": {
+    "avg_cpu_usage": 41,
+    "avg_memory_usage": 208,
+    "compute_total_cost": "1.84",
+    "total_cost": 1.84,
+    "days": 20,
+    "forecast_this_month": 2.91,
+    "forecast_next_month": 2.88
+  },
+  "forecast_rest_of_day": 0.0312,
+  "date": "2026-10-20",
+  "month": "2026-10"
+}
+```
+
+`metrics.cpu` and `monthly_usage.avg_cpu_usage` are in millicores (1000 = one core), `metrics.memory` and
+`avg_memory_usage` in MiB. `daily_usage` holds up to the last 31 days.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+How much has the blog app cost this month, and what is the forecast?
+```
+
+It calls the `get_usage` tool for one app:
+
+```json title="Tool call: get_usage"
+{"kind": "app", "name": "blog"}
+```
+
+</TabItem>
+</Tabs>
+
+## Use insights to size and save
+
+- **Memory climbs day after day**: the app probably leaks memory. Check the [logs](/apps/logs) and restart it by saving
+  the **Environment** tab, then fix the leak.
+- **High CPU at idle**: look for busy loops, aggressive polling or a development server running in production (for
+  example `npm run dev` instead of `npm start`).
+- **An app nobody uses**: [pause it](/apps/pause-resume-and-delete). A paused app costs nothing for compute and keeps its
+  configuration.
+
+For live numbers rather than daily averages, look inside the container, if its image has `ps`:
+
+```bash
+cloider app exec blog -- ps aux
+```
+
+## Next steps
+
+- [Logs](/apps/logs): what the app is doing right now.
+- [Pause, resume and delete](/apps/pause-resume-and-delete): stop paying for idle apps.
+- [Usage](/account/usage): every resource's usage in one place.
+- [Pricing](/reference/pricing): current rates.
+
+<FAQ items={[
+  {q: 'Where can I see how much CPU and memory my app uses?', a: 'On the app\'s Insights tab in the dashboard: average CPU in cores and memory in GB for this month and today, and daily charts for the last 31 days. cloider app usage <app> -o json returns the same figures.'},
+  {q: 'How often is app usage measured?', a: 'Usage is sampled every minute while the app runs, and averaged per day. A paused app has no running container, so it records zero usage.'},
+  {q: 'Does the web terminal count towards my app\'s usage?', a: 'No. Only the app\'s own container is measured and billed. The terminal that the dashboard opens runs separately and isn\'t counted.'},
+  {q: 'How is the cost forecast calculated?', a: 'The forecast projects the app\'s current usage over the rest of this month and over next month, at the current rates. It changes as the app\'s usage changes.'},
+]} />

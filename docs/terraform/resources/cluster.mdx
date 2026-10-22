@@ -1,0 +1,314 @@
+---
+title: cloider_cluster resource (Terraform)
+sidebar_label: cloider_cluster
+sidebar_position: 1
+description: Create, pause and delete Cloider serverless Kubernetes clusters with the cloider_cluster Terraform resource, and wire its kube_config into the kubernetes and helm providers.
+keywords: [cloider_cluster, terraform kubernetes cluster, cloider terraform cluster, kube_config terraform, terraform helm provider kubeconfig, serverless kubernetes terraform, import kubernetes cluster terraform]
+---
+
+The `cloider_cluster` resource creates and manages a Cloider [serverless Kubernetes cluster](/kubernetes/overview). Creating one waits until the cluster is `Ready`, and its `kube_config` attribute then holds everything the `kubernetes` and `helm` providers need to deploy into it. You can pause and resume the cluster by flipping `paused`.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `name` |
+| **Changes in place** | `paused` |
+| **Changes that replace the cluster** | `name`, `version` |
+| **Sensitive attributes** | `kube_config` and everything in it |
+| **Timeouts** | `create`, `update`, `delete`, 20 minutes each by default |
+| **Import ID** | The cluster id, such as `x8f2kq` |
+| **API** | [`/api/clusters`](/api/endpoints/clusters) |
+| **CLI equivalent** | [`cloider cluster`](/cli/commands/cluster) |
+
+## Example usage
+
+### Basic cluster
+
+```hcl title="main.tf"
+resource "cloider_cluster" "staging" {
+  name = "staging"
+}
+```
+
+`terraform apply` creates a cluster called `staging` with the newest Kubernetes version on offer, then waits until it is `Ready`, which usually takes a few minutes.
+
+### Deploy into the cluster with the kubernetes provider
+
+`kube_config` splits the cluster's kubeconfig into the arguments the [`kubernetes`](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs) provider takes. The client certificate authenticates as the cluster's admin.
+
+```hcl title="main.tf"
+resource "cloider_cluster" "staging" {
+  name = "staging"
+}
+
+provider "kubernetes" {
+  host                   = cloider_cluster.staging.kube_config.host
+  cluster_ca_certificate = cloider_cluster.staging.kube_config.cluster_ca_certificate
+  client_certificate     = cloider_cluster.staging.kube_config.client_certificate
+  client_key             = cloider_cluster.staging.kube_config.client_key
+}
+
+resource "kubernetes_namespace_v1" "shop" {
+  metadata {
+    name = "shop"
+  }
+}
+```
+
+### Install a Helm chart
+
+The `helm` provider 3.x takes `kubernetes` as an attribute (with `=`). In 2.x it was a block.
+
+```hcl title="main.tf"
+provider "helm" {
+  kubernetes = {
+    host                   = cloider_cluster.staging.kube_config.host
+    cluster_ca_certificate = cloider_cluster.staging.kube_config.cluster_ca_certificate
+    client_certificate     = cloider_cluster.staging.kube_config.client_certificate
+    client_key             = cloider_cluster.staging.kube_config.client_key
+  }
+}
+
+resource "helm_release" "podinfo" {
+  name             = "podinfo"
+  repository       = "https://stefanprodan.github.io/podinfo"
+  chart            = "podinfo"
+  namespace        = "podinfo"
+  create_namespace = true
+}
+```
+
+Configuring a provider from a resource that is created in the same run works, but has caveats. Read [Kubernetes and Helm](/terraform/guides/kubernetes-and-helm) before you rely on it in production.
+
+### Write a kubeconfig file for kubectl
+
+With the [`local`](https://registry.terraform.io/providers/hashicorp/local/latest/docs) provider:
+
+```hcl title="main.tf"
+resource "local_sensitive_file" "kubeconfig" {
+  filename        = "${path.module}/kubeconfig-staging.yaml"
+  content         = cloider_cluster.staging.kube_config.raw
+  file_permission = "0600"
+}
+```
+
+```bash
+KUBECONFIG=./kubeconfig-staging.yaml kubectl get pods -A
+```
+
+Or without writing anything from Terraform, through an output:
+
+```hcl title="outputs.tf"
+output "kubeconfig" {
+  value     = cloider_cluster.staging.kube_config.raw
+  sensitive = true
+}
+```
+
+```bash
+terraform output -raw kubeconfig > kubeconfig-staging.yaml
+```
+
+### Pause a cluster with a variable
+
+A paused cluster keeps its state and isn't billed for compute. Toggling `paused` pauses or resumes the cluster in place:
+
+```hcl title="main.tf"
+variable "staging_paused" {
+  description = "Pause the staging cluster outside working hours"
+  type        = bool
+  default     = false
+}
+
+resource "cloider_cluster" "staging" {
+  name   = "staging"
+  paused = var.staging_paused
+}
+```
+
+```bash
+terraform apply -var staging_paused=true    # pause
+terraform apply -var staging_paused=false   # resume
+```
+
+See [Pause and resume](/kubernetes/pause-and-resume) for what pausing does to workloads.
+
+### Choose the Kubernetes version
+
+`version` defaults to the newest version Cloider offers. To set it explicitly, take one of the [`cloider_options`](/terraform/data-sources/options) data source's `cluster_versions`:
+
+```hcl title="main.tf"
+data "cloider_options" "current" {}
+
+resource "cloider_cluster" "staging" {
+  name    = "staging"
+  version = data.cloider_options.current.cluster_versions[0]
+
+  # A cluster isn't upgraded in place: a different version replaces it.
+  # Ignoring changes keeps the version it was created with.
+  lifecycle {
+    ignore_changes = [version]
+  }
+}
+```
+
+Without `ignore_changes`, a new Kubernetes release would make `cluster_versions[0]` change, and the next plan would replace the cluster. Writing a literal version, such as `version = "1.34"`, avoids that too.
+
+### Longer timeouts
+
+```hcl title="main.tf"
+resource "cloider_cluster" "production" {
+  name = "production"
+
+  timeouts = {
+    create = "30m"
+    delete = "30m"
+  }
+}
+```
+
+### Protect a production cluster from deletion
+
+```hcl title="main.tf"
+resource "cloider_cluster" "production" {
+  name = "production"
+
+  # Refuses any plan that would delete or replace the cluster
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+```
+
+## Argument reference
+
+| Argument | Type | Required | Default | Changing it | Description |
+| --- | --- | --- | --- | --- | --- |
+| `name` | String | Yes | | **Replaces** the cluster | The cluster's name: lower case letters, digits and `-`, starting with a letter, not ending with `-`, at least 2 characters. Names don't have to be unique, see `label` |
+| `version` | String | No | The newest of `cloider_options.cluster_versions` | **Replaces** the cluster | The Kubernetes version, one of `cloider_options`' `cluster_versions` |
+| `paused` | Bool | No | `false` | In place | Whether the cluster is paused. `true` pauses it and `false` resumes it, waiting for `Paused` or `Ready` |
+| `timeouts` | Object | No | 20 minutes each | | `create`, `update` and `delete` durations, such as `"30m"` or `"1h"`. See [Timeouts](#timeouts) |
+
+## Attribute reference
+
+In addition to the arguments, these attributes are exported:
+
+| Attribute | Type | Sensitive | Description |
+| --- | --- | --- | --- |
+| `id` | String | No | The cluster's id, such as `x8f2kq` |
+| `label` | String | No | The name the dashboard shows: `name`, with a `-1`, `-2`... suffix when another cluster in the account already has that name |
+| `status` | String | No | `Creating`, `Starting`, `Ready`, `Pausing`, `Paused` or `Terminating`. See [Status values](/reference/status-values) |
+| `created_at` | String | No | When the cluster was created, in RFC 3339, such as `2026-10-20T09:14:03Z` |
+| `version` | String | No | The Kubernetes version the cluster runs, also when you didn't set it |
+| `kube_config` | Object | Yes | How to reach the cluster's Kubernetes API. Null until the cluster is ready. See below |
+
+### kube_config
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `kube_config.raw` | String | The whole kubeconfig file, in YAML, ready for `kubectl` |
+| `kube_config.host` | String | The Kubernetes API's URL, such as `https://staging-x8f2kq.cloider.com` |
+| `kube_config.cluster_ca_certificate` | String | The PEM CA certificate that signs the API's certificate (already base64 decoded) |
+| `kube_config.client_certificate` | String | The PEM client certificate to authenticate with (already base64 decoded) |
+| `kube_config.client_key` | String | The PEM private key of `client_certificate` (already base64 decoded) |
+| `kube_config.token` | String | A bearer token, when the kubeconfig authenticates with one instead of a client certificate. Otherwise null |
+
+The parts come from the kubeconfig's current context. The certificates are PEM text, not base64, so pass them to the `kubernetes` and `helm` providers as they are, without `base64decode()`.
+
+All of `kube_config` is sensitive: Terraform hides it in plans and outputs. It is still stored in the state file in plain text, so whoever can read the state has admin access to the cluster.
+
+## What replaces a cluster?
+
+A Cloider cluster can't be renamed or upgraded in place. Changing either of these makes Terraform plan `-/+ destroy and then create replacement`, which deletes the cluster and **everything running in it**, then creates a new, empty one:
+
+- `name`
+- `version`
+
+The plan marks the attribute with `# forces replacement`:
+
+```text title="Output"
+  # cloider_cluster.staging must be replaced
+-/+ resource "cloider_cluster" "staging" {
+      ~ id          = "x8f2kq" -> (known after apply)
+      ~ kube_config = (sensitive value)
+      ~ label       = "staging" -> (known after apply)
+      ~ name        = "staging" -> "staging-2" # forces replacement
+        # (2 unchanged attributes hidden)
+    }
+
+Plan: 1 to add, 0 to change, 1 to destroy.
+```
+
+Use `lifecycle { prevent_destroy = true }` on clusters that must not be replaced by mistake.
+
+## Pausing and resuming
+
+- Setting `paused = true` on an existing cluster pauses it and waits until it is `Paused`. Setting it back to `false` resumes it and waits until it is `Ready`. Both are in place updates.
+- Creating a cluster with `paused = true` creates it, waits until it is `Ready`, then pauses it.
+- If someone pauses or resumes the cluster outside Terraform (in the dashboard or with the CLI), the next plan shows `paused` changing back to what the configuration says. To let people pause clusters by hand, add `lifecycle { ignore_changes = [paused] }`.
+
+## Timeouts
+
+| Operation | Default | What it waits for |
+| --- | --- | --- |
+| `create` | 20 minutes | The cluster to be `Ready` (and `Paused`, when created with `paused = true`) |
+| `update` | 20 minutes | A pause or resume to finish |
+| `delete` | 20 minutes | The cluster to be gone (`Terminated`) |
+
+If a create times out, the cluster still exists. The provider saves it in state before waiting, so it is marked as tainted rather than forgotten: the next `terraform apply` replaces it. If you would rather keep it, wait until it is `Ready` and run `terraform untaint cloider_cluster.staging`.
+
+If a delete times out, run `terraform destroy` again: the provider sees that the cluster is already `Terminating` and only waits.
+
+## Behavior notes
+
+- **Names aren't unique.** Two clusters can both be called `staging`. The dashboard tells them apart by `label` (`staging`, `staging-1`), and Terraform by `id`.
+- **Deleted outside Terraform.** If the cluster is deleted in the dashboard or with the CLI, the next refresh removes it from state and the plan offers to create it again.
+- **Exposing services.** Ingress objects in a cluster aren't served. To reach a Service from the internet, route a domain to it with [`cloider_target`](/terraform/resources/target), or use a `LoadBalancer` Service. See [Expose services](/kubernetes/expose-services).
+- **Databases.** To let only this cluster connect to a database, put `"cluster:${cloider_cluster.staging.id}"` in the database's [`trusted_sources`](/terraform/resources/database).
+
+## Import
+
+Import an existing cluster by its id. `cloider cluster list -o wide` shows the ids:
+
+```bash
+cloider cluster list -o wide
+```
+
+```text title="Output"
+ID       NAME      VERSION   STATUS   CREATED
+x8f2kq   staging   1.34      Ready    2026-10-20 09:14
+```
+
+With an `import` block (Terraform 1.5 or later, OpenTofu 1.6 or later), add this to your configuration together with the matching `resource` block, then run `terraform apply`:
+
+```hcl title="imports.tf"
+import {
+  to = cloider_cluster.staging
+  id = "x8f2kq"
+}
+```
+
+With the `terraform import` command (any version):
+
+```bash
+terraform import cloider_cluster.staging x8f2kq
+```
+
+After the import, `name`, `version`, `paused` and `kube_config` are read from the API. Make the resource block match them (at least `name`) so the next plan shows no changes. See [Import existing resources](/terraform/guides/import-existing-resources) for importing many at once and for generating the configuration.
+
+## Related
+
+- [`cloider_cluster` data source](/terraform/data-sources/cluster): look up a cluster this configuration doesn't own
+- [`cloider_target`](/terraform/resources/target): route a domain to a Service in the cluster
+- [`cloider_database`](/terraform/resources/database): a database that trusts the cluster
+- [Kubernetes and Helm guide](/terraform/guides/kubernetes-and-helm)
+- [Create a cluster](/kubernetes/create-a-cluster) with the dashboard, CLI or API
+
+<FAQ items={[
+  {q: 'How do I get the kubeconfig of a Cloider cluster in Terraform?', a: 'Use the cloider_cluster resource\'s kube_config attribute. kube_config.raw is the whole kubeconfig file, and host, cluster_ca_certificate, client_certificate and client_key are the parts the kubernetes and helm providers take, already PEM decoded.'},
+  {q: 'Can I upgrade a Cloider cluster\'s Kubernetes version with Terraform?', a: 'No. A cluster keeps the version it was created with, so changing version replaces the cluster and deletes everything in it. Create a new cluster with the new version and move your workloads instead.'},
+  {q: 'How do I pause a Cloider cluster with Terraform?', a: 'Set paused = true on the cloider_cluster resource and apply. The provider pauses the cluster in place and waits until it is Paused. Set it back to false to resume.'},
+  {q: 'Why does renaming my cluster in Terraform delete it?', a: 'Clusters can\'t be renamed, so changing name forces a replacement: the old cluster is deleted and a new one is created. Keep the name, or use lifecycle { prevent_destroy = true } to block the plan.'},
+  {q: 'What is the import ID of a cloider_cluster?', a: 'The cluster id, such as x8f2kq. List ids with cloider cluster list -o wide, then run terraform import cloider_cluster.staging x8f2kq or use an import block.'},
+]} />

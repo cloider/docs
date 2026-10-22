@@ -1,0 +1,146 @@
+---
+title: cloider target command reference
+sidebar_label: target
+sidebar_position: 11
+description: Reference for cloider target, to route a domain's paths to apps or Kubernetes cluster services, list routes, change a route's path or destination and delete it.
+keywords: [cloider target, route domain to app, route domain to kubernetes service, path routing, cloider target create, custom domain routing]
+---
+
+`cloider target` routes traffic on your [domains](/domains/targets) to where it should go. A **target** maps a path on a domain, such as `example.com/` or `example.com/api`, to one of your apps or to a Service in one of your Kubernetes clusters. Cloider serves the domain over HTTPS and forwards each request to the matching target.
+
+```text
+cloider target <command> [flags]
+```
+
+**Alias:** `cloider targets`. Targets are named by their id, which `cloider target list <domain> -o wide` shows.
+
+## Subcommands
+
+| Command | Description |
+| --- | --- |
+| [`cloider target list`](#cloider-target-list) | List a domain's targets |
+| [`cloider target create`](#cloider-target-create) | Route a path of a domain to an app or a cluster service |
+| [`cloider target update`](#cloider-target-update) | Change a target, keeping what isn't given |
+| [`cloider target delete`](#cloider-target-delete) | Delete a target |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## Target flags
+
+`create` and `update` take the same flags:
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--app` | string | | Route to this app (name or id) |
+| `--cluster` | string | | Route to a service in this cluster (name or id). Can't be combined with `--app` |
+| `--service` | string | | The cluster service, as `<namespace>/<service>`, for example `default/web` |
+| `--port` | int | the service's only port | The service port. Required when the service has several |
+| `--protocol` | string | the port's own | `TCP` or `UDP` |
+| `--path` | string | `/` | Path on the domain to route |
+| `--target-path` | string | `--path` | Path the request reaches the target with |
+
+The services you can route to are listed by [`cloider cluster services`](/cli/commands/cluster#cloider-cluster-services).
+
+## cloider target list
+
+List a domain's targets.
+
+```text
+cloider target list <domain> [flags]
+```
+
+**Alias:** `cloider target ls`.
+
+```bash
+cloider target list example.com -o wide
+```
+
+```text title="Output"
+ID      ROUTE             TARGET                     TARGET PATH   PROTOCOL
+t4k9x   example.com/      app web                    /             -
+m2p8q   example.com/api   production/shop/api:8080   /             TCP
+```
+
+**ROUTE** is the domain and path; **TARGET** is `app <name>` or `<cluster>/<namespace>/<service>:<port>`; **TARGET PATH** is the path the request arrives at the target with. Without `-o wide`, the **ID** column is hidden; `-q` prints ids. `cloider domain get` shows the same table. The MCP server has no separate list tool; agents read targets from `get_domain`.
+
+## cloider target create
+
+Route a path of a domain to an app or a cluster service.
+
+```text
+cloider target create <domain> [flags]
+```
+
+Route a free subdomain to an app:
+
+```bash
+cloider target create blog.cloider.app --app blog
+```
+
+```text title="Output"
+✓ Routed blog.cloider.app/ to the app
+```
+
+Route `/api` on a custom domain to a Service in a cluster, stripping the prefix:
+
+```bash
+cloider target create example.com --cluster production --service shop/api --port 8080 --path /api --target-path /
+```
+
+```text title="Output"
+✓ Routed example.com/api to production/shop/api:8080
+```
+
+The CLI checks the cluster's services first: an unknown service fails with exit code `4` (``no service shop/api in cluster production, see `cloider cluster services` ``), and a service with several ports needs `--port` (`shop/api has several ports (8080/TCP, 9090/TCP), pick one with --port`). Without `--app` or `--cluster` it fails with `say where to route to with --app or --cluster`. See [Targets](/domains/targets) and [Expose services](/kubernetes/expose-services). MCP tool: `create_domain_target`.
+
+## cloider target update
+
+Change a target's path, target path or destination. What you don't pass is kept. If the path and target path were the same, changing `--path` changes both.
+
+```text
+cloider target update <domain> <target-id> [flags]
+```
+
+```bash
+cloider target update example.com m2p8q --path /v2
+cloider target update example.com t4k9x --app blog
+cloider target update example.com m2p8q --port 9090
+```
+
+```text title="Output"
+✓ Updated example.com/v2 to production/shop/api:8080
+```
+
+To move an app target to a cluster service, give `--cluster` and `--service`; `--service`, `--port` or `--protocol` alone on an app target fail with `this target routes to an app, give --cluster to route it to a service instead`. MCP tool: `update_domain_target`.
+
+## cloider target delete
+
+Delete a target. Its route stops answering.
+
+```text
+cloider target delete <target-id> [flags]
+```
+
+**Alias:** `cloider target rm`. Unlike `update`, `delete` takes only the target's id. It asks `Delete target ...? Its route stops answering. [y/N]`; pass `--yes` to skip it.
+
+```bash
+cloider target delete m2p8q --yes
+```
+
+```text title="Output"
+✓ Deleted target m2p8q
+```
+
+MCP tool: `delete_domain_target`.
+
+## Related
+
+- [Targets](/domains/targets) and [Expose services](/kubernetes/expose-services)
+- [`cloider domain`](/cli/commands/domain) and [`cloider cluster services`](/cli/commands/cluster#cloider-cluster-services)
+- [Terraform `cloider_target`](/terraform/resources/target)
+
+<FAQ items={[
+  {q: 'How do I point a domain at my app?', a: 'Run cloider target create example.com --app web. The whole domain (path /) then routes to the app over HTTPS.'},
+  {q: 'How do I route a domain to a Kubernetes service?', a: 'List the services with cloider cluster services, then run cloider target create example.com --cluster production --service default/web --port 80.'},
+  {q: 'Can different paths of one domain go to different apps?', a: 'Yes. Create one target per path, for example --path / to the web app and --path /api to the api app or a cluster service. --target-path sets the path the request arrives with.'}
+]} />

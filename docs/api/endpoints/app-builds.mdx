@@ -1,0 +1,345 @@
+---
+title: App builds API endpoints
+sidebar_label: App builds
+sidebar_position: 10
+description: Cloider API reference for app builds, deploy a new version from uploaded source or git, confirm uploads, retry failed builds, and read or stream build logs.
+keywords: [cloider build api, deploy new version api, app build logs, stream build logs sse, retry build, deploy latest commit api, last-event-id]
+---
+
+Every version of a Cloider app is a **build**: Cloider takes a source archive, builds a container image from it with your Dockerfile or with buildpacks, and deploys it. These endpoints list an app's builds, start new ones from uploaded source or from the app's git branch, retry failed ones, and read or stream their logs. Creating the app itself, which starts its first build, is on [Apps](/api/endpoints/apps).
+
+All paths are relative to `https://cloider.com/api`. See [Builds and deployments](/apps/builds-and-deployments) for how builds work.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/apps/:hashed_id/builds`](#list-builds) | Read |
+| POST | [`/apps/:hashed_id/builds`](#deploy-a-new-version-from-uploaded-source) | Write |
+| POST | [`/apps/:hashed_id/builds/:build_hashed_id/uploaded`](#step-3-confirm-the-upload) | Write |
+| POST | [`/apps/:hashed_id/builds/git`](#build-the-latest-commit) | Write |
+| POST | [`/apps/:hashed_id/builds/:build_hashed_id/retry`](#retry-a-failed-build) | Write |
+| GET | [`/apps/:hashed_id/builds/:build_hashed_id/logs`](#get-a-builds-log) | Read |
+| GET | [`/apps/:hashed_id/builds/:build_hashed_id/logs/stream`](#stream-a-builds-log) | Read |
+
+An app runs one build at a time. Starting a build while another one is running is refused.
+
+## The build object
+
+```json
+{
+  "hashed_id": "u9e3k",
+  "version": "3",
+  "attempt": 1,
+  "status": "Ready",
+  "source_filename": "blog.zip",
+  "source_size": 1843200,
+  "uploaded": true,
+  "commit_sha": "4f2a9c1e8b7d6a5f3e2c1b0a9d8e7f6c5b4a3d2e",
+  "commit_message": "Add RSS feed",
+  "image_ref": "registry.cloider.com/acme-apps/blog-a8q2w:3",
+  "message": "",
+  "started_at": "2026-10-19T16:41:02.118207Z",
+  "finished_at": "2026-10-19T16:44:55.902114Z",
+  "created_at": "2026-10-19T16:40:58.004011Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The build's id |
+| `version` | string | The version number, `1`, `2`, `3` and so on. A string; sort builds by `created_at`, not by version |
+| `attempt` | integer | `1`, increased by each retry of the same version |
+| `status` | string | See [Build statuses](#build-statuses) |
+| `source_filename`, `source_size` | string, integer | The source archive |
+| `uploaded` | boolean | Whether the source has arrived |
+| `commit_sha`, `commit_message` | string | The commit built, for a build from git. Empty for an upload |
+| `image_ref` | string | The image the build pushed, empty until it is pushed |
+| `message` | string | A one line summary, for example why the build failed |
+| `started_at`, `finished_at` | string or null | When the build started and ended |
+| `created_at` | string | When the build was created |
+
+### Build statuses
+
+| Status | Meaning | Settled |
+| --- | --- | --- |
+| `Pending` | Waiting for the source to be uploaded or fetched | No |
+| `Queued` | Waiting for a builder | No |
+| `Building` | Building the image | No |
+| `Deploying` | Rolling the image out | No |
+| `Starting` | Waiting for the new version to start | No |
+| `Ready` | The version is live | Yes |
+| `Failed` | The build or deploy failed. `message` says why, the log has the details | Yes |
+| `Superseded` | A later version replaced it | Yes |
+| `Canceled` | The build was canceled | Yes |
+
+A build stays `Pending` for at most 15 minutes before it is failed with `The source upload did not finish`, and a build that stops making progress is failed after 45 minutes with `The build did not finish in time`, so a stuck build never blocks the next one forever.
+
+## List builds
+
+```http
+GET /apps/:hashed_id/builds
+```
+
+Returns the app's builds, newest first, without their logs. Poll it every few seconds to follow a deploy.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps/a8q2w/builds \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is a list of [build objects](#the-build-object). Wait for a deploy to finish:
+
+```bash
+BUILD_ID=u9e3k
+while :; do
+  STATUS=$(curl -s https://cloider.com/api/apps/a8q2w/builds \
+    -H "Authorization: Bearer $CLOIDER_TOKEN" \
+    | jq -r --arg id "$BUILD_ID" '.[] | select(.hashed_id == $id) | .status')
+  echo "$STATUS"
+  case "$STATUS" in Ready|Failed|Superseded|Canceled) break ;; esac
+  sleep 3
+done
+```
+
+## Deploy a new version from uploaded source
+
+Deploying a new version of an existing app from a zip archive takes three requests: create the build, upload the archive to the presigned URL it returns, and confirm the upload, which queues the build. This is what `cloider deploy` does in a directory that is already linked to an app.
+
+### Step 1: create the build
+
+```http
+POST /apps/:hashed_id/builds
+```
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source.name` | string | Yes | The archive's file name |
+| `source.type` | string | Yes | Must be `application/zip` |
+| `source.size` | integer | Yes | The archive's exact size in bytes, at most 100 MB |
+
+```bash
+RESPONSE=$(curl -s -X POST https://cloider.com/api/apps/a8q2w/builds \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"source\": {\"name\": \"blog.zip\", \"type\": \"application/zip\", \"size\": $(wc -c < blog.zip)}}")
+echo "$RESPONSE"
+```
+
+```json title="Response"
+{
+  "hashed_id": "w2r7m",
+  "version": "4",
+  "presigned_url": "https://s3.eu-central-2.cloider.com/...?X-Amz-Signature=..."
+}
+```
+
+### Step 2: upload the archive
+
+```bash
+curl -X PUT "$(jq -r .presigned_url <<<"$RESPONSE")" \
+  -H "Content-Type: application/zip" \
+  --data-binary @blog.zip
+```
+
+Send exactly the size you declared, with `Content-Type: application/zip`, and without your API token.
+
+### Step 3: confirm the upload
+
+```http
+POST /apps/:hashed_id/builds/:build_hashed_id/uploaded
+```
+
+Tells Cloider the archive is in place, which queues the build. If the upload failed, send `false` instead: the build is marked `Failed` right away so the app is free for the next one.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `uploaded` | boolean | Yes | `true` when the `PUT` succeeded, `false` when it didn't |
+
+```bash
+curl -X POST https://cloider.com/api/apps/a8q2w/builds/w2r7m/uploaded \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"uploaded": true}'
+```
+
+It answers `200`. Confirming twice is harmless. With `"uploaded": false` it answers `400 App source did not upload successfully!`.
+
+### Errors of step 1
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `source` | `Please select your app folder, a zip file or an HTML file!`, `The app source exceeded the allowed size of 100MB!`, `Invalid app source!` |
+| `400` | `_` | `This app is already building, wait for that build to finish before deploying a new version!` |
+| `400` | `_` | `This app is paused. Resume it before deploying a new version!`, `This app is being deleted!` |
+| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `400` | `_` | `Operation failed, Couldn't start the build!`, `The source upload could not be started!` |
+| `403` | `_` | `This API token is read only!` |
+| `404` | `_` | `App not found!` |
+
+<details>
+<summary>The whole deploy in Python</summary>
+
+```python title="deploy.py"
+import os
+import shutil
+import time
+import requests
+
+API = "https://cloider.com/api"
+APP = "a8q2w"
+s = requests.Session()
+s.headers["Authorization"] = f"Bearer {os.environ['CLOIDER_TOKEN']}"
+
+archive = shutil.make_archive("blog", "zip", "blog")
+size = os.path.getsize(archive)
+
+res = s.post(f"{API}/apps/{APP}/builds",
+             json={"source": {"name": "blog.zip", "type": "application/zip", "size": size}})
+res.raise_for_status()
+build = res.json()
+
+with open(archive, "rb") as f:
+    put = requests.put(build["presigned_url"], data=f,
+                       headers={"Content-Type": "application/zip", "Content-Length": str(size)})
+s.post(f"{API}/apps/{APP}/builds/{build['hashed_id']}/uploaded",
+       json={"uploaded": put.ok}).raise_for_status()
+put.raise_for_status()
+
+while True:
+    builds = s.get(f"{API}/apps/{APP}/builds").json()
+    status = next(b["status"] for b in builds if b["hashed_id"] == build["hashed_id"])
+    print("version", build["version"], status)
+    if status in ("Ready", "Failed", "Superseded", "Canceled"):
+        break
+    time.sleep(3)
+```
+
+</details>
+
+## Build the latest commit
+
+```http
+POST /apps/:hashed_id/builds/git
+```
+
+For an app created from a repository, builds the latest commit of its branch now, the same as a push with auto deploy on. The source is fetched in the background, so the build starts `Pending` and moves to `Queued` once the archive has arrived. `cloider deploy --git` uses it.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/apps/a8q2w/builds/git \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the new [build object](#the-build-object), with `status` `Pending`. If the commit can't be fetched, the build fails with a `message` such as `We could not reach GitHub` or `acme/api is over the 100MB limit`.
+
+| Status | Message |
+| --- | --- |
+| `400` | `This app was not created from a repository.` |
+| `400` | `This app is already building, wait for that build to finish!` |
+| `400` | `This app's GitHub connection is gone. Reconnect GitHub and try again.` (and the same for GitLab and Bitbucket) |
+| `400` | `This app is paused. Resume it before deploying a new version!` |
+| `403` | `This API token is read only!` |
+
+## Retry a failed build
+
+```http
+POST /apps/:hashed_id/builds/:build_hashed_id/retry
+```
+
+Runs a failed build again with the same source and version, as the next attempt. Useful when a build failed for a reason outside your code, such as a registry hiccup.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/apps/a8q2w/builds/w2r7m/retry \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the build, now `Queued` with `attempt` increased by one.
+
+| Status | Message |
+| --- | --- |
+| `400` | `Only a failed build can be retried!` |
+| `400` | `This build never received its source, deploy a new version instead!` |
+| `400` | `This app is already building, wait for that build to finish before retrying!` |
+| `400` | `This app is paused. Resume it before deploying a new version!` |
+| `404` | `App not found!`, `Build not found!` |
+
+## Get a build's log
+
+```http
+GET /apps/:hashed_id/builds/:build_hashed_id/logs
+```
+
+Returns the complete output of a finished build as plain text. While a build runs, use the [stream](#stream-a-builds-log) instead.
+
+**Access:** any token. The log contains whatever your build printed.
+
+```bash
+curl https://cloider.com/api/apps/a8q2w/builds/w2r7m/logs \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" -o build-4.log
+```
+
+## Stream a build's log
+
+```http
+GET /apps/:hashed_id/builds/:build_hashed_id/logs/stream
+```
+
+Streams a build's output as [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) while it runs, and ends with an `end` event when the build has printed its last line. For a build that is already over, the whole log arrives in one event followed by `end`.
+
+**Access:** any token.
+
+| Header | Description |
+| --- | --- |
+| `Last-Event-ID` | Optional. The `id` of the last event you received, to resume a dropped stream where it stopped instead of starting over |
+
+```bash
+curl -N https://cloider.com/api/apps/a8q2w/builds/w2r7m/logs/stream \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```text title="Response"
+: open
+
+id: 1760891262118-0
+data: ===> DETECTING
+data: 3 of 4 buildpacks participating
+
+id: 1760891265402-0
+data: ===> BUILDING
+data: Installing node 22.11.0
+
+: ping
+
+id: 1760891391007-0
+data: ===> EXPORTING
+
+event: end
+data: 1
+
+```
+
+| Line | Meaning |
+| --- | --- |
+| `id:` | The event's id. Remember the last one to resume with `Last-Event-ID` |
+| `data:` | Output. One chunk can span several `data:` lines; join them with newlines |
+| `event: end` | The build has finished printing. Close the connection, then read the build's final status from the builds list |
+| `: open`, `: ping` | Comments that keep the connection alive. Ignore them |
+
+A stream also ends by itself after 30 minutes. `cloider app build logs` and the dashboard reconnect with `Last-Event-ID` when a proxy drops the connection; do the same in your client.
+
+## Related
+
+- [Apps](/api/endpoints/apps): create apps and set variables
+- [Builds and deployments](/apps/builds-and-deployments)
+- [Troubleshooting apps](/apps/troubleshooting)
+- [cloider app](/cli/commands/app) and [cloider deploy](/cli/commands/deploy)

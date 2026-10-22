@@ -1,0 +1,220 @@
+---
+title: Troubleshoot Cloider Kubernetes clusters
+sidebar_label: Troubleshooting
+sidebar_position: 14
+description: "Fix common Cloider Kubernetes problems: cluster creation errors, kubeconfig failures, pending pods, image pulls, domains, load balancers and the terminal."
+keywords: [kubernetes troubleshooting, pod pending, imagepullbackoff, crashloopbackoff, kubectl unauthorized, kubeconfig error, cloider errors, terminal not connecting]
+---
+
+This page collects the problems people actually run into with Cloider clusters, grouped by symptom, with the exact error messages and how to fix them. Start with the quick checks, then jump to the section that matches what you see.
+
+## Quick checks
+
+Most problems are explained by one of these four commands:
+
+```bash
+# 1. Is the cluster Ready?
+cloider cluster status staging
+
+# 2. What is wrong with the pods?
+kubectl get pods -A | grep -v -E "Running|Completed"
+
+# 3. Why is a pod in that state? Read the Events at the bottom
+kubectl describe pod <pod> -n <namespace>
+
+# 4. What did the container print before it failed?
+kubectl logs <pod> -n <namespace> --previous
+```
+
+No kubeconfig at hand? Run the same `kubectl` commands with `cloider cluster exec staging -- kubectl ...` or in the [browser terminal](/kubernetes/web-terminal-and-exec).
+
+## Creating a cluster
+
+| Message | Fix |
+| --- | --- |
+| `Cluster name must not be empty`, `must not have spaces`, `can not be upper case`, `can not start with numbers`, `must not have special characters except "-"`, `must not start with any special character`, `must not end with any special character`, `must be at least 2 characters` | Use lower case letters, digits and `-`, start with a letter, at least 2 characters. See [Choose a name](/kubernetes/create-a-cluster#choose-a-name) |
+| `Invalid cluster version!` | Use a version from `GET /api/options` (`cluster_versions`) |
+| `HA clusters are not supported at the moment!` | Send `is_ha: false` |
+| `Free plan users can not create more than one cluster. UPGRADE NOW!` | Delete the existing cluster (a paused one counts) or upgrade in [Billing](/account/billing) |
+| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | Upgrade in [Billing](/account/billing) |
+| `You have read-only access to this account, you can not create clusters!` | Ask an owner or admin for a role that can create resources. See [Access control](/account/access-control) |
+| `This API token is read only!` (HTTP 403, CLI exit code `5`) | Use a **Read & Write** API token. See [API tokens](/account/api-tokens) |
+| `version 1.30 isn't offered, pick one of: ...` (CLI, exit code `2`) | Pick one of the versions listed |
+| `no Kubernetes version is available at the moment` (CLI) | No version is on offer right now. Try again later or contact [support](/account/support) |
+| The cluster stays `Creating` or `Starting` for a long time | Creation usually takes a few minutes. If it takes much longer, open a [support request](/account/support) with the cluster id from `cloider cluster list -o wide` |
+
+## Connecting with kubectl
+
+**`the cluster's kubeconfig has no clusters`** (CLI), or the downloaded kubeconfig is empty: the cluster isn't `Ready` yet. Wait for `Ready` and download it again.
+
+**`Unable to connect to the server: dial tcp: lookup staging-x8f2kq.cloider.com: no such host`**: the kubeconfig belongs to a deleted cluster, or its `server` was edited. Each cluster has its own endpoint, `https://<name>-<id>.cloider.com`; get a fresh kubeconfig with `cloider cluster kubeconfig staging --merge`.
+
+**`kubectl` hangs or times out**: the cluster is `Paused` (resume it), or your network blocks outgoing HTTPS on port 443 to the cluster endpoint (try from another network or use the browser terminal).
+
+**`error: You must be logged in to the server (Unauthorized)`**: the client certificate in your kubeconfig doesn't belong to this cluster, usually after a manual merge mixed entries of several clusters. Run `cloider cluster kubeconfig staging --merge`, which replaces the entries named `cloider-staging`.
+
+**`x509: certificate signed by unknown authority`**: the CA data in the kubeconfig was changed or belongs to another cluster. Download the kubeconfig again; don't add `--insecure-skip-tls-verify`.
+
+**`error: context "cloider-staging" does not exist`**: the context was merged into a different file than the one `kubectl` reads. `--merge` writes to the first file in `$KUBECONFIG`, else `~/.kube/config`.
+
+**CLI exits with code `3`**: the CLI isn't logged in or its token was revoked. Run `cloider login`. See [CLI authentication](/cli/authentication).
+
+See [Connect with kubectl](/kubernetes/connect-with-kubectl).
+
+## Browser terminal and exec
+
+| Problem or message | Fix |
+| --- | --- |
+| **Terminal** is disabled, or the cluster name isn't a link | The cluster isn't `Ready`. Wait, or resume it |
+| The browser terminal stays blank | Reload the page. Check that your network and browser extensions allow WebSocket connections |
+| `This cluster is paused. Resume it to run a command!` (409) | Resume the cluster |
+| `This cluster is not ready yet!` (409) | Wait for `Ready` |
+| `This cluster is being deleted!` (409) | Nothing can run in a cluster that is being deleted |
+| `This cluster's terminal isn't running right now!` (409) | The `terminal` Deployment in `kube-system` isn't running. Restore it if you scaled it down; if it was deleted, contact [support](/account/support) |
+| `The command could not be started, try again in a moment!` (503) | Retry |
+| `Terminals need a Read & Write API token!` (403) | Use a Read & Write API token |
+| `You have read-only access to this account, you can not run commands!` (403) | Your role is read-only |
+| `a shell needs a terminal on both ends` (CLI, exit code `2`) | `cloider cluster shell` needs an interactive terminal. In scripts use `cloider cluster exec` |
+| `the connection dropped before the command finished, it may still be running` | Check the command's effect before running it again |
+| `exec` exits with `124` | The command hit `--timeout` (default 10 minutes, at most 1 hour) |
+| Files disappeared from the terminal | The terminal's filesystem isn't persistent; it resets when its pod restarts |
+
+See [Web terminal and exec](/kubernetes/web-terminal-and-exec).
+
+## Pods stuck in Pending
+
+A `Pending` pod hasn't been scheduled or is waiting for something. `kubectl describe pod` shows the reason in `Events`:
+
+| Event | Cause and fix |
+| --- | --- |
+| `0/N nodes are available: N Insufficient cpu` or `Insufficient memory` | The pod requests more CPU or memory than a node can offer. Lower `resources.requests` to what the app really needs |
+| `0/N nodes are available: N node(s) didn't match Pod's node affinity/selector` | The pod has a `nodeSelector` or affinity that no node matches. Nodes are managed by Cloider, so remove selectors that target specific nodes |
+| `pod has unbound immediate PersistentVolumeClaims` | A claim isn't bound. Run `kubectl describe pvc` (see [Volumes](#volumes) below) |
+
+## Image pull errors
+
+`ErrImagePull` and `ImagePullBackOff` mean the node can't download the image. Read the exact message in `kubectl describe pod`:
+
+| Message contains | Fix |
+| --- | --- |
+| `not found`, `manifest unknown` | The image name or tag is wrong. Check it exists, for the Cloider registry with `cloider registry images <project> <repository>` |
+| `unauthorized`, `authentication required` | The image is private and the pod has no valid `imagePullSecrets`. See [Pull private images](/kubernetes/pull-private-images) |
+| `denied`, `forbidden` | The registry token in the pull secret can't access that project, or expired |
+| `toomanyrequests` | The public registry (for example Docker Hub) rate limits anonymous pulls. Push the image to your [Cloider registry](/container-registry/push-and-pull-images) and pull it from there |
+| `no match for platform in manifest` | The image wasn't built for the nodes' CPU architecture. Check it with `kubectl get nodes -L kubernetes.io/arch` and build a matching or multi-platform image with `docker buildx build --platform` |
+
+## Pods that crash or restart
+
+**`CrashLoopBackOff`**: the container starts and exits again. Read `kubectl logs <pod> --previous`. Common causes are a missing environment variable or Secret, a wrong command, or a database that isn't reachable.
+
+**`OOMKilled`** in `kubectl describe pod` (`Last State: Terminated, Reason: OOMKilled`): the container used more memory than `limits.memory`. Raise the limit, or fix the memory leak.
+
+**`CreateContainerConfigError`**: a ConfigMap or Secret the pod references doesn't exist, or a key in it is missing. Check names and namespaces; both must be in the pod's namespace.
+
+**Pod `Running` but `0/1` ready**: the readiness probe fails. Check the probe's path and port and that the app listens on `0.0.0.0`.
+
+**A database refuses the connection from the cluster**: the database's trusted sources don't include the cluster. Allow it as described in [Trusted sources](/databases/trusted-sources), and use the connection details from [Connect to a database](/databases/connect).
+
+## Domains and targets
+
+| Problem or message | Fix |
+| --- | --- |
+| `404` on the domain | No target matches the path, or the target is on another domain. Check `cloider target list <domain>` |
+| `502` or `503` on the domain | The target matches but nothing answers: the Service has no ready endpoints (`kubectl get endpoints <service> -n <namespace>`), the port is wrong, the app speaks HTTPS instead of HTTP, or the cluster is paused |
+| Certificate error on a custom domain | The domain doesn't resolve to Cloider yet. Check its [nameservers](/domains/nameservers), that the host name has an `A` or `CNAME` record ([Add a custom domain](/domains/add-a-custom-domain)), and wait for DNS |
+| Ingress has no effect | Ingress objects aren't served on Cloider. Create a [target](/kubernetes/expose-services) instead |
+| `This path is already in use on this domain. Please choose a different path.` | Each path of a domain routes to one target. Update the existing target or use another path |
+| `Service and namespace names are too long for this cluster (combined limit exceeded)` | The Service name, namespace and cluster name together exceed 57 characters. Use shorter names |
+| `Path must start with / and may only contain letters, numbers and / _ . -` | Fix the path or target path |
+| `Orphaned targets detected!` on the domain page | The targets point to a cluster, Service or app that no longer exists. Delete or update them |
+| `cluster staging has no services to route to yet` or `no service shop/web in cluster staging` (CLI) | Create the Service first, and check its namespace and name with `cloider cluster services` |
+| `shop/web has several ports (80/TCP, 9090/TCP), pick one with --port` (CLI) | Add `--port` |
+
+See [Expose services on a domain](/kubernetes/expose-services).
+
+## Load balancers
+
+**`EXTERNAL-IP` stays `<pending>`**: read `kubectl describe service <name>`. If nothing explains it after a few minutes, contact [support](/account/support) with the cluster id and the Service name. A pending Service isn't billed.
+
+**Connection refused or timeout on the external IP**: the Service's selector doesn't match the pods (`kubectl get endpoints` is empty), `targetPort` is wrong, or the app listens only on `127.0.0.1`.
+
+**The IP changed**: the Service was deleted and recreated. Update DNS, and edit Services in place in the future.
+
+See [Load balancers](/kubernetes/load-balancers).
+
+## Volumes
+
+**PVC stays `Pending`**: `waiting for first consumer to be created before binding` means it binds when a pod uses it. A `storageClassName` that doesn't exist never binds: check `kubectl get storageclass`, or remove the field to use the default.
+
+**`Multi-Attach error`**: a `ReadWriteOnce` volume is still attached to another pod. Use `strategy: Recreate` for Deployments with a volume, or a StatefulSet.
+
+**`Permission denied` writing to the volume**: set `securityContext.fsGroup` in the pod spec to the group the container runs as.
+
+**Higher volume charges than expected**: volumes are billed on provisioned capacity. Look for forgotten claims (`kubectl get pvc -A`) and `Released` volumes with a `Retain` policy (`kubectl get pv`).
+
+See [Persistent volumes](/kubernetes/persistent-volumes).
+
+## Pause, resume and delete
+
+| Problem or message | Fix |
+| --- | --- |
+| **Pause** is disabled | The cluster isn't `Ready` |
+| **Resume** is disabled | The cluster is still `Pausing`; wait for `Paused` |
+| **Delete** is disabled | Your role is read-only, or the cluster is already `Terminating` |
+| **Delete cluster** stays disabled in the dialog | Type the cluster's label exactly, for example `staging-1` |
+| `You have read-only access to this account, ...` (403) | Your role is read-only |
+| `deleting cluster staging needs --yes when not running in a terminal` (CLI) | Add `--yes` in scripts |
+| `2 clusters are named "staging", pick one by id` (CLI) | Use the id from `cloider cluster list -o wide` |
+| Files missing after resume | Data outside PersistentVolumeClaims doesn't survive a pause |
+
+See [Pause and resume](/kubernetes/pause-and-resume) and [Delete a cluster](/kubernetes/delete-a-cluster).
+
+## Unexpected costs
+
+Open **Usage** in the dashboard and look at the cluster's average CPU, memory and persistent volume use and its **LoadBalancers Usage** table. Then check:
+
+- **Requests far above real use.** Each container is billed on the larger of its request and its use. Compare `kubectl top pods -A` with the requests in your manifests and Helm values.
+- **Replicas you forgot.** `kubectl get deploy,sts -A` lists every workload and its replica count. An HorizontalPodAutoscaler may have scaled up.
+- **Leftover volumes.** `kubectl get pvc -A` and `kubectl get pv`.
+- **LoadBalancer Services.** `kubectl get svc -A | grep LoadBalancer`. Each one with an external IP is billed, even while the cluster is paused.
+- **Clusters you don't use.** Pause or delete them. A running cluster with no workloads still runs its control plane.
+
+See [How is a cluster billed?](/kubernetes/overview#how-is-a-cluster-billed).
+
+## CLI exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | Error |
+| `2` | Usage error (a missing flag, an unknown version, a shell without a terminal) |
+| `3` | Not logged in, or the token was revoked |
+| `4` | Not found (no cluster of that name) |
+| `5` | Forbidden (a Read API token) |
+| `124` | `exec` stopped by `--timeout` |
+
+With `cloider cluster exec`, the CLI exits with the command's own exit code, which can overlap with the codes above; use `-o json` to tell them apart. See [Output and scripting](/cli/output-and-scripting).
+
+## Getting help
+
+If none of this solves the problem, open a [support request](/account/support) from the dashboard or with `cloider support create`. Include:
+
+- the cluster id (`cloider cluster list -o wide`),
+- what you did and what you expected,
+- the exact error message, and the output of `kubectl describe` for the object involved.
+
+Don't include your kubeconfig, API tokens or Secret values.
+
+## Next steps
+
+- [Limits and compatibility](/kubernetes/limits-and-compatibility).
+- [Status values](/reference/status-values).
+- [Troubleshooting for all products](/reference/troubleshooting).
+
+<FAQ items={[
+  {q: 'Why is my pod stuck in Pending on Cloider?', a: 'Run kubectl describe pod and read the Events. The usual causes are resource requests no node can satisfy, a nodeSelector or affinity that targets specific nodes, or a PersistentVolumeClaim that is not bound yet.'},
+  {q: 'Why does kubectl say Unauthorized for my Cloider cluster?', a: 'The client certificate in your kubeconfig does not belong to this cluster, usually because entries of several clusters were mixed during a manual merge. Run cloider cluster kubeconfig <cluster> --merge to replace them with fresh ones.'},
+  {q: 'Why does my Ingress not work on Cloider?', a: 'Ingress objects are not served on Cloider clusters. Create a target that routes your domain to the Service instead; it includes automatic HTTPS.'},
+  {q: 'Why can I not connect to my cluster after pausing it?', a: 'A paused cluster has its control plane stopped, so kubectl, the kubeconfig, the browser terminal and exec are unavailable. Resume the cluster and wait until it is Ready.'},
+  {q: 'Why is my cluster more expensive than expected?', a: 'Check the Usage page for CPU, memory, volume and load balancer use. Common causes are resource requests far above real use, forgotten replicas or volumes, LoadBalancer Services that are still active, and clusters left running when they could be paused.'},
+]} />

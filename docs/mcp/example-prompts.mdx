@@ -1,0 +1,419 @@
+---
+title: Example prompts for the Cloider MCP server
+sidebar_label: Example prompts
+sidebar_position: 5
+description: Over 35 realistic prompts for managing Cloider with an AI agent, grouped by task (apps, Kubernetes, databases, storage, registry, DNS, costs, support) with the MCP tools each one calls.
+keywords: [cloider mcp prompts, ai agent prompts devops, claude code deploy prompt, mcp examples, ai kubernetes prompts, ai database prompts, cloider ai agent]
+---
+
+These prompts show what an AI agent can do on Cloider through the MCP server, and which tools it calls to do it. Use them as they are, or as a starting point for your own. The exact sequence of tool calls depends on the model and on what it finds along the way, so treat the tool lists as the typical path, not a script.
+
+Every example uses the fictional account Acme Inc: apps `blog`, `api` and `web`, clusters `staging` and `production`, databases `orders-db` (PostgreSQL), `shop-db` (MySQL), `catalog-db` (MongoDB) and `cache` (Redis), buckets `acme-assets` and `acme-backups`, registry project `acme`, and the domains `example.com` and `blog.cloider.app`.
+
+## Tips for good prompts
+
+- **Name things.** "the orders-db database" beats "my database". Every tool takes names or ids.
+- **Say when to wait.** "and wait until it is ready" makes the agent pass `wait: true`, so it can carry on with the next step.
+- **Ask for a plan first** for anything that changes production: "tell me what you would do, then wait for my OK".
+- **Say what not to touch**: "don't change production", "read only, please".
+- **Start a session with `whoami`** if you use several accounts: "check which Cloider account you're in first".
+
+## Getting oriented
+
+```text title="Prompt"
+Which Cloider account are you connected to, and can you change things or only read?
+```
+
+**Tools:** `whoami`
+
+```text title="Prompt"
+Give me an overview of everything running in my Cloider account, with anything that isn't healthy at the top.
+```
+
+**Tools:** `list_apps`, `list_clusters`, `list_databases`, `list_buckets`, `list_registry_projects`, `list_domains`
+
+```text title="Prompt"
+What does Cloider cost me this month so far, what is the forecast, and which resources cost the most?
+```
+
+**Tools:** `get_usage`
+
+## Apps
+
+```text title="Prompt"
+Deploy this project to Cloider as an app called blog and tell me its URL when it's up.
+```
+
+**Tools:** `deploy_app`
+
+```json title="Tool call: deploy_app"
+{"dir": "/Users/alex/code/blog", "name": "blog"}
+```
+
+The agent passes the absolute path of the folder it is working in. The first deploy detects the language, framework and port, creates the app with a free subdomain, and links the folder to it, so later "deploy again" prompts build a new version of the same app.
+
+```text title="Prompt"
+Create an app from the GitHub repository acme/api, branch main, listening on port 3000, and deploy on every push.
+```
+
+**Tools:** `list_git_installations`, `list_git_repositories`, `create_app_from_git`
+
+```json title="Tool call: create_app_from_git"
+{"provider": "github", "repo": "acme/api", "branch": "main", "name": "api", "port": 3000}
+```
+
+If no GitHub account is connected yet, the agent calls `connect_git_provider`, which opens the browser for you to finish the connection in the dashboard.
+
+```text title="Prompt"
+The last build of the api app failed. Find out why, fix it in the code, and deploy again.
+```
+
+**Tools:** `list_app_builds`, `get_app_build_logs`, then (after editing the code) `deploy_app`
+
+```text title="Prompt"
+The blog is returning 500 errors. Look at its logs and tell me what's wrong.
+```
+
+**Tools:** `get_app`, `get_app_logs`
+
+```json title="Tool call: get_app_logs"
+{"app": "blog", "lines": 500}
+```
+
+```text title="Prompt"
+Set DATABASE_URL on the api app to the connection string of orders-db, as a secret, using the private host.
+```
+
+**Tools:** `get_database`, `get_database_password`, `update_database_trusted_sources`, `set_app_variables`
+
+```json title="Tool call: set_app_variables"
+{"app": "api", "variables": {"DATABASE_URL": "postgresql://orders_db_user:...@orders-db-p0q9zm.db.cloider.internal:20417/orders-db?sslmode=require"}, "secret": true}
+```
+
+When the database doesn't allow connections from anywhere, a careful agent also adds `app:api` to its trusted sources, so the app may connect on the private host. Setting the environment restarts the app.
+
+```text title="Prompt"
+Run the database migrations in the api app: npm run migrate.
+```
+
+**Tools:** `app_exec`
+
+```json title="Tool call: app_exec"
+{"app": "api", "command": "npm run migrate", "timeout_seconds": 900}
+```
+
+```text title="Prompt"
+Switch the web app to deploy from the release branch, and turn off deploy on push.
+```
+
+**Tools:** `update_app_git`, then `deploy_app` with `git: true` if you also want it built now
+
+```text title="Prompt"
+Pause every app except api over the weekend.
+```
+
+**Tools:** `list_apps`, `pause_app` (once per app)
+
+## Kubernetes
+
+```text title="Prompt"
+Create a Kubernetes cluster called staging, wait until it's ready, and add it to my kubeconfig as the current context.
+```
+
+**Tools:** `create_cluster`, `get_cluster_kubeconfig`
+
+```json title="Tool call: create_cluster"
+{"name": "staging", "wait": true}
+```
+
+```json title="Tool call: get_cluster_kubeconfig"
+{"cluster": "staging", "merge": true, "use": true}
+```
+
+With `merge`, the kubeconfig is written into `~/.kube/config` as the context `cloider-staging` instead of being returned, so the credentials stay out of the conversation.
+
+```text title="Prompt"
+Which pods are not running in the production cluster, and why?
+```
+
+**Tools:** `cluster_exec`
+
+```json title="Tool call: cluster_exec"
+{"cluster": "production", "command": "kubectl get pods -A --field-selector=status.phase!=Running"}
+```
+
+The agent then usually runs `kubectl describe pod` and `kubectl logs` with further `cluster_exec` calls.
+
+```text title="Prompt"
+Apply this Deployment and Service to the staging cluster in the namespace shop.
+```
+
+**Tools:** `cluster_exec`, with the manifest passed on stdin
+
+```json title="Tool call: cluster_exec"
+{"cluster": "staging", "command": "kubectl apply -n shop -f -", "stdin": "apiVersion: apps/v1\nkind: Deployment\n..."}
+```
+
+```text title="Prompt"
+Install the podinfo Helm chart in the staging cluster and serve it on acme-podinfo.cloider.app.
+```
+
+**Tools:** `cluster_exec` (`helm repo add`, `helm install`), `list_cluster_services`, `check_domain_availability`, `create_domain`, `create_domain_target`
+
+```json title="Tool call: create_domain_target"
+{"domain": "acme-podinfo.cloider.app", "cluster": "staging", "service": "podinfo/podinfo", "port": 9898}
+```
+
+```text title="Prompt"
+Pause the staging cluster tonight. I'll ask you to resume it in the morning.
+```
+
+**Tools:** `pause_cluster`, later `resume_cluster`
+
+## Databases
+
+```text title="Prompt"
+Create a PostgreSQL database called orders-db on the Starter plan that only the production cluster can connect to, and wait until it's ready.
+```
+
+**Tools:** `get_pricing` (optional), `create_database`
+
+```json title="Tool call: create_database"
+{"name": "orders-db", "engine": "postgresql", "plan": "Starter", "trusted_sources": ["cluster:production"], "wait": true}
+```
+
+```text title="Prompt"
+Let me connect to orders-db from my laptop for the next hour.
+```
+
+**Tools:** `update_database_trusted_sources`, later `update_database_trusted_sources` again to remove the address
+
+```json title="Tool call: update_database_trusted_sources"
+{"database": "orders-db", "add_my_ip": true}
+```
+
+`add_my_ip` adds the public IP of the machine the MCP server runs on, which is your laptop when the server runs locally.
+
+```text title="Prompt"
+How many orders were created in orders-db in the last 24 hours, and which tables are the largest?
+```
+
+**Tools:** `database_exec`
+
+```json title="Tool call: database_exec"
+{"database": "orders-db", "query": "SELECT count(*) FROM orders WHERE created_at > now() - interval '24 hours';"}
+```
+
+`database_exec` runs next to the database, logged in, so it works without changing trusted sources. It is marked destructive because a query can change data.
+
+```text title="Prompt"
+Someone deleted rows from orders-db this morning. Restore last night's backup into a new database so I can compare.
+```
+
+**Tools:** `list_database_backups`, `restore_database_backup`
+
+```json title="Tool call: restore_database_backup"
+{"database": "orders-db", "backup": "2026-10-20_02-00", "wait": true}
+```
+
+The restore creates a new database, a fork of `orders-db` as it was at the backup. The original is left as it is.
+
+```text title="Prompt"
+orders-db is slow. Check its CPU, memory and connections, and resize it to the next plan if it's at its limits.
+```
+
+**Tools:** `get_database_insights`, `get_database`, `get_pricing`, `resize_database`
+
+```text title="Prompt"
+Show me the hit rate of the cache Redis database and the number of keys.
+```
+
+**Tools:** `database_exec`
+
+```json title="Tool call: database_exec"
+{"database": "cache", "query": "INFO stats"}
+```
+
+## Object storage
+
+```text title="Prompt"
+Create a private bucket called acme-backups with versioning, and an access key that can only write to it. Give me the AWS environment variables.
+```
+
+**Tools:** `create_bucket`, `create_bucket_key`
+
+```json title="Tool call: create_bucket_key"
+{"label": "backup job", "buckets": ["acme-backups"], "print_env": true}
+```
+
+The answer holds the secret key, which is shown only once.
+
+```text title="Prompt"
+Upload the dist folder to acme-assets under site/.
+```
+
+**Tools:** `upload_bucket_objects`
+
+```json title="Tool call: upload_bucket_objects"
+{"bucket": "acme-assets", "paths": ["/Users/alex/code/web/dist"], "prefix": "site/", "recursive": true}
+```
+
+For thousands of files, a good agent creates a key and suggests an S3 tool instead, since each file is one API call.
+
+```text title="Prompt"
+I deleted reports/2026-09.pdf from acme-backups by mistake. Bring it back.
+```
+
+**Tools:** `list_deleted_bucket_objects`, `restore_bucket_object_version`
+
+```text title="Prompt"
+Delete everything under tmp/ in acme-assets automatically after 7 days.
+```
+
+**Tools:** `get_bucket_lifecycle`, `set_bucket_lifecycle`
+
+```json title="Tool call: set_bucket_lifecycle"
+{"bucket": "acme-assets", "rules": [{"id": "expire-tmp", "prefix": "tmp/", "enabled": true, "expire_days": 7}]}
+```
+
+`set_bucket_lifecycle` replaces every rule, so the agent reads the current rules first and sends them back together with the new one.
+
+## Container registry
+
+```text title="Prompt"
+Create a registry project called acme with immutable tags, and a push token for GitHub Actions that expires in 90 days.
+```
+
+**Tools:** `create_registry_project`, `create_registry_token`
+
+```json title="Tool call: create_registry_token"
+{"label": "GitHub Actions push", "projects": ["acme"], "expires_days": 90}
+```
+
+```text title="Prompt"
+The acme project is almost full. Keep the 10 most recently pushed images in each repository and show me what would be deleted before deleting anything.
+```
+
+**Tools:** `get_registry_project`, `set_registry_retention_rules`, `run_registry_retention` with `dry_run`, `list_registry_retention_runs`, then `run_registry_retention` after you confirm
+
+```json title="Tool call: set_registry_retention_rules"
+{"project": "acme", "rules": [{"repositories": {"patterns": ["**"]}, "tags": {"patterns": ["**"]}, "keep": "latest_pushed", "count": 10}]}
+```
+
+```text title="Prompt"
+Which images in acme/api haven't been pulled for months?
+```
+
+**Tools:** `list_registry_repositories`, `list_registry_images`
+
+## Domains and DNS
+
+```text title="Prompt"
+Is acme-shop.cloider.app free? If so, claim it and point it at the web app.
+```
+
+**Tools:** `check_domain_availability`, `create_domain`, `create_domain_target`
+
+```json title="Tool call: create_domain_target"
+{"domain": "acme-shop.cloider.app", "app": "web"}
+```
+
+```text title="Prompt"
+Add example.com to Cloider, tell me which nameservers to set at my registrar, and serve www.example.com from the web app.
+```
+
+**Tools:** `create_domain` (for `example.com` and `www.example.com`), `create_dns_record`, `create_domain_target`
+
+```json title="Tool call: create_dns_record"
+{"domain": "example.com", "type": "CNAME", "name": "www", "value": "acme-shop.cloider.app.", "ttl": 3600}
+```
+
+A target doesn't add DNS records, so the agent adds a CNAME for www to a free subdomain the app already has. The domain itself already has an A record that points at Cloider. `www.example.com` is added as a domain of its own so it can have a target.
+
+```text title="Prompt"
+Set up Google Workspace mail for example.com: MX records, SPF and DMARC.
+```
+
+**Tools:** `list_dns_records`, `create_dns_record` (several times)
+
+```text title="Prompt"
+Route example.com/api to the api Service in the production cluster, port 8080, and keep everything else on the web app.
+```
+
+**Tools:** `list_cluster_services`, `create_domain_target`
+
+```json title="Tool call: create_domain_target"
+{"domain": "example.com", "path": "/api", "cluster": "production", "service": "shop/api", "port": 8080}
+```
+
+## Costs and billing
+
+```text title="Prompt"
+Which of my resources could I pause or delete to save money? Don't change anything, just tell me.
+```
+
+**Tools:** `get_usage`, `list_apps`, `list_clusters`, `list_databases`, `get_pricing`
+
+```text title="Prompt"
+How much did the acme-assets bucket cost this month?
+```
+
+**Tools:** `get_usage`
+
+```json title="Tool call: get_usage"
+{"kind": "bucket", "name": "acme-assets"}
+```
+
+```text title="Prompt"
+Show me last month's bill with its items.
+```
+
+**Tools:** `get_billing` (twice: the list, then one month). Only the account's Owner can read bills.
+
+## Support
+
+```text title="Prompt"
+Open a support request: our orders-db restore has been running for an hour. Mark it as partially blocking and attach the log file at ./restore.log.
+```
+
+**Tools:** `create_support_ticket`
+
+```json title="Tool call: create_support_ticket"
+{"subject": "Database restore running for an hour", "description": "Restoring the 2026-10-20_02-00 backup of orders-db started an hour ago and hasn't finished.", "impact": "PartiallyBlocked", "service": "Database", "attachments": ["/Users/alex/restore.log"]}
+```
+
+```text title="Prompt"
+Did support reply to my request about the restore? Summarize the answer.
+```
+
+**Tools:** `list_support_tickets`, `get_support_ticket`
+
+## Multi step workflows
+
+```text title="Prompt"
+Set up a staging environment for the api app: a cluster called staging, a PostgreSQL database orders-staging that only the cluster can reach, and a bucket acme-staging-uploads with a key. Wait for everything, then give me a summary with the connection details, without the passwords.
+```
+
+**Tools:** `create_cluster`, `create_database`, `create_bucket`, `create_bucket_key`, `get_database`
+
+```text title="Prompt"
+Before I go on holiday: list everything that would cost money while nobody uses it, pause the staging cluster and its database, and tell me how to resume them.
+```
+
+**Tools:** `get_usage`, `list_clusters`, `list_databases`, `pause_cluster`, `pause_database`
+
+For repeatable infrastructure like this, consider asking the agent to write [Terraform](/terraform/overview) instead, so the setup is reviewable and can be recreated.
+
+## Next steps
+
+- [Tools reference](/mcp/tools): every tool and its parameters
+- [Safety and permissions](/mcp/safety-and-permissions): what to auto-approve and what not
+- [Using the docs with AI coding agents](/mcp/ai-coding-agents)
+- [Manage Cloider with an AI agent](/guides/manage-cloider-with-an-ai-agent)
+
+<FAQ items={[
+  {q: 'Can I deploy an app to Cloider by asking Claude Code or Cursor?', a: 'Yes. With the Cloider MCP server added, ask "deploy this project to Cloider". The agent calls deploy_app with the folder\'s absolute path, which uploads it, detects the language and port, creates the app with a free subdomain and follows the build until the app is up.'},
+  {q: 'Can an AI agent debug my Kubernetes pods on Cloider?', a: 'Yes, with cluster_exec, which runs kubectl and helm commands in the cluster\'s terminal. It is marked destructive, so your client asks before each command.'},
+  {q: 'Can an AI agent query my database?', a: 'Yes, with database_exec, which runs a query with the database\'s own client next to the database. It works whatever the trusted sources are, and is marked destructive because a query can change data.'},
+  {q: 'Do the example prompts work with every MCP client?', a: 'Yes. The prompts are plain language and the tools are the same in every client. Which tools the model picks, and in which order, can differ between models.'},
+]} />

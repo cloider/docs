@@ -1,0 +1,268 @@
+---
+title: Run Cloider Terraform in CI/CD (GitHub Actions, GitLab)
+sidebar_label: CI/CD with Terraform
+sidebar_position: 6
+description: Plan Cloider infrastructure on pull requests and apply on merge with GitHub Actions or GitLab CI, using read only and read and write API tokens and a bucket backend.
+keywords: [terraform github actions, terraform gitlab ci, terraform ci cd, cloider terraform pipeline, CLOIDER_TOKEN ci, terraform plan pull request, opentofu ci, gitops terraform]
+---
+
+Running Terraform from CI/CD instead of laptops gives every change a reviewed plan, one place where applies happen, and an audit trail. The usual pattern is: **plan** on every pull or merge request, and **apply** only when the change is merged to the main branch. This guide sets that up for Cloider with GitHub Actions and with GitLab CI, using a read only token for plans, a read and write token for applies, and state in a Cloider bucket.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Cloider token** | `CLOIDER_TOKEN`. A **Read** token for plan jobs, a **Read & Write** token for apply jobs |
+| **State** | The `s3` backend on a Cloider bucket, credentials in `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` |
+| **Locking** | `use_lockfile = true` in the backend (Terraform or OpenTofu 1.10 or later) |
+| **Plan** | On pull requests and merge requests |
+| **Apply** | On the main branch, ideally behind a manual approval |
+
+## Before you begin
+
+1. **A remote state.** CI runners are thrown away after each job, so the state can't be a local file. Set up [state in a Cloider bucket](/terraform/guides/state-backend) first, and keep the bucket key at hand.
+2. **Two API tokens** from **Access Control**, **API Tokens** in the dashboard (see [API tokens](/account/api-tokens)):
+   - `terraform-plan`, with **Read** access
+   - `terraform-apply`, with **Read & Write** access
+3. **The lock file committed.** Run `terraform init` locally and commit `.terraform.lock.hcl`, so CI uses the exact provider versions you tested. If your developers use macOS and CI runs Linux, add both platforms' checksums:
+
+   ```bash
+   terraform providers lock -platform=linux_amd64 -platform=darwin_arm64
+   ```
+
+Why two tokens? Plans run on code from pull requests, which anyone with access to the repository can change. A read only token means a malicious or careless pull request can't create or delete anything, even if it changes the workflow: the API refuses every write with `This API token is read only!`.
+
+## GitHub Actions
+
+### Store the secrets
+
+In the repository, open **Settings**, **Secrets and variables**, **Actions**, and add:
+
+| Secret | Value |
+| --- | --- |
+| `CLOIDER_TOKEN_READ` | The **Read** API token |
+| `CLOIDER_TOKEN_WRITE` | The **Read & Write** API token |
+| `STATE_ACCESS_KEY_ID` | The state bucket key's access key |
+| `STATE_SECRET_ACCESS_KEY` | The state bucket key's secret |
+
+To require a manual approval before applies, create an environment called `production` under **Settings**, **Environments**, add **Required reviewers**, and move `CLOIDER_TOKEN_WRITE` into that environment's secrets so only the approved job can read it.
+
+### The workflow
+
+```yaml title=".github/workflows/terraform.yml"
+name: terraform
+
+on:
+  pull_request:
+    paths: ["infrastructure/**"]
+  push:
+    branches: [main]
+    paths: ["infrastructure/**"]
+
+permissions:
+  contents: read
+
+# One run at a time per branch, so applies never overlap
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: infrastructure
+
+env:
+  AWS_ACCESS_KEY_ID: ${{ secrets.STATE_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.STATE_SECRET_ACCESS_KEY }}
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CLOIDER_TOKEN: ${{ secrets.CLOIDER_TOKEN_READ }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init
+      - run: terraform validate
+      - name: terraform plan
+        run: |
+          terraform plan -no-color -lock=false | tee plan.txt
+          {
+            echo '### Terraform plan'
+            echo '```'
+            tail -c 60000 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOIDER_TOKEN: ${{ secrets.CLOIDER_TOKEN_WRITE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform init
+      - run: terraform apply -auto-approve -lock-timeout=5m
+```
+
+Notes:
+
+- The plan job uses `-lock=false`, so plans on pull requests never write a lock file and never block or wait for an apply on `main`. Applies keep locking. Because a plan only reads the state, you can go further and give plan jobs a separate, `read_only = true` [bucket key](/terraform/resources/bucket-key) for the state bucket.
+- The plan is shown in the run's summary page. Sensitive values appear as `(sensitive value)`, never in clear.
+- For OpenTofu, replace `hashicorp/setup-terraform@v3` with `opentofu/setup-opentofu@v1` and `terraform` with `tofu`.
+
+### Apply exactly what was reviewed
+
+The workflow above plans again in the apply job. If something changed in between (another merge, a change in the dashboard), the apply may differ from the reviewed plan. To apply exactly the reviewed plan instead, save it with `terraform plan -out=tfplan` in a job on `main`, upload it as an artifact, and run `terraform apply tfplan` in a second job behind the `production` environment's approval. A saved plan file contains the values of sensitive attributes in clear, so keep the artifact's retention short and the repository private.
+
+## GitLab CI
+
+### Store the variables
+
+In the project, open **Settings**, **CI/CD**, **Variables**, and add these, all **Masked**:
+
+| Variable | Value | Protected |
+| --- | --- | --- |
+| `CLOIDER_TOKEN_READ` | The **Read** API token | No |
+| `CLOIDER_TOKEN_WRITE` | The **Read & Write** API token | **Yes**, so only protected branches like `main` can read it |
+| `AWS_ACCESS_KEY_ID` | The state bucket key's access key | No |
+| `AWS_SECRET_ACCESS_KEY` | The state bucket key's secret | No |
+
+### The pipeline
+
+```yaml title=".gitlab-ci.yml"
+stages: [validate, plan, apply]
+
+default:
+  image:
+    name: hashicorp/terraform:latest
+    entrypoint: [""]
+
+variables:
+  TF_ROOT: infrastructure
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+.terraform:
+  before_script:
+    - cd "$TF_ROOT"
+    - terraform init
+  rules:
+    - changes: ["infrastructure/**/*"]
+
+validate:
+  extends: .terraform
+  stage: validate
+  script:
+    - terraform fmt -check -recursive
+    - terraform validate
+
+plan:
+  extends: .terraform
+  stage: plan
+  variables:
+    CLOIDER_TOKEN: $CLOIDER_TOKEN_READ
+  script:
+    - terraform plan -lock=false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: ["infrastructure/**/*"]
+
+apply:
+  extends: .terraform
+  stage: apply
+  variables:
+    CLOIDER_TOKEN: $CLOIDER_TOKEN_WRITE
+  script:
+    - terraform apply -auto-approve -lock-timeout=5m
+  environment:
+    name: production
+  resource_group: terraform-production
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes: ["infrastructure/**/*"]
+      when: manual
+```
+
+Notes:
+
+- Pin the image to the Terraform version you use, for example `hashicorp/terraform:<version>`, rather than `latest`, so a new release can't change plans unexpectedly.
+- `when: manual` makes the apply wait for someone to press the play button on `main`. `resource_group` makes sure only one apply runs at a time.
+- Because `CLOIDER_TOKEN_WRITE` is a protected variable, a merge request pipeline can't read it, even if the merge request edits `.gitlab-ci.yml`.
+- For OpenTofu, use an OpenTofu image and `tofu` commands, or GitLab's OpenTofu CI/CD component.
+
+## Several environments in one pipeline
+
+With [one folder per environment](/terraform/guides/multiple-environments), run the jobs once per folder with a matrix:
+
+<Tabs groupId="ci">
+<TabItem value="github" label="GitHub Actions" default>
+
+```yaml title=".github/workflows/terraform.yml (excerpt)"
+jobs:
+  plan:
+    strategy:
+      matrix:
+        environment: [staging, production]
+    defaults:
+      run:
+        working-directory: infrastructure/${{ matrix.environment }}
+```
+
+</TabItem>
+<TabItem value="gitlab" label="GitLab CI">
+
+```yaml title=".gitlab-ci.yml (excerpt)"
+plan:
+  extends: .terraform
+  stage: plan
+  parallel:
+    matrix:
+      - TF_ROOT: [infrastructure/staging, infrastructure/production]
+```
+
+</TabItem>
+</Tabs>
+
+If staging and production live in [separate Cloider accounts](/terraform/guides/multiple-environments#step-2c-a-separate-cloider-account-per-environment), store one token per account and pick it per environment.
+
+## Detect drift on a schedule
+
+Changes made in the dashboard or with the CLI show up as differences in the next plan. A scheduled job with the read only token can catch them early:
+
+```bash
+terraform plan -detailed-exitcode -lock=false
+```
+
+The exit code is `0` with no changes, `2` when the real resources differ from the configuration, and `1` on errors. Fail the job (and notify the team) on `2`. In GitHub Actions use `on: schedule`, in GitLab a pipeline schedule.
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+| --- | --- | --- |
+| `No Cloider API token` | `CLOIDER_TOKEN` isn't set in the job, or a protected variable isn't available on this branch | Check the variable names and their protection |
+| `This API token is read only!` | An apply ran with the Read token | Use `CLOIDER_TOKEN_WRITE` for applies |
+| `Error acquiring the state lock` | Another job holds the lock | Serialize applies (`concurrency`, `resource_group`), use `-lock-timeout` |
+| `the current package doesn't match any of the checksums previously recorded in the dependency lock file` | The lock file lacks the CI platform's checksums | `terraform providers lock -platform=linux_amd64 -platform=darwin_arm64`, commit |
+| Plans in CI differ from your laptop | Different provider versions or a stale local state | Commit `.terraform.lock.hcl`, use the remote backend everywhere |
+
+## Next steps
+
+- [Store state in a bucket](/terraform/guides/state-backend)
+- [Multiple environments](/terraform/guides/multiple-environments)
+- [CI/CD with GitHub Actions](/guides/ci-cd-with-github-actions) and [CI/CD with GitLab](/guides/ci-cd-with-gitlab): deploy apps and images too
+- [API tokens](/account/api-tokens)
+
+<FAQ items={[
+  {q: 'How do I run Cloider Terraform in GitHub Actions?', a: 'Store a Cloider API token as a secret and expose it as CLOIDER_TOKEN, store the state bucket key as AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, then run terraform init, plan and apply with hashicorp/setup-terraform. Use a Read token for plans on pull requests and a Read & Write token for applies on main.'},
+  {q: 'Why use a read only token for terraform plan in CI?', a: 'Plans run on code from pull requests. With a Read token, nothing a pull request does can create, change or delete resources: the Cloider API refuses every write with "This API token is read only!".'},
+  {q: 'Where should Terraform state live when running in CI?', a: 'In a remote backend, because CI runners are thrown away after each job. A Cloider bucket with the s3 backend and use_lockfile = true works, with its own bucket key.'},
+  {q: 'How do I detect changes made outside Terraform?', a: 'Run terraform plan -detailed-exitcode on a schedule with a read only token. Exit code 2 means the real resources differ from the configuration.'},
+]} />

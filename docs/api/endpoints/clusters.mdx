@@ -1,0 +1,591 @@
+---
+title: Kubernetes clusters API endpoints
+sidebar_label: Clusters
+sidebar_position: 2
+description: Cloider API reference for Kubernetes clusters, create, list, pause, resume and delete, poll status, download the kubeconfig, list services and run kubectl with exec.
+keywords: [cloider cluster api, create kubernetes cluster api, kubeconfig api, cluster status, kubectl exec api, cloider kubernetes rest api]
+---
+
+These endpoints manage Cloider [Kubernetes clusters](/kubernetes/overview): create them, follow their status, pause and resume them, download their kubeconfig, run `kubectl` and `helm` commands in them, and delete them. Inside a cluster you use the standard Kubernetes API with the kubeconfig, not these endpoints.
+
+All paths are relative to `https://cloider.com/api`. See [Authentication](/api/authentication) for the token header.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/clusters`](#list-clusters) | Read |
+| POST | [`/clusters`](#create-a-cluster) | Write |
+| GET | [`/clusters/:hashed_id/status`](#get-a-clusters-status) | Read |
+| GET | [`/clusters/:hashed_id/kubeconfig`](#download-the-kubeconfig) | Read |
+| POST | [`/clusters/:hashed_id/pause`](#pause-a-cluster) | Write |
+| POST | [`/clusters/:hashed_id/resume`](#resume-a-cluster) | Write |
+| DELETE | [`/clusters/:hashed_id`](#delete-a-cluster) | Write |
+| GET | [`/clusters/services`](#list-services-in-your-clusters) | Read |
+| POST | [`/clusters/:hashed_id/exec`](#run-a-command-with-exec) | Write |
+| GET | [`/clusters/:hashed_id/terminal`](#open-a-web-terminal) | Write |
+
+## The cluster object
+
+```json
+{
+  "hashed_id": "k3x9p",
+  "cluster_name": "staging",
+  "cluster_label": "staging",
+  "cluster_version": "1.34",
+  "is_ha": false,
+  "status": "Ready",
+  "created_at": "2026-10-12T10:22:41.502113Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The cluster's id, used in every other cluster endpoint |
+| `cluster_name` | string | The name you gave it. Names can repeat within an account |
+| `cluster_label` | string | A name that is unique among the account's clusters: the name, or the name with `-1`, `-2` and so on when it is taken |
+| `cluster_version` | string | The Kubernetes minor version, for example `1.34` |
+| `is_ha` | boolean | Whether the control plane is highly available. Always `false` today |
+| `status` | string | See the table below |
+| `created_at` | string | When the cluster was created, RFC 3339 |
+
+### Cluster statuses
+
+| Status | Meaning | Next |
+| --- | --- | --- |
+| `Creating` | The control plane is being provisioned | `Starting` |
+| `Starting` | Starting up after a create or a resume | `Ready` |
+| `Ready` | Running. The kubeconfig works | |
+| `Pausing` | Being paused | `Paused` |
+| `Paused` | Stopped. Workloads don't run, data is kept | `Starting` after a resume |
+| `Terminating` | Being deleted | `Terminated` |
+| `Terminated` | Deleted. No longer listed by `GET /clusters` | |
+| `Failed` | Something went wrong. Contact support | |
+
+[Status values](/reference/status-values) covers every product's statuses.
+
+## List clusters
+
+```http
+GET /clusters
+```
+
+Returns the account's clusters, newest first. Deleted (`Terminated`) clusters aren't included.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "hashed_id": "p8w2d",
+    "cluster_name": "production",
+    "cluster_label": "production",
+    "cluster_version": "1.34",
+    "is_ha": false,
+    "status": "Ready",
+    "created_at": "2026-10-14T08:02:19.661034Z"
+  },
+  {
+    "hashed_id": "k3x9p",
+    "cluster_name": "staging",
+    "cluster_label": "staging",
+    "cluster_version": "1.33",
+    "is_ha": false,
+    "status": "Paused",
+    "created_at": "2026-10-12T10:22:41.502113Z"
+  }
+]
+```
+
+To find a cluster's id by its label in a script:
+
+```bash
+CLUSTER_ID=$(curl -s https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  | jq -r '.[] | select(.cluster_label == "staging") | .hashed_id')
+```
+
+## Create a cluster
+
+```http
+POST /clusters
+```
+
+Creates a cluster and starts provisioning it. The request returns as soon as the cluster is recorded, with its id; the cluster then goes from `Creating` to `Starting` to `Ready`, which usually takes a few minutes. [Poll its status](#wait-until-a-cluster-is-ready) until it is `Ready`.
+
+**Access:** Read & Write token.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cluster_name` | string | Yes | 2 or more characters: lower case letters, digits and `-`. Must start with a letter, not end with `-`, no spaces |
+| `cluster_version` | string | Yes | One of the versions in `GET /options` `cluster_versions`, today `1.34`, `1.33` or `1.32`. There is no default in the API |
+| `is_ha` | boolean | No | Must be `false` or left out. `true` is refused |
+
+```bash
+curl -X POST https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_name": "staging", "cluster_version": "1.34"}'
+```
+
+```json title="Response"
+{"hashed_id": "k3x9p"}
+```
+
+If the account already has a cluster labelled `staging`, the new one is created anyway and labelled `staging-1`. Creating is not idempotent: sending the request twice creates two clusters.
+
+### Errors
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `cluster_name` | `Cluster name must not be empty`, `Cluster name must not have spaces`, `Cluster name can not be upper case`, `Cluster name can not start with numbers`, `Cluster name must not have special characters except "-"`, `Cluster name must not start with any special character`, `Cluster name must not end with any special character`, `Cluster name must be at least 2 characters` |
+| `400` | `cluster_version` | `Invalid cluster version!` |
+| `400` | `is_ha` | `HA clusters are not supported at the moment!` |
+| `400` | `_` | `Free plan users can not create more than one cluster. UPGRADE NOW!` |
+| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `400` | `_` | `You have read-only access to this account, you can not create clusters!` (a Restricted member) |
+| `403` | `_` | `This API token is read only!` |
+
+### Wait until a cluster is ready
+
+<Tabs groupId="lang" queryString>
+<TabItem value="curl" label="curl" default>
+
+```bash
+CLUSTER_ID=$(curl -s -X POST https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_name": "staging", "cluster_version": "1.34"}' | jq -r .hashed_id)
+
+while true; do
+  STATUS=$(curl -s https://cloider.com/api/clusters/$CLUSTER_ID/status \
+    -H "Authorization: Bearer $CLOIDER_TOKEN")
+  echo "status: $STATUS"
+  [ "$STATUS" = "Ready" ] && break
+  [ "$STATUS" = "Failed" ] && exit 1
+  sleep 5
+done
+```
+
+</TabItem>
+<TabItem value="javascript" label="JavaScript">
+
+```js title="create-cluster.mjs"
+const api = (path, init = {}) =>
+  fetch(`https://cloider.com/api${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${process.env.CLOIDER_TOKEN}`,
+      'Content-Type': 'application/json',
+      ...init.headers,
+    },
+  });
+
+const res = await api('/clusters', {
+  method: 'POST',
+  body: JSON.stringify({ cluster_name: 'staging', cluster_version: '1.34' }),
+});
+if (!res.ok) throw new Error(JSON.stringify((await res.json()).errors));
+const { hashed_id } = await res.json();
+
+for (;;) {
+  const status = await (await api(`/clusters/${hashed_id}/status`)).text();
+  console.log('status:', status);
+  if (status === 'Ready') break;
+  if (status === 'Failed') throw new Error('cluster failed');
+  await new Promise((r) => setTimeout(r, 5000));
+}
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python title="create_cluster.py"
+import os
+import time
+import requests
+
+s = requests.Session()
+s.headers["Authorization"] = f"Bearer {os.environ['CLOIDER_TOKEN']}"
+API = "https://cloider.com/api"
+
+res = s.post(f"{API}/clusters", json={"cluster_name": "staging", "cluster_version": "1.34"})
+if not res.ok:
+    raise SystemExit(res.json()["errors"])
+cluster_id = res.json()["hashed_id"]
+
+while True:
+    status = s.get(f"{API}/clusters/{cluster_id}/status").text
+    print("status:", status)
+    if status == "Ready":
+        break
+    if status == "Failed":
+        raise SystemExit("cluster failed")
+    time.sleep(5)
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```go
+// After POST /clusters returned {"hashed_id": id}
+for {
+	req, _ := http.NewRequest("GET", "https://cloider.com/api/clusters/"+id+"/status", nil)
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("CLOIDER_TOKEN"))
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+
+	status := string(body)
+	fmt.Println("status:", status)
+	if status == "Ready" {
+		break
+	}
+	if status == "Failed" {
+		log.Fatal("cluster failed")
+	}
+	time.Sleep(5 * time.Second)
+}
+```
+
+</TabItem>
+</Tabs>
+
+The CLI does the same with `cloider cluster create staging --wait`.
+
+## Get a cluster's status
+
+```http
+GET /clusters/:hashed_id/status
+```
+
+Returns the cluster's status as **plain text**, for example `Ready`. It is the cheapest way to poll a cluster.
+
+**Access:** any token.
+
+| Path parameter | Description |
+| --- | --- |
+| `hashed_id` | The cluster's id |
+
+```bash
+curl https://cloider.com/api/clusters/k3x9p/status \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```text title="Response"
+Ready
+```
+
+A deleted cluster keeps answering `Terminated`. An id that doesn't exist, or belongs to another account, answers `404` with the plain text body `Not Found`.
+
+## Download the kubeconfig
+
+```http
+GET /clusters/:hashed_id/kubeconfig
+```
+
+Returns the cluster's kubeconfig file, which `kubectl`, `helm` and every Kubernetes client use to reach the cluster's API with admin rights. The body is the YAML file, sent as a download named `config`.
+
+**Access:** any token, including read only tokens. The kubeconfig grants full control of the cluster, so treat the token, and the file, as secrets.
+
+```bash
+curl -s https://cloider.com/api/clusters/k3x9p/kubeconfig \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -o staging.kubeconfig
+
+chmod 600 staging.kubeconfig
+KUBECONFIG=staging.kubeconfig kubectl get nodes
+```
+
+The kubeconfig is ready once the cluster is `Ready`; before that the body can be empty. Its server address is the cluster's own API endpoint, `https://<name>-<id>.cloider.com`. [Connect with kubectl](/kubernetes/connect-with-kubectl) explains how to merge it with other contexts.
+
+## Pause a cluster
+
+```http
+POST /clusters/:hashed_id/pause
+```
+
+Pauses a cluster: its workloads stop and its data and configuration are kept. The cluster goes to `Pausing`, then `Paused`. While paused it isn't billed for compute; see [Pause and resume](/kubernetes/pause-and-resume) for what a paused cluster costs.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/clusters/k3x9p/pause \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's cluster list, with this cluster now `Pausing`:
+
+```json title="Response"
+[
+  {
+    "hashed_id": "k3x9p",
+    "cluster_name": "staging",
+    "cluster_label": "staging",
+    "cluster_version": "1.34",
+    "is_ha": false,
+    "status": "Pausing",
+    "created_at": "2026-10-12T10:22:41.502113Z"
+  }
+]
+```
+
+Poll `GET /clusters/k3x9p/status` until it says `Paused`. Pause only a `Ready` cluster: the endpoint doesn't check the current status, so pausing a cluster that is still being created or already paused only confuses its status.
+
+| Status | Message |
+| --- | --- |
+| `403` | `This API token is read only!` |
+| `403` | `You have read-only access to this account, ...` (a Restricted member) |
+| `404` | `Not Found` (plain text) |
+
+## Resume a cluster
+
+```http
+POST /clusters/:hashed_id/resume
+```
+
+Starts a paused cluster again. It goes to `Starting`, then `Ready`, with the same API endpoint, kubeconfig and data as before.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/clusters/k3x9p/resume \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the cluster list, with this cluster `Starting`. Poll the status until it is `Ready`. Resume only a `Paused` cluster. Errors are the same as for pausing.
+
+## Delete a cluster
+
+```http
+DELETE /clusters/:hashed_id
+```
+
+Deletes a cluster with everything in it: workloads, persistent volumes and load balancers. This can't be undone. The cluster goes to `Terminating`, then `Terminated`, and disappears from `GET /clusters`.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/clusters/k3x9p \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the cluster list, with this cluster `Terminating`. To wait for the deletion, poll `GET /clusters/k3x9p/status` until it says `Terminated`.
+
+| Status | Message |
+| --- | --- |
+| `403` | `This API token is read only!` |
+| `403` | `You have read-only access to this account, you can not delete clusters!` |
+| `404` | `Not Found` (plain text) |
+
+See [Delete a cluster](/kubernetes/delete-a-cluster) before you delete one with data you need.
+
+## List services in your clusters
+
+```http
+GET /clusters/services
+```
+
+Returns the Kubernetes Services of every cluster in the account, with their namespace and ports. It is what the dashboard offers when you route a domain path to a cluster service with a [target](/api/endpoints/targets).
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/clusters/services \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "id": "k3x9p",
+    "name": "staging",
+    "services": [
+      {
+        "service": "web",
+        "namespace": "default",
+        "ports": [{"protocol": "TCP", "port": 80}]
+      },
+      {
+        "service": "api",
+        "namespace": "shop",
+        "ports": [{"protocol": "TCP", "port": 8080}]
+      }
+    ]
+  }
+]
+```
+
+| Field | Description |
+| --- | --- |
+| `id` | The cluster's `hashed_id` |
+| `name` | The cluster's name |
+| `services` | Each Service with its `service` name, `namespace` and `ports` (`protocol`, `port`) |
+
+The services are read live from the clusters, so the request takes longer than most. When there are no clusters the body can be `null` instead of `[]`. If the clusters can't be read, the answer is `502` with the plain text `Failed to fetch data`.
+
+## Run a command with exec
+
+```http
+POST /clusters/:hashed_id/exec
+```
+
+Runs one command in the cluster's terminal environment, where `kubectl` and `helm` are installed and already pointed at the cluster, and streams back its output and exit code. It is meant for scripts and AI agents that want the output of a command rather than an interactive shell. `cloider cluster exec` uses it.
+
+**Access:** Read & Write token. The cluster must be `Ready`.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `command` | string list | Yes | The program and its arguments, for example `["kubectl", "get", "pods", "-A"]`. Run directly, not through a shell. Up to 64 KiB in total, no NUL bytes |
+| `stdin` | string (base64) | No | Bytes to send to the command's standard input, base64 encoded, up to 2 MiB. Leave it out and the command gets no input |
+| `timeout` | integer | No | Seconds before the command is stopped. Default `600`, at most `3600` |
+
+To use pipes, `&&` or other shell features, run a shell yourself: `["sh", "-c", "kubectl get pods -A | grep -v Running"]`.
+
+### Response: an event stream
+
+The answer is a [server-sent event](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) stream (`text/event-stream`) that lasts as long as the command runs. Use `curl -N` so curl prints events as they arrive.
+
+```bash
+curl -N -X POST https://cloider.com/api/clusters/k3x9p/exec \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"command": ["kubectl", "get", "nodes"]}'
+```
+
+```text title="Response"
+: open
+
+event: stdout
+data: TkFNRSAgICAgICAgIFNUQVRVUyAgIFJPTEVTICAgQUdFICAgVkVSU0lPTgo=
+
+event: exit
+data: 0
+
+event: end
+data: 1
+
+```
+
+| Event | `data` | Meaning |
+| --- | --- | --- |
+| `stdout` | base64 | A chunk of standard output. Decode it to bytes; chunks don't follow line boundaries |
+| `stderr` | base64 | A chunk of standard error |
+| `exit` | the exit code, for example `0` | The command finished |
+| `timeout` | the timeout in seconds | The command ran out of time and was stopped |
+| `error` | a message | The command couldn't be run, or the stream was cut off |
+| `end` | `1` | Nothing follows. Close the connection |
+
+Lines that start with `:` (`: open`, `: ping`) are comments that keep the connection alive; ignore them. Exactly one of `exit`, `timeout` or `error` comes before `end`. Closing the connection stops the command.
+
+Pipe a manifest to `kubectl apply -f -` by sending it as `stdin`:
+
+```bash
+curl -N -X POST https://cloider.com/api/clusters/k3x9p/exec \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg stdin "$(base64 < deploy.yaml)" \
+        '{command: ["kubectl", "apply", "-f", "-"], stdin: $stdin}')"
+```
+
+<details>
+<summary>Read an exec stream in JavaScript</summary>
+
+```js title="exec.mjs"
+const res = await fetch('https://cloider.com/api/clusters/k3x9p/exec', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${process.env.CLOIDER_TOKEN}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ command: ['kubectl', 'get', 'pods', '-A'] }),
+});
+if (!res.ok) throw new Error(JSON.stringify(await res.json()));
+
+const decoder = new TextDecoder();
+let buffer = '';
+let exitCode = null;
+
+for await (const chunk of res.body) {
+  buffer += decoder.decode(chunk, { stream: true });
+  let sep;
+  while ((sep = buffer.indexOf('\n\n')) !== -1) {
+    const raw = buffer.slice(0, sep);
+    buffer = buffer.slice(sep + 2);
+    let event = 'message';
+    const data = [];
+    for (const line of raw.split('\n')) {
+      if (line.startsWith(':')) continue;
+      if (line.startsWith('event: ')) event = line.slice(7);
+      if (line.startsWith('data: ')) data.push(line.slice(6));
+    }
+    const value = data.join('\n');
+    if (event === 'stdout') process.stdout.write(Buffer.from(value, 'base64'));
+    if (event === 'stderr') process.stderr.write(Buffer.from(value, 'base64'));
+    if (event === 'exit') exitCode = Number(value);
+    if (event === 'timeout' || event === 'error') console.error(event, value);
+  }
+}
+process.exitCode = exitCode ?? 1;
+```
+
+</details>
+
+### Errors
+
+Errors that happen before the command starts are ordinary JSON errors, not events:
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `command` | `Give a command to run!`, `The command can't contain NUL bytes!`, `The command is longer than 64 KiB!` |
+| `400` | `stdin` | `stdin is bigger than 2 MiB!` |
+| `400` | `timeout` | `The timeout can be an hour at most!` |
+| `403` | `_` | `This API token is read only!` |
+| `404` | `_` | `Cluster not found!` |
+| `409` | `_` | `This cluster is paused. Resume it to run a command!`, `This cluster is being deleted!`, `This cluster is not ready yet!`, `This cluster's terminal isn't running right now!` |
+| `503` | `_` | `The command could not be started, try again in a moment!` |
+
+Don't retry an exec request automatically after the stream drops: the command may have run.
+
+## Open a web terminal
+
+```http
+GET /clusters/:hashed_id/terminal
+```
+
+Returns the URL of an interactive browser terminal for the cluster, with `kubectl` and `helm` ready to use. This is what the dashboard's terminal opens. For scripted commands, use [exec](#run-a-command-with-exec) instead.
+
+**Access:** Read & Write token. A read only token gets `403 Terminals need a Read & Write API token!`.
+
+```bash
+curl https://cloider.com/api/clusters/k3x9p/terminal \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "url": "https://cloider.com/terminal?name=staging&id=k3x9p&token=eyJhbGciOiJIUzI1NiIs...",
+  "cluster_slug": "staging-k3x9p"
+}
+```
+
+When you call it with an API token, the URL carries a short lived terminal token that is valid for 2 minutes, so open it right away. The URL grants a shell on the cluster: don't log it or share it. [Web terminal and exec](/kubernetes/web-terminal-and-exec) describes the terminal.
+
+## Related
+
+- [Create a cluster](/kubernetes/create-a-cluster) with every tool
+- [Connect with kubectl](/kubernetes/connect-with-kubectl)
+- [cloider cluster](/cli/commands/cluster) commands
+- [cloider_cluster](/terraform/resources/cluster) Terraform resource

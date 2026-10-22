@@ -1,0 +1,180 @@
+---
+title: Delete an S3 bucket on Cloider
+sidebar_label: Delete a bucket
+sidebar_position: 13
+description: Permanently delete a Cloider bucket with all its files and versions from the dashboard, CLI, Terraform, API or MCP, and what happens to its name and keys.
+keywords: [delete s3 bucket, delete bucket with files, cloider bucket delete, remove bucket, empty bucket, bucket deletion]
+---
+
+Deleting a bucket permanently removes the bucket and everything in it: every file, every earlier version kept by versioning, its policy and its lifecycle rules. It can't be undone. This page shows how to delete a bucket with every tool, what happens step by step, and what to check first.
+
+You don't need to empty a bucket before deleting it: Cloider deletes the contents for you.
+
+## Before you begin
+
+- **Copy anything you want to keep.** Download it with the CLI or an S3 tool, or copy it to another bucket, for example `rclone copy cloider:acme-old cloider:acme-archive`. Versioning doesn't help here: deleting the bucket deletes every version too.
+- **Check what uses the bucket.** Apps, Kubernetes workloads, CI jobs, CDN configurations and public links that point at it will start failing with `NoSuchBucket`.
+- **Make sure you can delete resources.** Members with the read-only role and read only API tokens can't delete buckets.
+- **Decide whether you need the name.** Once deleted, the bucket's name is free for anyone, in any Cloider account, to take.
+
+## Delete the bucket
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Buckets** in the sidebar and click the bucket. (You can also open the actions menu on the bucket's row in the list and choose **Delete**.)
+2. Select the **Settings** tab and click **Delete bucket** in the danger zone at the bottom.
+3. The **Delete Bucket** dialog warns that every file goes with the bucket and that its name becomes free for anyone to take. Click **I want to delete the bucket**.
+4. Type the bucket's name to confirm, and click **Delete bucket**.
+
+<Screenshot
+  src="/img/screenshots/object-storage/delete-dialog.webp"
+  url="/dashboard/buckets/acme-old-m4t9cs"
+  alt="The first step of the Delete Bucket dialog warning that every file goes with the bucket and that its name becomes free for anyone, with the I want to delete the bucket button"
+  caption="Deleting takes two steps: the warning, then typing the bucket's name."
+/>
+
+<Screenshot
+  src="/img/screenshots/object-storage/detail-settings.webp"
+  url="/dashboard/buckets/acme-assets-b7r2xw"
+  alt="The Settings tab of a bucket with the Delete bucket section at the bottom, warning that the action is irreversible and every file is permanently deleted"
+  caption="The Delete bucket section at the bottom of the Settings tab."
+/>
+
+You are taken back to the Buckets list, where the bucket shows **Terminating** until it is gone.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider bucket delete acme-old --wait
+```
+
+```text title="Output"
+This permanently deletes bucket acme-old.
+Type acme-old to confirm: acme-old
+✓ Deleting bucket acme-old
+✓ Bucket acme-old is deleted
+```
+
+Without `--wait` the command returns once the deletion has started. In scripts, `--yes` skips the confirmation:
+
+```bash
+cloider bucket delete acme-old --yes --wait
+```
+
+Without a terminal and without `--yes`, the command refuses with `deleting bucket acme-old needs --yes when not running in a terminal`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Remove the `cloider_bucket` resource from the configuration and apply, or destroy it directly:
+
+```bash
+terraform destroy -target=cloider_bucket.old
+```
+
+Terraform waits until the bucket is deleted, up to the `delete` timeout (20 minutes by default). For buckets holding many files, raise it:
+
+```hcl title="main.tf"
+resource "cloider_bucket" "old" {
+  name = "acme-old"
+
+  timeouts {
+    delete = "60m"
+  }
+}
+```
+
+Changing a bucket's `name` or `region` in Terraform also deletes it, because it is replaced by a new bucket. Check `terraform plan` for `must be replaced` before applying.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X DELETE https://cloider.com/api/buckets/m4t9cs \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's bucket list, with this bucket's `status` now `Terminating`. Poll its status until it is gone:
+
+```bash
+curl https://cloider.com/api/buckets/m4t9cs/status \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```text title="Response"
+Terminating
+```
+
+Once the bucket is deleted, the status endpoint answers `404`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Delete the bucket acme-old and wait until it is gone.
+```
+
+It calls the `delete_bucket` tool, which clients that confirm destructive tools ask you to approve first:
+
+```json title="Tool call: delete_bucket"
+{"bucket": "acme-old", "wait": true}
+```
+
+</TabItem>
+</Tabs>
+
+## What happens when you delete a bucket?
+
+1. **The policy is removed** first, so nothing in it can interfere with the deletion.
+2. **The bucket is marked Terminating.** It disappears from use in the dashboard: its page can't be opened from the list anymore.
+3. **Access is revoked.** Public read access is turned off and every access key loses access to the bucket, before any data is deleted, so nothing can write to it while it is emptied.
+4. **Every file and version is deleted**, then the bucket itself. A bucket with many files takes a while; small buckets are gone within seconds.
+5. **The bucket is gone.** Its status becomes **Terminated** and it leaves the Buckets list. Its name is free again.
+
+Access keys aren't deleted with the bucket. A key limited to specific buckets simply drops the deleted one from its list (and shows **None left** if that was its only bucket). Keys for all buckets keep working with the others.
+
+Storage stops being charged once the data is gone. The bucket's usage up to then stays on the **Usage** page and on your invoice.
+
+## When can't a bucket be deleted?
+
+| Message | Why | What to do |
+| --- | --- | --- |
+| `This bucket is still being created!` | The bucket is still **Creating** | Wait a few seconds until it is **Ready** or **Failed** |
+| `This bucket is already being deleted!` | The deletion is already running | Wait. The bucket leaves the list when done |
+| `Another change to this bucket is in progress, try again in a moment!` | A settings or policy change to the bucket is running | Try again in a moment |
+| `Couldn't remove the bucket's policy, try again in a moment!` | The policy couldn't be removed, so nothing was deleted | Try again |
+| `You have read-only access to this account, you can not delete buckets!` | Your role in this account is read only | Ask a member who can manage resources |
+| `This API token is read only!` | The API token has **Read** access | Use a **Read & Write** token |
+
+Nothing else blocks a deletion: a bucket with files, versions, a policy, lifecycle rules or public read access is deleted all the same. There is no separate deletion protection setting on buckets, so use [roles](/concepts/accounts-and-roles) to control who can delete them, and keep a second copy of data you can't lose (see [Data protection](/object-storage/data-protection)).
+
+### If the deletion fails
+
+If the bucket can't be emptied or deleted, its status becomes **Failed**. Its data may still be there, but access keys and public links no longer reach it. Delete it again from its **Settings** tab, with `cloider bucket delete`, or with the API. If it keeps failing, contact [support](/account/support) with the bucket's name.
+
+## Delete only the files
+
+To keep the bucket (and its name) but remove its contents:
+
+- a folder at a time in the dashboard's **Files** tab, or with `cloider bucket rm <bucket> --prefix <folder>/` (up to 10,000 files per folder),
+- everything at once with an S3 tool, for example `aws s3 rm s3://acme-old --recursive --profile cloider` or `rclone delete cloider:acme-old`,
+- automatically with a [lifecycle rule](/object-storage/lifecycle-rules) that expires files after one day.
+
+On a versioned bucket, these only add delete markers. To free the storage, also delete the versions, for example with a lifecycle rule that sets **Remove earlier versions after they've been replaced for** 1 day.
+
+## Next steps
+
+- [Create a new bucket](/object-storage/create-a-bucket).
+- [See what your remaining buckets store](/object-storage/usage-and-billing).
+- [Delete access keys you no longer need](/object-storage/access-keys#delete-an-access-key).
+
+<FAQ items={[
+  {q: 'Do I have to empty a bucket before deleting it?', a: 'No. Deleting a bucket on Cloider deletes every file and version in it for you. With S3 tools you would normally have to empty it first, but buckets are deleted with Cloider\'s own tools, which do it in one step.'},
+  {q: 'Can I recover a deleted bucket?', a: 'No. Deleting a bucket permanently deletes all its files and versions, and versioning doesn\'t protect against it. Keep a copy elsewhere if you might need the data again.'},
+  {q: 'How long does it take to delete a bucket?', a: 'A few seconds for small buckets. A bucket holding many files takes longer, because every file is deleted. The bucket shows Terminating until it is gone.'},
+  {q: 'Can someone else take my bucket name after I delete it?', a: 'Yes. Bucket names are shared by every Cloider account, and a deleted bucket\'s name is free for anyone to use. Keep the bucket if the name matters to you, for example because it appears in public links.'},
+  {q: 'Are access keys deleted with the bucket?', a: 'No. Access keys stay. A key limited to specific buckets drops the deleted bucket from its list, and keys for all buckets keep working with the remaining buckets.'},
+  {q: 'Can I protect a bucket from being deleted?', a: 'There is no deletion protection setting. Members with the read-only role and read only API tokens can\'t delete buckets, so give delete rights only to members who need them, and keep a second copy of important data.'},
+]} />

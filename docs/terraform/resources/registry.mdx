@@ -1,0 +1,183 @@
+---
+title: cloider_registry resource (Terraform)
+sidebar_label: cloider_registry
+sidebar_position: 5
+description: Create Cloider container registry projects with the cloider_registry Terraform resource, set public access, storage limit and immutable tags, and import existing projects.
+keywords: [cloider_registry, terraform container registry, docker registry terraform, registry project terraform, immutable tags terraform, private docker registry, cloider registry terraform]
+---
+
+The `cloider_registry` resource creates and manages a [container registry](/container-registry/overview) project: a namespace on `registry.cloider.com` where you push and pull Docker and OCI images as `registry.cloider.com/<project>/<repository>:<tag>`. You choose whether anyone may pull without a token, how much storage its images may use, and whether tags are immutable. To push and pull, create a [`cloider_registry_token`](/terraform/resources/registry-token).
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `name` |
+| **Changes in place** | `public`, `storage_limit_gi`, `immutable_tags` |
+| **Changes that replace the project** | `name` |
+| **Sensitive attributes** | None |
+| **Timeouts** | `create`, `delete`, 20 minutes each by default |
+| **Import ID** | The project id, such as `r4t6yu` |
+| **API** | [`/api/registry/projects`](/api/endpoints/registry) |
+| **CLI equivalent** | [`cloider registry`](/cli/commands/registry) |
+
+## Example usage
+
+### Basic private project
+
+```hcl title="main.tf"
+resource "cloider_registry" "acme" {
+  name = "acme"
+}
+
+output "image_prefix" {
+  value = cloider_registry.acme.url
+}
+```
+
+```text title="Output"
+image_prefix = "registry.cloider.com/acme"
+```
+
+Tag and push images under that prefix, for example `registry.cloider.com/acme/web:1.4.2`. See [Push and pull images](/container-registry/push-and-pull-images).
+
+### A production project with immutable tags
+
+```hcl title="main.tf"
+resource "cloider_registry" "acme" {
+  name             = "acme"
+  storage_limit_gi = 20
+  immutable_tags   = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+```
+
+With `immutable_tags = true`, pushing an image over an existing tag and deleting a tag are refused, `latest` included, so a tag always means the same image. See [Immutable tags](/container-registry/immutable-tags).
+
+### A public project for open source images
+
+```hcl title="main.tf"
+resource "cloider_registry" "acme_public" {
+  name   = "acme-public"
+  public = true
+}
+```
+
+Anyone can pull from a public project without logging in. Pushing always needs a token.
+
+### Project, push token and pull secret together
+
+```hcl title="main.tf"
+resource "cloider_registry" "acme" {
+  name = "acme"
+}
+
+# For CI: may push and pull
+resource "cloider_registry_token" "ci" {
+  label    = "CI push"
+  projects = [cloider_registry.acme.id]
+}
+
+# For the cluster: may only pull
+resource "cloider_registry_token" "pull" {
+  label     = "production cluster pull"
+  projects  = [cloider_registry.acme.id]
+  read_only = true
+}
+```
+
+The [`cloider_registry_token`](/terraform/resources/registry-token#create-an-image-pull-secret-in-a-cluster) page shows how to turn the pull token into a Kubernetes image pull secret.
+
+## Argument reference
+
+| Argument | Type | Required | Default | Changing it | Description |
+| --- | --- | --- | --- | --- | --- |
+| `name` | String | Yes | | **Replaces** the project and deletes its images | 3 to 63 lower case letters, digits and `-`, starting and ending with a letter or digit. Project names are shared by every Cloider account, so it must be one nobody else has. Some names are reserved, see [Names](/reference/limits-and-quotas) |
+| `public` | Bool | No | `false` | In place | Whether anyone may pull its images without a token. Pushing always needs one |
+| `storage_limit_gi` | Number | No | `5` | In place | The most GiB its images may take, `1` to `20`. A push past the limit is refused |
+| `immutable_tags` | Bool | No | `false` | In place | Whether pushing over an existing tag, or deleting a tag, is refused, `latest` included |
+| `timeouts` | Object | No | 20 minutes each | | `create` and `delete` durations |
+
+## Attribute reference
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `id` | String | The project's id |
+| `host` | String | The registry host to `docker login` to, `registry.cloider.com` |
+| `url` | String | The prefix of every image in the project, `<host>/<name>`, such as `registry.cloider.com/acme` |
+| `status` | String | `Ready`, `Failed` or `Terminating`. See [Status values](/reference/status-values) |
+| `created_at` | String | When the project was created, in RFC 3339 |
+
+## What replaces a project?
+
+Only `name`. Changing it deletes the project **with every image in it**, and creates a new, empty one. `public`, `storage_limit_gi` and `immutable_tags` change in place without touching the images.
+
+## The apps project can't be managed
+
+When you deploy an [app](/apps/overview), Cloider creates a project for your account that it builds the apps' images into. That project is created and removed together with your apps, so Terraform refuses to import it:
+
+```text title="Output"
+Error: Can't manage the apps project
+
+Project <project> is the one Cloider builds your apps' images into. It is made and removed with your apps, so Terraform can't manage it.
+```
+
+## Create and delete behavior
+
+- **Create** is fast: a project is `Ready` as soon as the API answers. If the create request times out (a `502` or `504`), the provider looks for a project of that name in your account for up to 4 minutes and adopts it once it is `Ready`.
+- **Delete** removes the project with all its repositories and images, then waits until it is gone. See [Delete a project](/container-registry/delete-a-project).
+- **Retention policies**, repositories and tags aren't managed by this resource. Use the dashboard or [`cloider registry`](/cli/commands/registry), see [Retention policies](/container-registry/retention-policies).
+- **Deleted outside Terraform.** The next refresh removes the project from state and the plan offers to create it again.
+
+## Timeouts
+
+| Operation | Default | What it waits for |
+| --- | --- | --- |
+| `create` | 20 minutes | Covers the create call and, after a timed out create, the search for the new project |
+| `delete` | 20 minutes | The project and its images to be gone |
+
+## Import
+
+Import an existing project by its id. `cloider registry list -o wide` shows the ids:
+
+```bash
+cloider registry list -o wide
+```
+
+With an `import` block:
+
+```hcl title="imports.tf"
+import {
+  to = cloider_registry.acme
+  id = "r4t6yu"
+}
+
+resource "cloider_registry" "acme" {
+  name = "acme"
+}
+```
+
+With the `terraform import` command:
+
+```bash
+terraform import cloider_registry.acme r4t6yu
+```
+
+After the import, set `public`, `storage_limit_gi` and `immutable_tags` to the project's current values, or the next apply changes them to the defaults (`false`, `5`, `false`).
+
+## Related
+
+- [`cloider_registry_token`](/terraform/resources/registry-token): push and pull credentials
+- [Use the registry with Kubernetes](/container-registry/use-with-kubernetes)
+- [Registry CI/CD](/container-registry/ci-cd)
+- [Create a project](/container-registry/create-a-project) with the dashboard, CLI or API
+
+<FAQ items={[
+  {q: 'How do I create a container registry on Cloider with Terraform?', a: 'Add a cloider_registry resource with a project name nobody else on Cloider uses, and run terraform apply. Images go to registry.cloider.com/<name>/<repository>:<tag>. Create a cloider_registry_token to push and pull.'},
+  {q: 'What is storage_limit_gi on a cloider_registry?', a: 'The most storage the project\'s images may use, in GiB, from 1 to 20, 5 by default. A push that would go past it is refused. You can change it in place.'},
+  {q: 'Can Terraform manage the registry project Cloider creates for my apps?', a: 'No. The apps project is created and removed with your apps, and importing it fails with "Can\'t manage the apps project".'},
+  {q: 'Does destroying a cloider_registry delete my images?', a: 'Yes. Deleting a project deletes every repository and image in it. Use lifecycle { prevent_destroy = true } on projects you can\'t lose.'},
+]} />

@@ -1,0 +1,124 @@
+---
+title: Cloider FAQ, frequently asked questions
+sidebar_label: FAQ
+sidebar_position: 6
+description: "Answers to common questions about Cloider: accounts and the trial, billing, apps, Kubernetes, databases, storage, the registry, domains and tools."
+keywords: [cloider faq, cloider questions, cloider free trial, cloider pricing questions, cloider kubernetes faq, cloider api faq, cloider support]
+---
+
+Short answers to the questions people ask most about Cloider, grouped by topic. Each answer links to the page with the details. If your question isn't here, see [Troubleshooting](/reference/troubleshooting) or [open a support request](/account/support).
+
+## Accounts and the free trial
+
+<FAQ title="" items={[
+  {q: 'What is Cloider?', a: 'Cloider is a pay-as-you-go cloud platform. It runs apps from your source code, serverless Kubernetes clusters, managed PostgreSQL, MySQL, MongoDB and Redis databases, S3 compatible object storage, a private container registry, and domains and DNS, all from one account and one invoice.'},
+  {q: 'How do I sign up for Cloider?', a: 'Go to cloider.com, click Login / Register and choose Sign in with Google or Sign in with Github. The first sign in creates your account.'},
+  {q: 'Is there a free trial?', a: 'Yes. New accounts get a 14-day free trial with $25 of free credit. During the trial an account can have one Kubernetes cluster, one database, one bucket and one registry project at a time.'},
+  {q: 'What happens when my trial ends?', a: 'If the account owner has not upgraded to the paid plan, the account is suspended the day after the trial ends and its resources are deleted. Reminder emails are sent before that, on days 4, 7, 10, 12, 13 and 14 and on the trial end date.'},
+  {q: 'Can I invite my team?', a: 'Yes. In Access Control, the Owner or an Admin invites people by email and gives them the Admin or Restricted role. Members keep their own accounts and switch between accounts from the account menu.'},
+  {q: 'Can I sign in with an email and password?', a: 'No. Cloider only supports Google and GitHub sign in, and identifies you by that email address.'}
+]} />
+
+Read more: [Create an account](/get-started/create-an-account), [Accounts and roles](/concepts/accounts-and-roles).
+
+## Billing and pricing
+
+<FAQ title="" items={[
+  {q: 'How does Cloider charge?', a: 'Pay as you go. Cloider measures what each resource uses, prices it at monthly rates prorated by the second over a 30 day month, and sends one invoice per month for the month before.'},
+  {q: 'Where are the current prices?', a: 'On cloider.com/#pricing, from cloider pricing in the CLI, or from GET https://cloider.com/api/pricing, which needs no token.'},
+  {q: 'What is a compute unit?', a: 'The unit apps and clusters pay for: one vCPU, or the memory the CPU to memory ratio pairs with one vCPU, whichever a workload uses more of.'},
+  {q: 'Do I pay for requested or actual CPU?', a: 'For the larger of the two, per container and separately for CPU and memory. Small requests on idle workloads keep costs low.'},
+  {q: 'What does a paused resource cost?', a: 'A paused cluster pays for its persistent volumes, a paused database for the storage of its plan, and a paused app nothing. Compute stops while paused.'},
+  {q: 'Is network traffic billed?', a: 'Bucket requests and traffic are free, and so are registry pushes and pulls. Buckets and registry projects pay only for the data they store.'},
+  {q: 'Who can see invoices?', a: 'Only the account Owner, in Billing. Every member can see costs on the Usage page.'}
+]} />
+
+Read more: [Billing model](/concepts/billing-model), [Pricing](/reference/pricing), [Usage](/account/usage).
+
+## Apps
+
+<FAQ title="" items={[
+  {q: 'How do I deploy an app?', a: 'Upload a folder or zip in the dashboard (Apps, Create App), import a GitHub, GitLab or Bitbucket repository, or run cloider deploy in your project folder.'},
+  {q: 'Do I need a Dockerfile?', a: 'No. Without a Dockerfile, Cloider detects the language and builds the code with buildpacks. A project with a Dockerfile is built from it.'},
+  {q: 'Can my app deploy automatically on git push?', a: 'Yes. An app imported from GitHub, GitLab or Bitbucket deploys a new version on every push to its branch, unless you turn auto deploy off.'},
+  {q: 'What URL does my app get?', a: 'A free subdomain of cloider.app with HTTPS, such as https://blog.cloider.app. You can also route your own domain to it with a target.'},
+  {q: 'How do I see my app\'s logs?', a: 'On the app\'s Logs tab in the dashboard, or with cloider app logs blog -f.'}
+]} />
+
+Read more: [Apps overview](/apps/overview), [Deploy your first app](/get-started/deploy-your-first-app).
+
+## Kubernetes
+
+<FAQ title="" items={[
+  {q: 'Is a Cloider cluster real Kubernetes?', a: 'Yes. Each cluster has its own Kubernetes API server and state, and works with kubectl, Helm and the Terraform kubernetes and helm providers. You do not manage nodes.'},
+  {q: 'Which Kubernetes versions are available?', a: 'The versions offered right now are listed in the Create cluster form, by GET /api/options and by the cloider_options Terraform data source. At the time of writing they are 1.34, 1.33 and 1.32.'},
+  {q: 'How do I connect kubectl?', a: 'Download the kubeconfig from the cluster row menu in the dashboard, or run cloider cluster kubeconfig staging --merge --use.'},
+  {q: 'How do I expose a service to the internet?', a: 'Route a domain to the Service with a target, or create a Service of type LoadBalancer for a public IP. Ingress objects are not served.'},
+  {q: 'Can I use persistent volumes?', a: 'Yes. Create a PersistentVolumeClaim and the cluster provisions a volume, billed per GiB of capacity.'}
+]} />
+
+Read more: [Kubernetes overview](/kubernetes/overview), [Create your first cluster](/get-started/create-your-first-cluster).
+
+## Databases
+
+<FAQ title="" items={[
+  {q: 'Which databases does Cloider offer?', a: 'PostgreSQL 18, MySQL 9, MongoDB 8 and Redis 8, each on a plan from Hobby to Pro.'},
+  {q: 'Are databases backed up?', a: 'Yes, daily. You can list backups and restore one from the dashboard, the CLI, the API or MCP.'},
+  {q: 'How do I control who can connect to a database?', a: 'With trusted sources: the addresses and Cloider resources allowed to connect. You can also turn on SSL/TLS for the database.'},
+  {q: 'Can I make a database bigger?', a: 'Yes. Resize it to a larger plan. Plans can only go up.'}
+]} />
+
+Read more: [Databases overview](/databases/overview), [Connect](/databases/connect).
+
+## Object storage
+
+<FAQ title="" items={[
+  {q: 'Is Cloider object storage compatible with S3?', a: 'Yes. Buckets speak the S3 API, so the AWS CLI, rclone, s3cmd and the AWS SDKs work with an access key and the endpoint https://s3.eu-central-2.cloider.com.'},
+  {q: 'Where do I get S3 credentials?', a: 'In Access Control, S3 Credentials, or with cloider bucket key create. The secret key is shown once.'},
+  {q: 'Can I host public files?', a: 'Yes. Make the bucket public, or use a bucket policy, and its files can be read by anyone with the URL.'},
+  {q: 'Can I recover deleted files?', a: 'If versioning is on, previous versions and deleted files are kept and can be restored. Turn versioning on before you need it.'}
+]} />
+
+Read more: [Object Storage overview](/object-storage/overview), [Versioning](/object-storage/versioning).
+
+## Container registry
+
+<FAQ title="" items={[
+  {q: 'What is the registry address?', a: 'registry.cloider.com. Images are named registry.cloider.com/<project>/<repository>:<tag>.'},
+  {q: 'How do I log Docker in?', a: 'Run cloider registry login, which logs Docker in to every project of the account with a token for your machine. For CI and clusters, create a registry token.'},
+  {q: 'How do I clean up old images?', a: 'Set retention rules on the project and schedule them, or run them on demand with a dry run first. Images left without any tag are removed by the registry\'s nightly cleanup.'}
+]} />
+
+Read more: [Container Registry overview](/container-registry/overview).
+
+## Domains and DNS
+
+<FAQ title="" items={[
+  {q: 'Can I get a free domain?', a: 'You can claim free subdomains of cloider.app, such as blog.cloider.app, with HTTPS included.'},
+  {q: 'How do I use my own domain?', a: 'Add it in Domains, point it at Cloider\'s nameservers ns1.cloider.com to ns4.cloider.com at your registrar, then add DNS records and targets.'},
+  {q: 'Do I need to set up HTTPS certificates?', a: 'No. Cloider manages HTTPS certificates for free subdomains and custom domains served through targets.'}
+]} />
+
+Read more: [Domains overview](/domains/overview).
+
+## Tools and the API
+
+<FAQ title="" items={[
+  {q: 'Which tools can manage Cloider?', a: 'The dashboard, the cloider CLI, the Terraform provider cloider/cloider, the REST API at https://cloider.com/api, and the MCP server for AI agents (cloider mcp).'},
+  {q: 'How do I install the CLI?', a: 'On macOS or Linux run curl -fsSL https://cloider.com/install.sh | sh, then cloider login. On Windows, download the zip for your architecture.'},
+  {q: 'What is the API rate limit?', a: '10 requests a second and 100 a minute per client. Over the limit the API answers 429; the CLI retries automatically.'},
+  {q: 'Can an AI agent manage my Cloider account?', a: 'Yes. Add cloider mcp to Claude Code, Claude Desktop, Cursor or another MCP client. Use cloider mcp --read-only if the agent should only look.'},
+  {q: 'Can I manage members or API tokens with the API?', a: 'No. Members and API tokens are managed in the dashboard only. The API, CLI and MCP can list them.'}
+]} />
+
+Read more: [Choose a tool](/get-started/choose-a-tool), [CLI](/cli/overview), [REST API](/api/overview), [MCP](/mcp/overview).
+
+## Security and support
+
+<FAQ title="" items={[
+  {q: 'How are API tokens protected?', a: 'Cloider stores only a hash of each token and shows the token once. A token works in one account, never with more access than its creator, and can be revoked at once.'},
+  {q: 'Is my data encrypted in transit?', a: 'The dashboard, API, apps, domains, buckets and registry are served over HTTPS. Databases support SSL/TLS, which you turn on per database.'},
+  {q: 'How do I contact support?', a: 'Open a support request from Support in the dashboard or with cloider support create, or email support@cloider.com.'}
+]} />
+
+Read more: [Security](/concepts/security), [Support](/account/support).

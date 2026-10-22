@@ -1,0 +1,264 @@
+---
+title: Store Terraform state in a Cloider bucket (S3 backend)
+sidebar_label: State in a Cloider bucket
+sidebar_position: 4
+description: Use a Cloider bucket as a Terraform or OpenTofu S3 backend with locking, the exact backend settings, credentials, migrating existing state and recovering old versions.
+keywords: [terraform s3 backend, terraform remote state s3 compatible, terraform state bucket, use_lockfile, opentofu s3 backend, cloider terraform state, terraform backend custom endpoint]
+---
+
+Terraform keeps track of what it manages in a **state** file. By default that is `terraform.tfstate` on your computer, which only you can use and which is lost with your laptop. Terraform's [`s3` backend](https://developer.hashicorp.com/terraform/language/backend/s3) can keep it in a Cloider bucket instead, with locking, so your team and your CI pipeline share one state without overwriting each other's changes. This guide gives the exact backend settings, the credentials, how to move an existing state, and how to recover from mistakes.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Backend** | `s3`, built into Terraform and OpenTofu |
+| **Locking** | `use_lockfile = true`, which needs Terraform 1.10 or later, or OpenTofu 1.10 or later |
+| **Credentials** | A [`cloider_bucket_key`](/terraform/resources/bucket-key) in `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` |
+| **Endpoint** | The bucket region's endpoint, such as `https://s3.eu-central-2.cloider.com` |
+| **Recommended bucket settings** | Private, `versioning = true`, `prevent_destroy` |
+
+## Why keep state in a bucket?
+
+- **Sharing.** Everyone and every CI job works against the same state.
+- **Locking.** Two runs at the same time can't corrupt the state: the second one waits or stops.
+- **Safety.** The state holds secrets (database passwords, kubeconfigs, bucket key secrets). A private bucket with a dedicated key is a better place for it than laptops and CI artifacts.
+- **History.** With versioning on, every earlier state is kept, so a bad apply or a corrupted state can be rolled back.
+
+## Before you begin
+
+- Terraform 1.10 or later, or OpenTofu 1.10 or later. Check with `terraform version`.
+- The Cloider provider set up, see [Get started](/terraform/get-started), or the [`cloider` CLI](/cli/install).
+
+## Step 1: Create the state bucket and a key
+
+The bucket that holds state shouldn't be managed by a configuration whose state it holds. Create it either in a small configuration of its own, or with the CLI.
+
+<Tabs groupId="state-bucket">
+<TabItem value="terraform" label="Terraform" default>
+
+A separate `bootstrap` configuration, whose own (small) state stays local:
+
+```hcl title="bootstrap/main.tf"
+provider "cloider" {}
+
+resource "cloider_bucket" "state" {
+  name       = "acme-terraform-state"
+  versioning = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "cloider_bucket_key" "state" {
+  label   = "Terraform state"
+  buckets = [cloider_bucket.state.id]
+}
+
+output "state_access_key" {
+  value = cloider_bucket_key.state.access_key
+}
+
+output "state_secret_key" {
+  value     = cloider_bucket_key.state.secret_key
+  sensitive = true
+}
+```
+
+```bash
+cd bootstrap
+terraform init && terraform apply
+terraform output -raw state_access_key
+terraform output -raw state_secret_key
+```
+
+Keep the bootstrap state somewhere safe (it contains the key's secret), or delete it once you have stored the key in your secrets manager: the bucket and key keep working without it.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider bucket create acme-terraform-state --versioning
+cloider bucket key create --label "Terraform state" --bucket acme-terraform-state --print-env
+```
+
+`--print-env` prints the key as `export AWS_...` lines. The secret is shown only this once, so store it in your secrets manager now.
+
+</TabItem>
+</Tabs>
+
+Bucket names are shared by every Cloider account, so pick one with your company's name in it. Keep the bucket **private**.
+
+## Step 2: Configure the backend
+
+In each configuration whose state goes in the bucket, add a `backend "s3"` block with a `key` of its own:
+
+```hcl title="backend.tf"
+terraform {
+  backend "s3" {
+    bucket = "acme-terraform-state"
+    key    = "production/terraform.tfstate"
+    region = "eu-central-2"
+
+    endpoints = {
+      s3 = "https://s3.eu-central-2.cloider.com"
+    }
+    use_path_style = true
+    use_lockfile   = true
+
+    # Cloider isn't AWS: there is no AWS account or instance metadata to check
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+  }
+}
+```
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `bucket` | Your state bucket's name | |
+| `key` | A path unique to this configuration, such as `production/terraform.tfstate` | Several configurations share one bucket, each under its own key |
+| `region` | The bucket's region code | |
+| `endpoints.s3` | The bucket region's endpoint | Sends requests to Cloider instead of AWS |
+| `use_path_style` | `true` | Addresses the bucket as `<endpoint>/<bucket>` |
+| `use_lockfile` | `true` | Locking with a lock file in the bucket, see below |
+| `skip_credentials_validation`, `skip_requesting_account_id`, `skip_metadata_api_check` | `true` | Stop the backend from calling AWS's STS, IAM and instance metadata services |
+
+## Step 3: Give the backend its credentials
+
+The backend reads the key from the standard AWS environment variables. Keep the key out of the backend block: Terraform saves the backend configuration in plain text under `.terraform/`.
+
+```bash
+export AWS_ACCESS_KEY_ID="<state_access_key>"
+export AWS_SECRET_ACCESS_KEY="<state_secret_key>"
+terraform init
+```
+
+```text title="Output"
+Initializing the backend...
+
+Successfully configured the backend "s3"! Terraform will automatically
+use this backend unless the backend configuration changes.
+...
+Terraform has been successfully initialized!
+```
+
+These are only the backend's credentials. The Cloider provider still takes its own API token from `CLOIDER_TOKEN` or your CLI login.
+
+:::warning[AWS variables and the aws provider]
+If the same configuration also uses the `aws` provider for real AWS, the `AWS_*` variables apply to both. Give the backend its own credentials with a [partial configuration](#keep-the-backend-settings-out-of-the-code) file instead, or use a named profile with `profile = "cloider"` in the backend block.
+:::
+
+## Move an existing state into the bucket
+
+A configuration that already has a local state moves it with:
+
+```bash
+terraform init -migrate-state
+```
+
+```text title="Output"
+Initializing the backend...
+Do you want to copy existing state to the new backend?
+  Pre-existing state was found while migrating the previous "local" backend to the
+  newly configured "s3" backend. No existing state was found in the newly
+  configured "s3" backend. Do you want to copy this state to the new "s3"
+  backend? Enter "yes" to copy and "no" to start with an empty state.
+
+  Enter a value: yes
+
+Successfully configured the backend "s3"! Terraform will automatically
+use this backend unless the backend configuration changes.
+```
+
+Check with `terraform plan`, which should show no changes, then delete the local `terraform.tfstate` and `terraform.tfstate.backup`.
+
+## How does locking work?
+
+With `use_lockfile = true`, each plan or apply first writes `<key>.tflock` next to the state, for example `production/terraform.tfstate.tflock`. The write only succeeds when no lock file exists. While one run holds the lock, any other run against the same state stops with `Error acquiring the state lock`, or waits as long as `-lock-timeout` allows:
+
+```bash
+terraform apply -lock-timeout=5m
+```
+
+The lock file is removed when the run ends. A run that was killed can leave its lock behind. Once you are sure nothing else is running, release it with the lock id from the error message:
+
+```bash
+terraform force-unlock 9db590f1-b6fe-c5f2-2678-8804f089deba
+```
+
+## Keep the backend settings out of the code
+
+To reuse one configuration with different buckets or keys (per environment, say), leave values out of the block and pass them to `terraform init`:
+
+```hcl title="backend.tf"
+terraform {
+  backend "s3" {}
+}
+```
+
+```hcl title="production.s3.tfbackend"
+bucket                      = "acme-terraform-state"
+key                         = "production/terraform.tfstate"
+region                      = "eu-central-2"
+endpoints                   = { s3 = "https://s3.eu-central-2.cloider.com" }
+use_path_style              = true
+use_lockfile                = true
+skip_credentials_validation = true
+skip_requesting_account_id  = true
+skip_metadata_api_check     = true
+```
+
+```bash
+terraform init -backend-config=production.s3.tfbackend
+```
+
+## Workspaces
+
+With [Terraform workspaces](/terraform/guides/multiple-environments#step-2b-use-terraform-workspaces), the `s3` backend stores each workspace's state under `env:/<workspace>/<key>`, for example `env:/staging/production/terraform.tfstate`. Set `workspace_key_prefix` in the backend block to change `env:`.
+
+## Recover an earlier state
+
+Because the bucket is versioned, every state Terraform wrote is kept. To go back to an earlier one:
+
+```bash
+# List the versions of the state object
+aws s3api list-object-versions --bucket acme-terraform-state \
+  --prefix production/terraform.tfstate --profile cloider
+
+# Download one
+aws s3api get-object --bucket acme-terraform-state \
+  --key production/terraform.tfstate --version-id <version-id> \
+  old.tfstate --profile cloider
+
+# Inspect it, then push it back
+terraform state push old.tfstate
+```
+
+`terraform state push` refuses a state with a lower serial than the current one unless you add `-force`. You can also browse and restore versions in the dashboard, see [Versioning](/object-storage/versioning). The `cloider` AWS CLI profile is set up in [Object storage with the AWS provider](/terraform/guides/object-storage#use-the-key-with-the-aws-cli).
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+| --- | --- | --- |
+| `No valid credential sources found` | `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` aren't set | Export the state key, then run `terraform init` again |
+| `validating provider credentials: retrieving caller identity from STS` | The `skip_` settings are missing | Add the three `skip_` settings |
+| `Unsupported argument "use_lockfile"` | Terraform or OpenTofu older than 1.10 | Upgrade |
+| `Error acquiring the state lock` | Another run holds the lock, or a killed run left it | Wait, use `-lock-timeout`, or `terraform force-unlock <id>` |
+| `AccessDenied` | The key doesn't reach this bucket, or is read only | Use a read and write key for the state bucket |
+| `NoSuchBucket` | Typo, or `endpoints.s3` missing | Check `bucket` and `endpoints` |
+| `Backend configuration changed` | You edited the backend block | `terraform init -reconfigure`, or `-migrate-state` to move the state |
+
+## Next steps
+
+- [Multiple environments](/terraform/guides/multiple-environments): one key per environment
+- [CI/CD with Terraform](/terraform/guides/ci-cd): the state key as a CI secret
+- [Data protection](/object-storage/data-protection) for the state bucket
+
+<FAQ items={[
+  {q: 'Can I store Terraform state in Cloider object storage?', a: 'Yes. Use the s3 backend with bucket, key, region, endpoints = { s3 = "https://s3.eu-central-2.cloider.com" }, use_path_style = true, use_lockfile = true and the three skip_ settings, and a Cloider bucket key in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.'},
+  {q: 'Does state locking work with a Cloider bucket?', a: 'Yes, with use_lockfile = true on Terraform 1.10 or later or OpenTofu 1.10 or later. The backend writes a .tflock file next to the state while a run holds the lock. No DynamoDB table is needed.'},
+  {q: 'Should the Terraform state bucket be versioned?', a: 'Yes. With versioning on, every state Terraform writes is kept, so you can download an earlier version and push it back with terraform state push if an apply or a manual edit goes wrong.'},
+  {q: 'Does OpenTofu work with a Cloider bucket as a backend?', a: 'Yes, OpenTofu\'s s3 backend takes the same settings. use_lockfile needs OpenTofu 1.10 or later.'},
+]} />

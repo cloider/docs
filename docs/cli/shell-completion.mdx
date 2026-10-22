@@ -1,0 +1,187 @@
+---
+title: Shell completion for the Cloider CLI
+sidebar_label: Shell completion
+sidebar_position: 7
+description: Turn on Tab completion for cloider commands, subcommands and flags in bash, zsh, fish and PowerShell, for the current session or permanently.
+keywords: [cloider completion, cloider bash completion, cloider zsh completion, cloider fish completion, cloider powershell completion, tab completion]
+---
+
+Shell completion lets you press **Tab** to complete `cloider` commands, subcommands and flags, and to see what each one does. `cloider completion <shell>` prints a completion script for bash, zsh, fish or PowerShell; you load it once per session or install it so every new shell has it.
+
+## At a glance
+
+| Shell | Try it in this session | Install for every session |
+| --- | --- | --- |
+| bash | `source <(cloider completion bash)` | `cloider completion bash > /etc/bash_completion.d/cloider` (Linux) |
+| zsh | `source <(cloider completion zsh)` | `cloider completion zsh > "${fpath[1]}/_cloider"` |
+| fish | `cloider completion fish \| source` | `cloider completion fish > ~/.config/fish/completions/cloider.fish` |
+| PowerShell | `cloider completion powershell \| Out-String \| Invoke-Expression` | Add that line to your `$PROFILE` |
+
+## What gets completed?
+
+Completion covers everything the CLI knows without calling the API:
+
+- command groups: `cloider cl<Tab>` becomes `cloider cluster`
+- subcommands: `cloider cluster <Tab>` lists `create`, `delete`, `exec`, `get`, `kubeconfig`, `list`, `pause`, `resume`, `services`, `shell` and `status`
+- flags, including global flags: `cloider db create --<Tab>`
+- short descriptions next to each choice, in zsh, fish and PowerShell (and bash with bash-completion 2)
+
+Resource names (your clusters, databases, apps) aren't completed, since that would need an API call on every Tab press. Completion never triggers the CLI's daily [update check](/cli/updating), so it stays fast.
+
+## bash
+
+Bash completion needs the `bash-completion` package. Most Linux distributions install it by default; on macOS, install it with Homebrew (`brew install bash-completion@2`) and follow the line it prints to load it from your `~/.bash_profile`.
+
+Load completion in the current shell:
+
+```bash
+source <(cloider completion bash)
+```
+
+Install it for every new shell:
+
+<Tabs groupId="os" queryString>
+<TabItem value="macos" label="macOS" default>
+
+```bash
+cloider completion bash > $(brew --prefix)/etc/bash_completion.d/cloider
+```
+
+</TabItem>
+<TabItem value="linux" label="Linux">
+
+```bash
+cloider completion bash | sudo tee /etc/bash_completion.d/cloider > /dev/null
+```
+
+Without root, add the session line to your `~/.bashrc` instead:
+
+```bash
+echo 'source <(cloider completion bash)' >> ~/.bashrc
+```
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+In Git Bash or WSL, add the session line to your `~/.bashrc`:
+
+```bash
+echo 'source <(cloider completion bash)' >> ~/.bashrc
+```
+
+</TabItem>
+</Tabs>
+
+Open a new shell for it to take effect.
+
+## zsh
+
+If completion isn't enabled in your zsh yet (it is with Oh My Zsh and most frameworks), enable it once:
+
+```bash
+echo "autoload -U compinit; compinit" >> ~/.zshrc
+```
+
+Load completion in the current shell:
+
+```bash
+source <(cloider completion zsh)
+```
+
+Install it for every new shell:
+
+<Tabs groupId="os" queryString>
+<TabItem value="macos" label="macOS" default>
+
+```bash
+cloider completion zsh > $(brew --prefix)/share/zsh/site-functions/_cloider
+```
+
+Without Homebrew, write it into any directory on your `fpath`:
+
+```bash
+mkdir -p ~/.zsh/completions
+cloider completion zsh > ~/.zsh/completions/_cloider
+echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+```
+
+Put the `fpath` line before `compinit` in your `~/.zshrc`.
+
+</TabItem>
+<TabItem value="linux" label="Linux">
+
+```bash
+cloider completion zsh > "${fpath[1]}/_cloider"
+```
+
+If the first `fpath` directory isn't writable by you, use a directory of your own as shown on the macOS tab.
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+In WSL, follow the Linux tab.
+
+</TabItem>
+</Tabs>
+
+Open a new shell for it to take effect. If completions don't show up, run `rm -f ~/.zcompdump; compinit` to rebuild zsh's completion cache.
+
+## fish
+
+Load completion in the current shell:
+
+```bash
+cloider completion fish | source
+```
+
+Install it for every new shell:
+
+```bash
+cloider completion fish > ~/.config/fish/completions/cloider.fish
+```
+
+## PowerShell
+
+Load completion in the current session:
+
+```powershell
+cloider completion powershell | Out-String | Invoke-Expression
+```
+
+Install it for every new session by adding that line to your PowerShell profile:
+
+```powershell
+if (!(Test-Path $PROFILE)) { New-Item -ItemType File -Force -Path $PROFILE | Out-Null }
+Add-Content $PROFILE 'cloider completion powershell | Out-String | Invoke-Expression'
+```
+
+Open a new PowerShell window for it to take effect. Press **Tab** to cycle through completions, or **Ctrl+Space** to see them all in a menu.
+
+## Completion without descriptions
+
+Every `cloider completion` command takes `--no-descriptions` to complete names only, without the description next to each one:
+
+```bash
+source <(cloider completion zsh --no-descriptions)
+```
+
+## Keep completion up to date
+
+The installed completion script asks the `cloider` binary for completions each time you press Tab, so new commands and flags from [updates](/cli/updating) complete without reinstalling the script.
+
+## Remove completion
+
+Delete the file you installed (for example `~/.config/fish/completions/cloider.fish` or `$(brew --prefix)/etc/bash_completion.d/cloider`), or remove the line you added to `~/.bashrc`, `~/.zshrc` or `$PROFILE`, then open a new shell.
+
+## Next steps
+
+- [Command reference](/cli/commands): every command you can now complete.
+- [Tooling commands](/cli/commands/tooling): the `completion` command's reference.
+- [Configuration](/cli/configuration): global flags and environment variables.
+
+<FAQ items={[
+  {q: 'How do I enable tab completion for the Cloider CLI?', a: 'Run cloider completion followed by your shell (bash, zsh, fish or powershell) and load the script it prints. For example source <(cloider completion zsh) for the current zsh session, or cloider completion fish > ~/.config/fish/completions/cloider.fish to install it for fish.'},
+  {q: 'Does completion include my cluster and database names?', a: 'No. Completion covers commands, subcommands and flags. Resource names aren\'t completed because that would call the API on every Tab press.'},
+  {q: 'Do I need to reinstall completion after updating the CLI?', a: 'No. The completion script asks the cloider binary for completions on each Tab press, so new commands and flags are picked up automatically.'},
+  {q: 'Why does bash completion not work on macOS?', a: 'Bash completion needs the bash-completion package. Install it with brew install bash-completion@2, load it from ~/.bash_profile as Homebrew explains, then install the cloider script into $(brew --prefix)/etc/bash_completion.d/.'}
+]} />

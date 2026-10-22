@@ -1,0 +1,365 @@
+---
+title: Kubernetes load balancers on Cloider
+sidebar_label: Load balancers
+sidebar_position: 7
+description: Expose a Kubernetes Service on a public IP with type LoadBalancer on Cloider, point DNS at it, and understand how load balancers are billed per hour of use.
+keywords: [kubernetes load balancer, service type loadbalancer, external ip, public ip kubernetes, tcp udp kubernetes, load balancer pricing]
+---
+
+A load balancer gives a Kubernetes Service its own public IP address. On Cloider you create one the standard Kubernetes way, with a Service of `type: LoadBalancer`: the cluster assigns it an external IP, traffic to that IP on the Service's ports reaches your pods, and the load balancer is billed for the time it exists. This page shows how to create one, point a domain at it, and keep track of what it costs.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **How to create one** | A Service with `spec.type: LoadBalancer` |
+| **What you get** | An external IP in the Service's `status.loadBalancer.ingress`, shown as `EXTERNAL-IP` by `kubectl get svc` |
+| **Protocols** | The Service's ports, TCP or UDP |
+| **TLS** | Passed through untouched. Your app terminates TLS itself |
+| **Billing** | Per load balancer per month, prorated to the second while the Service has an external IP. See [pricing](https://cloider.com/#pricing) |
+| **Where to see the cost** | **Usage** in the dashboard, **LoadBalancers Usage** table of each cluster |
+
+## Load balancer or domain target?
+
+Cloider has two ways to make a Service reachable from the internet. Pick by protocol:
+
+| | Domain [target](/kubernetes/expose-services) | `type: LoadBalancer` |
+| --- | --- | --- |
+| **Traffic** | HTTP and HTTPS | Any TCP or UDP port |
+| **Address** | Your domain or a free `*.cloider.app` subdomain | A public IP |
+| **HTTPS certificate** | Automatic | Your app's job |
+| **Several services on one address** | Yes, by path (`/`, `/api`, ...) | One IP per Service |
+| **Cost** | No load balancer charge | Billed per load balancer |
+| **Typical use** | Websites, APIs, dashboards | Databases you run yourself, MQTT, game servers, SMTP, gRPC without HTTP routing, custom TCP protocols |
+
+For a website or an HTTP API, a target is simpler and cheaper. Use a load balancer when you need a raw port.
+
+## Create a load balancer
+
+This example publishes an [MQTT broker](https://mosquitto.org/) (Eclipse Mosquitto) on TCP port 1883.
+
+```yaml title="mqtt.yaml"
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iot
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mosquitto-config
+  namespace: iot
+data:
+  mosquitto.conf: |
+    listener 1883
+    allow_anonymous true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mqtt
+  namespace: iot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mqtt
+  template:
+    metadata:
+      labels:
+        app: mqtt
+    spec:
+      containers:
+        - name: mosquitto
+          image: eclipse-mosquitto:2.0.18
+          ports:
+            - name: mqtt
+              containerPort: 1883
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+      volumes:
+        - name: config
+          configMap:
+            name: mosquitto-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mqtt
+  namespace: iot
+spec:
+  type: LoadBalancer
+  selector:
+    app: mqtt
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt
+      protocol: TCP
+```
+
+:::warning[Open to the internet]
+A LoadBalancer Service is reachable by anyone on the internet. The example allows anonymous access to keep it short; in production configure authentication in the application itself.
+:::
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Kubernetes** in the sidebar and click the cluster's name to open its terminal.
+2. Create `mqtt.yaml` with `cat > mqtt.yaml <<'EOF'`, paste the manifest, and end with `EOF`.
+3. Apply it and watch the Service until it has an external IP:
+
+```bash
+kubectl apply -f mqtt.yaml
+kubectl get service mqtt -n iot --watch
+```
+
+```text title="Output"
+NAME   TYPE           CLUSTER-IP     EXTERNAL-IP    PORT(S)          AGE
+mqtt   LoadBalancer   10.43.52.190   <pending>      1883:31883/TCP   2s
+mqtt   LoadBalancer   10.43.52.190   203.0.113.25   1883:31883/TCP   6s
+```
+
+Press Ctrl-C to stop watching.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+With `kubectl` and the cluster's kubeconfig:
+
+```bash
+kubectl apply -f mqtt.yaml
+kubectl get service mqtt -n iot
+```
+
+Or through the cluster's terminal, without a kubeconfig:
+
+```bash
+cloider cluster exec -i staging -- kubectl apply -f - < mqtt.yaml
+cloider cluster exec staging -- kubectl get service mqtt -n iot -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+```text title="Output"
+203.0.113.25
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+With the `kubernetes` provider configured from the cluster's `kube_config` (see [Deploy a workload](/kubernetes/deploy-a-workload)):
+
+```hcl title="main.tf"
+resource "kubernetes_service_v1" "mqtt" {
+  metadata {
+    name      = "mqtt"
+    namespace = "iot"
+  }
+
+  spec {
+    type     = "LoadBalancer"
+    selector = { app = "mqtt" }
+
+    port {
+      name        = "mqtt"
+      port        = 1883
+      target_port = "mqtt"
+      protocol    = "TCP"
+    }
+  }
+
+  # Waits until the load balancer has an IP
+  wait_for_load_balancer = true
+}
+
+output "mqtt_ip" {
+  value = kubernetes_service_v1.mqtt.status[0].load_balancer[0].ingress[0].ip
+}
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Apply the manifest through the cluster's exec endpoint, with the file base64 encoded as `stdin`:
+
+```bash
+curl -N -X POST https://cloider.com/api/clusters/x8f2kq/exec \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"command\": [\"kubectl\", \"apply\", \"-f\", \"-\"], \"stdin\": \"$(base64 < mqtt.yaml | tr -d '\n')\"}"
+```
+
+See [Web terminal and exec](/kubernetes/web-terminal-and-exec) for the response format.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Apply mqtt.yaml to the staging cluster and tell me the external IP of the mqtt service once it has one.
+```
+
+It calls `cluster_exec` to apply the file, then to read the IP:
+
+```json title="Tool call: cluster_exec"
+{"cluster": "staging", "command": "kubectl get service mqtt -n iot -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"}
+```
+
+</TabItem>
+</Tabs>
+
+## Test the connection
+
+From your computer, with an MQTT client such as `mosquitto_sub` and `mosquitto_pub`:
+
+```bash
+mosquitto_sub -h 203.0.113.25 -p 1883 -t test &
+mosquitto_pub -h 203.0.113.25 -p 1883 -t test -m "hello from cloider"
+```
+
+For any TCP service, `nc` tells you whether the port is open:
+
+```bash
+nc -vz 203.0.113.25 1883
+```
+
+## Point a domain at the load balancer
+
+Give the IP a name with an `A` record. If the domain's DNS is hosted on Cloider (see [Domains and DNS](/domains/overview)):
+
+```bash
+cloider dns create example.com --type A --name mqtt --value 203.0.113.25 --ttl 300
+```
+
+Clients then connect to `mqtt.example.com:1883`. See [DNS records](/domains/dns-records) for the dashboard and other tools.
+
+:::note[Keep the Service to keep the IP]
+The external IP belongs to the Service. If you delete the Service and create it again, it can get a different IP, and your `A` record must be updated. To change ports or selectors, edit the Service in place (`kubectl apply`) rather than deleting it.
+:::
+
+## Several ports on one load balancer
+
+One Service can expose several ports on the same IP, and it is still one load balancer:
+
+```yaml title="game-server-service.yaml"
+apiVersion: v1
+kind: Service
+metadata:
+  name: game
+  namespace: games
+spec:
+  type: LoadBalancer
+  selector:
+    app: game
+  ports:
+    - name: game-udp
+      port: 7777
+      targetPort: 7777
+      protocol: UDP
+    - name: query
+      port: 27015
+      targetPort: 27015
+      protocol: TCP
+```
+
+Every additional Service of type `LoadBalancer` is an additional load balancer with its own IP and its own charge.
+
+## How are load balancers billed?
+
+A load balancer is billed per load balancer per month, prorated to the second, for as long as its Service has an external IP. A month is counted as 30 days. The current price is on the [pricing page](https://cloider.com/#pricing), in [Pricing](/reference/pricing) and in the output of `cloider pricing`.
+
+- **The meter starts** when the Service gets its external IP, and **stops** when the Service is deleted or changed to another type.
+- **A Service that stays `<pending>`** has no IP and isn't billed.
+- **Load balancers are counted by name** (`<namespace>/<service>`). If a Service of the same name is recreated, its time keeps adding to the same entry, and the entry records how many times it was recreated.
+- **A load balancer is billed whatever the cluster's status**, so delete LoadBalancer Services you don't need. See [Pause and resume](/kubernetes/pause-and-resume).
+
+### See what each load balancer costs
+
+Open **Usage** in the dashboard sidebar. Each cluster has a **LoadBalancers Usage** table, with the price per load balancer per month in its title, and one row per load balancer:
+
+<Screenshot
+  src="/img/screenshots/kubernetes/usage-loadbalancers.webp"
+  url="/dashboard/usage"
+  alt="The Usage page showing the staging cluster with its average CPU, memory and persistent volume use, its cost to date and forecast, and a LoadBalancers Usage table listing iot/mqtt with its IP, usage time and cost"
+  caption="A cluster on the Usage page, with its load balancers listed one by one."
+/>
+
+| Column | Meaning |
+| --- | --- |
+| **Name** | `<namespace>/<service>` |
+| **IP** | The external IP |
+| **Created At** | When the Service was created |
+| **Status** | Whether it is still active, or was removed during the month |
+| **Usage Time** | How long it has been active this month |
+| **Cost** | What it cost this month so far |
+
+The same data is in `GET /api/usage` (and `cloider usage -o json`), under each cluster's `loadbalancers` (this month) and `loadbalancers_prev` (last month):
+
+```json title="Response (excerpt)"
+{
+  "clusters": [
+    {
+      "cluster_name": "staging",
+      "loadbalancers": [
+        {
+          "name": "iot/mqtt",
+          "ip": "203.0.113.25",
+          "created_at": "2026-10-12T08:30:11Z",
+          "is_active": true,
+          "total_time_seconds": 604800,
+          "recreations": 0
+        }
+      ]
+    }
+  ]
+}
+```
+
+See [Usage](/account/usage) for the rest of the usage data.
+
+## List services and stop a load balancer
+
+List every LoadBalancer Service in a cluster with its IP:
+
+```bash
+kubectl get services -A | grep -E "NAMESPACE|LoadBalancer"
+```
+
+Stop paying for one by deleting the Service, or by switching it to `ClusterIP` and publishing it with a [target](/kubernetes/expose-services) instead:
+
+```bash
+kubectl delete service mqtt -n iot
+# or
+kubectl patch service mqtt -n iot -p '{"spec": {"type": "ClusterIP"}}'
+```
+
+## Troubleshooting
+
+**`EXTERNAL-IP` stays `<pending>`**: run `kubectl describe service <name> -n <namespace>` and read the events. If nothing explains it after a few minutes, open a [support request](/account/support) with the cluster id and the Service's name.
+
+**Connection refused or timeout on the IP**: check that the Service's `selector` matches the pods' labels (`kubectl get endpoints <name> -n <namespace>` must list pod IPs), that `targetPort` is the port the container listens on, and that the app listens on `0.0.0.0` and not only on `127.0.0.1`.
+
+**Works for TCP, not for UDP**: check that the Service port has `protocol: UDP` and that the container port matches.
+
+**The IP changed**: the Service was deleted and recreated. Update your DNS record and edit Services in place from now on.
+
+More cases are in [Kubernetes troubleshooting](/kubernetes/troubleshooting).
+
+## Next steps
+
+- [Expose HTTP services on a domain](/kubernetes/expose-services), without a load balancer charge.
+- [DNS records](/domains/dns-records) to name your load balancer's IP.
+- [Pricing](/reference/pricing).
+
+<FAQ items={[
+  {q: 'How do I get a public IP for a Kubernetes service on Cloider?', a: 'Set the Service type to LoadBalancer. The cluster assigns it an external IP, which kubectl get service shows as EXTERNAL-IP, and traffic to that IP on the Service ports reaches your pods.'},
+  {q: 'How much does a load balancer cost on Cloider?', a: 'A load balancer is billed per load balancer per month, prorated to the second for as long as its Service has an external IP. The current price is on the Cloider pricing page and in the output of cloider pricing.'},
+  {q: 'Do I need a load balancer for a website on Cloider Kubernetes?', a: 'No. For HTTP and HTTPS, route a domain to a ClusterIP Service with a target. Targets include an automatic HTTPS certificate and have no load balancer charge.'},
+  {q: 'Does a load balancer cost money while the cluster is paused?', a: 'Load balancers are metered by whether their Service has an external IP, whatever the cluster status. Delete LoadBalancer Services you do not need before pausing to be sure they are not billed.'},
+  {q: 'Can one load balancer expose several ports?', a: 'Yes. A single Service of type LoadBalancer can list several ports, TCP or UDP, on the same IP, and it counts as one load balancer.'},
+]} />

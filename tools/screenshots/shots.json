@@ -1,0 +1,400 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 2
+  },
+  "note": "Canonical dashboard screenshots. file is relative to static/img/screenshots. route is the dashboard path; :app, :cluster, :database, :bucket, :project and :domain are the demo resources. state says what must be on screen, actions what to do before capturing.",
+  "shots": [
+    {
+      "file": "get-started/sign-in.webp",
+      "route": "/",
+      "state": "cloider.com home page with the Login Or Register dialog open (Google and GitHub buttons)",
+      "actions": "click Login / Register"
+    },
+    {
+      "file": "get-started/dashboard.webp",
+      "route": "/dashboard/apps",
+      "state": "dashboard landing page: sidebar with every product, the Apps list with a few apps",
+      "actions": ""
+    },
+    {
+      "file": "get-started/account-menu.webp",
+      "route": "/dashboard/apps",
+      "state": "navbar account menu open, showing the current account and the account switcher",
+      "actions": "open the account / user menu in the top navbar"
+    },
+    {
+      "file": "get-started/search.webp",
+      "route": "/dashboard/apps",
+      "state": "dashboard search open with results across resources",
+      "actions": "open the navbar search and type a query"
+    },
+    {
+      "file": "get-started/cli-login.webp",
+      "route": "/cli/login",
+      "state": "the page the CLI opens on cloider login: choose the account and Read or Read & Write access",
+      "actions": ""
+    },
+    {
+      "file": "apps/list.webp",
+      "route": "/dashboard/apps",
+      "state": "Apps list with blog, api and web in different statuses",
+      "actions": ""
+    },
+    {
+      "file": "apps/new-app.webp",
+      "route": "/dashboard/apps/new-app",
+      "state": "new app page, choosing where the code comes from (git provider or upload)",
+      "actions": ""
+    },
+    {
+      "file": "apps/new-app-git.webp",
+      "route": "/dashboard/apps/new-app",
+      "state": "git import: a connected GitHub installation with a repository and branch picked",
+      "actions": "choose GitHub, pick a repository"
+    },
+    {
+      "file": "apps/new-app-upload.webp",
+      "route": "/dashboard/apps/new-app",
+      "state": "source upload step with a folder or zip dropped",
+      "actions": "choose upload"
+    },
+    {
+      "file": "apps/new-app-configure.webp",
+      "route": "/dashboard/apps/new-app",
+      "state": "detected language, framework, port, name and subdomain before creating",
+      "actions": "after picking a source"
+    },
+    {
+      "file": "apps/detail-overview.webp",
+      "route": "/dashboard/apps/:app",
+      "state": "app Overview tab of a running app with its URL",
+      "actions": "Overview tab"
+    },
+    {
+      "file": "apps/detail-insights.webp",
+      "route": "/dashboard/apps/:app",
+      "state": "Insights tab with CPU and memory charts",
+      "actions": "Insights tab"
+    },
+    {
+      "file": "apps/detail-builds.webp",
+      "route": "/dashboard/apps/:app",
+      "state": "Builds tab with build history",
+      "actions": "Builds tab"
+    },
+    {
+      "file": "apps/build-logs.webp",
+      "route": "/dashboard/apps/:app",
+      "state": "a build's logs open",
+      "actions": "Builds tab, open the latest build's logs"
+    },
+    {
+      "file": "apps/detail-environment.webp",
+      "route": "/dashboard/apps/:app",
+      "state": "Environment tab with a few variables, one secret",
+      "actions": "Environment tab"
+    },
+    {
+      "file": "apps/detail-settings.webp",
+      "route": "/dashboard/apps/:app",
+      "state": "Settings tab",
+      "actions": "Settings tab"
+    },
+    {
+      "file": "apps/detail-logs.webp",
+      "route": "/dashboard/apps/:app",
+      "state": "Logs tab streaming request logs",
+      "actions": "Logs tab"
+    },
+    {
+      "file": "apps/detail-terminal.webp",
+      "route": "/dashboard/apps/:app",
+      "state": "Terminal tab with a shell prompt",
+      "actions": "Terminal tab"
+    },
+    {
+      "file": "kubernetes/list.webp",
+      "route": "/dashboard/clusters",
+      "state": "Kubernetes list with staging (running) and production (running), one paused cluster",
+      "actions": ""
+    },
+    {
+      "file": "kubernetes/create.webp",
+      "route": "/dashboard/clusters/new-cluster",
+      "state": "new cluster form filled with the name staging",
+      "actions": "type a name"
+    },
+    {
+      "file": "kubernetes/terminal.webp",
+      "route": "/dashboard/clusters/:cluster/terminal",
+      "state": "browser terminal with kubectl get pods output",
+      "actions": ""
+    },
+    {
+      "file": "kubernetes/pause-dialog.webp",
+      "route": "/dashboard/clusters",
+      "state": "pause confirmation dialog",
+      "actions": "open the actions menu of the staging row, then click Pause"
+    },
+    {
+      "file": "kubernetes/delete-dialog.webp",
+      "route": "/dashboard/clusters",
+      "state": "delete confirmation dialog asking to type the name",
+      "actions": "open the actions menu of the staging row, then click Delete"
+    },
+    {
+      "file": "databases/list.webp",
+      "route": "/dashboard/databases",
+      "state": "Databases list with orders-db (PostgreSQL), shop-db (MySQL), catalog-db (MongoDB), cache (Redis)",
+      "actions": ""
+    },
+    {
+      "file": "databases/create.webp",
+      "route": "/dashboard/databases/new-database",
+      "state": "new database form: engine dropdown with PostgreSQL picked, version, plan table, name",
+      "actions": "pick PostgreSQL"
+    },
+    {
+      "file": "databases/detail-overview.webp",
+      "route": "/dashboard/databases/:database",
+      "state": "Overview tab: connection details with the Public and Private tabs",
+      "actions": "Overview tab"
+    },
+    {
+      "file": "databases/detail-insights.webp",
+      "route": "/dashboard/databases/:database",
+      "state": "Insights tab with charts",
+      "actions": "Insights tab"
+    },
+    {
+      "file": "databases/detail-backups.webp",
+      "route": "/dashboard/databases/:database",
+      "state": "Backups tab listing daily backups with Restore buttons",
+      "actions": "Backups tab"
+    },
+    {
+      "file": "databases/detail-resize.webp",
+      "route": "/dashboard/databases/:database",
+      "state": "Resize tab with plans",
+      "actions": "Resize tab"
+    },
+    {
+      "file": "databases/detail-settings.webp",
+      "route": "/dashboard/databases/:database",
+      "state": "Settings tab: SSL and trusted sources",
+      "actions": "Settings tab"
+    },
+    {
+      "file": "databases/detail-terminal.webp",
+      "route": "/dashboard/databases/:database",
+      "state": "Terminal tab with a psql prompt",
+      "actions": "Terminal tab"
+    },
+    {
+      "file": "object-storage/list.webp",
+      "route": "/dashboard/buckets",
+      "state": "Buckets list with acme-assets and acme-backups",
+      "actions": ""
+    },
+    {
+      "file": "object-storage/create.webp",
+      "route": "/dashboard/buckets/new-bucket",
+      "state": "new bucket form with region and options",
+      "actions": ""
+    },
+    {
+      "file": "object-storage/detail-overview.webp",
+      "route": "/dashboard/buckets/:bucket",
+      "state": "Overview tab with endpoint, region and code snippets",
+      "actions": "Overview tab"
+    },
+    {
+      "file": "object-storage/detail-files.webp",
+      "route": "/dashboard/buckets/:bucket",
+      "state": "Files tab: folders and files",
+      "actions": "Files tab"
+    },
+    {
+      "file": "object-storage/file-versions.webp",
+      "route": "/dashboard/buckets/:bucket",
+      "state": "versions of one object",
+      "actions": "Files tab, open a file's versions"
+    },
+    {
+      "file": "object-storage/detail-usage.webp",
+      "route": "/dashboard/buckets/:bucket",
+      "state": "Usage tab",
+      "actions": "Usage tab"
+    },
+    {
+      "file": "object-storage/detail-policy.webp",
+      "route": "/dashboard/buckets/:bucket",
+      "state": "Policy tab",
+      "actions": "Policy tab"
+    },
+    {
+      "file": "object-storage/detail-lifecycle.webp",
+      "route": "/dashboard/buckets/:bucket",
+      "state": "Lifecycle tab with a rule",
+      "actions": "Lifecycle tab"
+    },
+    {
+      "file": "object-storage/detail-settings.webp",
+      "route": "/dashboard/buckets/:bucket",
+      "state": "Settings tab: visibility, versioning, protection, delete",
+      "actions": "Settings tab"
+    },
+    {
+      "file": "object-storage/access-keys.webp",
+      "route": "/dashboard/access-control",
+      "state": "Access Control, S3 credentials tab listing bucket keys",
+      "actions": "S3 credentials tab"
+    },
+    {
+      "file": "container-registry/list.webp",
+      "route": "/dashboard/registry",
+      "state": "Registry list with the acme project",
+      "actions": ""
+    },
+    {
+      "file": "container-registry/create.webp",
+      "route": "/dashboard/registry/new-project",
+      "state": "new project form",
+      "actions": ""
+    },
+    {
+      "file": "container-registry/detail-overview.webp",
+      "route": "/dashboard/registry/:project",
+      "state": "Overview tab with the Push / Pull / Kubernetes steps",
+      "actions": "Overview tab"
+    },
+    {
+      "file": "container-registry/detail-repositories.webp",
+      "route": "/dashboard/registry/:project",
+      "state": "Repositories tab with images and tags",
+      "actions": "Repositories tab"
+    },
+    {
+      "file": "container-registry/detail-policy.webp",
+      "route": "/dashboard/registry/:project",
+      "state": "Policy tab: retention rules, schedule, immutability",
+      "actions": "Policy tab"
+    },
+    {
+      "file": "container-registry/detail-usage.webp",
+      "route": "/dashboard/registry/:project",
+      "state": "Usage tab",
+      "actions": "Usage tab"
+    },
+    {
+      "file": "container-registry/detail-settings.webp",
+      "route": "/dashboard/registry/:project",
+      "state": "Settings tab",
+      "actions": "Settings tab"
+    },
+    {
+      "file": "container-registry/tokens.webp",
+      "route": "/dashboard/access-control",
+      "state": "Access Control, registry tokens tab",
+      "actions": "Registry tokens tab"
+    },
+    {
+      "file": "domains/list.webp",
+      "route": "/dashboard/domains",
+      "state": "Domains list with example.com and blog.cloider.app",
+      "actions": ""
+    },
+    {
+      "file": "domains/subdomain.webp",
+      "route": "/dashboard/domains/subdomain",
+      "state": "claim a free subdomain form",
+      "actions": ""
+    },
+    {
+      "file": "domains/custom-domain.webp",
+      "route": "/dashboard/domains/custom-domain",
+      "state": "add a custom domain form",
+      "actions": ""
+    },
+    {
+      "file": "domains/detail.webp",
+      "route": "/dashboard/domains/:domain",
+      "state": "domain page with nameservers and DNS records",
+      "actions": ""
+    },
+    {
+      "file": "domains/dns-record-form.webp",
+      "route": "/dashboard/domains/:domain",
+      "state": "add DNS record dialog",
+      "actions": "click add record"
+    },
+    {
+      "file": "domains/targets.webp",
+      "route": "/dashboard/domains/:domain",
+      "state": "targets routing paths to an app and a cluster service",
+      "actions": ""
+    },
+    {
+      "file": "account/members.webp",
+      "route": "/dashboard/access-control",
+      "state": "Members tab with three members and roles",
+      "actions": "Members tab"
+    },
+    {
+      "file": "account/invite-member.webp",
+      "route": "/dashboard/access-control",
+      "state": "invite member dialog with role picker",
+      "actions": "click invite / add member"
+    },
+    {
+      "file": "account/api-tokens.webp",
+      "route": "/dashboard/access-control",
+      "state": "API tokens tab listing tokens",
+      "actions": "API tokens tab"
+    },
+    {
+      "file": "account/api-token-create.webp",
+      "route": "/dashboard/access-control",
+      "state": "create API token dialog with access level",
+      "actions": "API tokens tab, click create"
+    },
+    {
+      "file": "account/usage.webp",
+      "route": "/dashboard/usage",
+      "state": "Usage page with summary and per resource usage",
+      "actions": ""
+    },
+    {
+      "file": "account/billing.webp",
+      "route": "/dashboard/billing",
+      "state": "Billing page with invoices",
+      "actions": ""
+    },
+    {
+      "file": "account/notifications.webp",
+      "route": "/dashboard/notifications",
+      "state": "Notifications page",
+      "actions": ""
+    },
+    {
+      "file": "account/support.webp",
+      "route": "/dashboard/support",
+      "state": "Support requests list",
+      "actions": ""
+    },
+    {
+      "file": "account/support-new.webp",
+      "route": "/dashboard/support/new-request",
+      "state": "new support request form",
+      "actions": ""
+    },
+    {
+      "file": "account/support-request.webp",
+      "route": "/dashboard/support/request/:ticket",
+      "state": "a support conversation with replies",
+      "actions": ""
+    }
+  ]
+}

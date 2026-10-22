@@ -1,0 +1,429 @@
+---
+title: Push and pull images with docker, podman and buildx
+sidebar_label: Push and pull images
+sidebar_position: 3
+description: Log in to registry.cloider.com, then push and pull container images with docker, podman, nerdctl and buildx multi-platform builds, with examples.
+keywords: [docker push, docker pull, docker login registry.cloider.com, cloider registry login, podman push, buildx multi-platform, nerdctl, skopeo copy]
+---
+
+To push an image to the [Cloider Container Registry](/container-registry/overview), you log in to `registry.cloider.com`, give the image a name that starts with your project, and push it. Pulling works the same way in reverse. This page covers logging in with `cloider registry login` or a token, and pushing and pulling with docker, buildx, podman, nerdctl and other OCI tools.
+
+## Before you begin
+
+- A project in the **Ready** status, for example `acme`. See [Create a project](/container-registry/create-a-project).
+- A container client: [Docker](https://docs.docker.com/get-docker/) (Docker Desktop or Docker Engine), [Podman](https://podman.io/docs/installation) or [nerdctl](https://github.com/containerd/nerdctl).
+- One of:
+  - the [Cloider CLI](/cli/install), logged in with an API token that can write, for `cloider registry login`, or
+  - a [registry token](/container-registry/tokens) and its secret.
+
+## How logging in works
+
+The registry asks for a username and a password, like any private registry:
+
+| Field | Value |
+| --- | --- |
+| Registry host | `registry.cloider.com` |
+| Username | Your account's **registry username**, the same for every token. The project's **Overview** tab shows it in the **Quick Start**, and it is shown when you create a token |
+| Password | The **secret** of a [registry token](/container-registry/tokens), shown once when the token is created |
+
+Your container client stores the login per host, in `~/.docker/config.json` for docker (or in the credential helper it is configured with). Because every project is on the same host, a machine is logged in with one token at a time, and that token decides which projects the machine can reach and whether it can push. Logging in again with another token replaces the first login.
+
+## Log in
+
+### Option 1: `cloider registry login`
+
+`cloider registry login` creates a registry token for your machine and logs docker in with it, in one step. The token reaches every project of the account, including projects you create later.
+
+```bash
+cloider registry login
+```
+
+```text title="Output"
+Login Succeeded
+✓ Logged docker in to registry.cloider.com as acme, until 2026-11-19 09:30
+```
+
+What it does:
+
+- Creates a token labelled `cloider cli (<hostname>)`, for example `cloider cli (macbook)`, with **Pull and push** access to **All projects**.
+- Passes the secret to `docker login` on stdin, so it never appears in your shell history or process list.
+- Deletes the earlier `cloider cli (<hostname>)` token once the new login works, so logging in again replaces the token instead of piling them up. If `docker login` fails, the new token is deleted and the old login keeps working.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--expires-days <days>` | `30` | Days the login lasts, 1 to 3650, or `0` for never |
+| `--read-only` | off | The token can only pull, never push or delete |
+
+```bash
+# A pull-only login that lasts a week
+cloider registry login --read-only --expires-days 7
+```
+
+:::tip[Using podman or no docker?]
+If `docker` isn't on your `PATH`, the command still creates the token and prints the `docker login` command with the secret, for you to run by hand or with `podman login`. The secret isn't shown again, so copy it then.
+:::
+
+### Option 2: `docker login` with a registry token
+
+Use a token you created in the dashboard, the CLI or Terraform (see [Registry tokens](/container-registry/tokens)). Interactively, docker asks for the password; paste the token's secret:
+
+```bash
+docker login registry.cloider.com -u acme
+```
+
+```text title="Output"
+Password:
+Login Succeeded
+```
+
+In scripts and CI, pass the secret on stdin so it isn't stored in your shell history:
+
+```bash
+echo "$CLOIDER_REGISTRY_SECRET" | docker login registry.cloider.com -u acme --password-stdin
+```
+
+:::note[Usernames that contain $]
+Some tokens created before registry usernames existed log in with a username that contains `$`. Copy it from the token list and always put it in single quotes, `-u '<username>'`, or your shell treats `$...` as a variable. The dashboard's snippets are already quoted.
+:::
+
+### Log out
+
+```bash
+docker logout registry.cloider.com
+```
+
+Logging out removes the credentials from your machine. The token still exists until you delete it; see [Delete a token](/container-registry/tokens#delete-a-token).
+
+## Push an image
+
+An image is pushed to the repository its name says. The repository is created by the first push, so there is nothing to create first.
+
+1. Build the image with the full name, next to your `Dockerfile`:
+
+   ```bash
+   docker build -t registry.cloider.com/acme/api:1.0 .
+   ```
+
+   Or give an image you already have a second name:
+
+   ```bash
+   docker tag api:latest registry.cloider.com/acme/api:1.0
+   ```
+
+2. Push it:
+
+   ```bash
+   docker push registry.cloider.com/acme/api:1.0
+   ```
+
+   ```text title="Output"
+   The push refers to repository [registry.cloider.com/acme/api]
+   5f70bf18a086: Pushed
+   a3d4c2e1b0f9: Pushed
+   1.0: digest: sha256:4c7e3d1b9a8f6e5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2918f7e6d5c size: 1782
+   ```
+
+The `digest` line is the image's permanent address. Push more tags of the same image to give it several names; only the tag is sent again, not the layers:
+
+```bash
+docker tag registry.cloider.com/acme/api:1.0 registry.cloider.com/acme/api:latest
+docker push registry.cloider.com/acme/api:latest
+```
+
+:::warning[Building on an Apple silicon Mac]
+`docker build` on an Apple silicon (M1 and later) Mac builds `linux/arm64` images. Most servers, and Cloider Kubernetes nodes unless you know otherwise, run `linux/amd64`. Add `--platform linux/amd64`, or build a multi-platform image with buildx (below), or the pod fails with `exec format error`.
+:::
+
+### Naming repositories
+
+Repository names are lowercase and can be nested with `/` to group images:
+
+```bash
+docker push registry.cloider.com/acme/api:1.0
+docker push registry.cloider.com/acme/web:2.3.1
+docker push registry.cloider.com/acme/team-billing/worker:0.4.0
+```
+
+A repository name uses lowercase letters, digits and the separators `.`, `_`, `__` and `-`, with `/` between path components, and is at most 255 characters. Tags use letters, digits, `_`, `.` and `-`, up to 128 characters, and don't start with `.` or `-`.
+
+### Tagging strategies
+
+| Strategy | Example tags | Use it for |
+| --- | --- | --- |
+| Semantic versions | `1.4.0`, `1.4`, `1` | Releases. Pair with an [immutability rule](/container-registry/immutable-tags) on `1.*` so a release never changes |
+| Git commit | `main-4f2a9c1`, `sha-4f2a9c1` | CI builds. Every build is traceable to a commit and never overwritten |
+| Moving tags | `latest`, `staging`, `production` | Pointers you move to a new image on each deploy |
+
+Deploy with a version or commit tag rather than `latest`: a moving tag can change under a running workload, and Kubernetes only pulls it again when a pod restarts.
+
+## Pull an image
+
+Log in first (for a private project), then pull by tag:
+
+```bash
+docker pull registry.cloider.com/acme/api:1.0
+```
+
+Or pull by digest, which always returns exactly the same image even if tags move:
+
+```bash
+docker pull registry.cloider.com/acme/api@sha256:4c7e3d1b9a8f6e5d4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2918f7e6d5c
+```
+
+The **Repositories** tab of a project has a **Copy pull command** button for every image and tag.
+
+### Pull from a public project
+
+If the project has **Public pulls** turned on, anyone can pull without logging in:
+
+```bash
+docker pull registry.cloider.com/acme-oss/cli:2.0
+```
+
+Pushing to a public project still needs a token with push access.
+
+### Use images in Docker Compose
+
+Reference the full name in `image:`, and log in on the machine first:
+
+```yaml title="compose.yaml"
+services:
+  api:
+    image: registry.cloider.com/acme/api:1.0
+    ports:
+      - "8080:8080"
+  web:
+    image: registry.cloider.com/acme/web:2.3.1
+```
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+## Build multi-platform images with buildx
+
+A multi-platform image is one name, such as `api:1.0`, that holds an image per platform. Each machine pulls the variant for its own CPU. Build and push it with `docker buildx`:
+
+1. Create a builder that can build several platforms (once per machine):
+
+   ```bash
+   docker buildx create --name multiarch --use
+   ```
+
+2. Build for amd64 and arm64 and push in one step. A multi-platform build must be pushed directly with `--push`, it can't be loaded into the local image store:
+
+   ```bash
+   docker buildx build \
+     --platform linux/amd64,linux/arm64 \
+     -t registry.cloider.com/acme/api:1.0 \
+     --push .
+   ```
+
+3. Check what was pushed:
+
+   ```bash
+   docker buildx imagetools inspect registry.cloider.com/acme/api:1.0
+   ```
+
+The registry stores this as an **index** that points to one image per platform. The **Repositories** tab and `cloider registry images` list it as one entry with all its platforms:
+
+```bash
+cloider registry images acme api
+```
+
+```text title="Output"
+DIGEST        TAGS         PLATFORMS                   SIZE      PUSHED            PULLED
+4c7e3d1b9a8f  1.0, latest  linux/amd64, linux/arm64    98.4 MiB  2026-10-20 09:41  never
+```
+
+:::info[Attestation manifests]
+Recent versions of buildx add provenance attestations to the index by default, as extra manifests with the platform `unknown/unknown`. They aren't images you can run, so the dashboard and the CLI leave them out of the platform list. They take a little storage. To build without them, add `--provenance=false` (and `--sbom=false` if you turned SBOMs on).
+:::
+
+### Cache builds in the registry
+
+buildx can store its build cache in the registry, so CI builds reuse layers from earlier builds:
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  --cache-from type=registry,ref=registry.cloider.com/acme/api:buildcache \
+  --cache-to type=registry,ref=registry.cloider.com/acme/api:buildcache,mode=max \
+  -t registry.cloider.com/acme/api:1.0 \
+  --push .
+```
+
+The cache is stored as an image tagged `buildcache` and counts toward the project's storage. If the project has **Immutable tags** turned on, the second build can't push over the cache tag; use an [immutability rule](/container-registry/immutable-tags) that leaves `buildcache` out instead.
+
+## Push and pull with other clients
+
+<Tabs groupId="container-client" queryString>
+<TabItem value="podman" label="Podman" default>
+
+Podman uses the same commands as docker:
+
+```bash
+podman login registry.cloider.com -u acme
+podman build -t registry.cloider.com/acme/api:1.0 .
+podman push registry.cloider.com/acme/api:1.0
+podman pull registry.cloider.com/acme/api:1.0
+```
+
+In scripts:
+
+```bash
+echo "$CLOIDER_REGISTRY_SECRET" | podman login registry.cloider.com -u acme --password-stdin
+```
+
+Multi-platform images with a manifest list:
+
+```bash
+podman build --platform linux/amd64,linux/arm64 --manifest registry.cloider.com/acme/api:1.0 .
+podman manifest push --all registry.cloider.com/acme/api:1.0
+```
+
+</TabItem>
+<TabItem value="nerdctl" label="nerdctl">
+
+nerdctl is the docker compatible client for containerd:
+
+```bash
+nerdctl login registry.cloider.com -u acme
+nerdctl build -t registry.cloider.com/acme/api:1.0 .
+nerdctl push registry.cloider.com/acme/api:1.0
+nerdctl pull registry.cloider.com/acme/api:1.0
+```
+
+Multi-platform:
+
+```bash
+nerdctl build --platform linux/amd64,linux/arm64 -t registry.cloider.com/acme/api:1.0 .
+nerdctl push --all-platforms registry.cloider.com/acme/api:1.0
+```
+
+</TabItem>
+<TabItem value="skopeo" label="skopeo">
+
+skopeo copies images between registries without a local daemon:
+
+```bash
+skopeo login registry.cloider.com -u acme
+skopeo inspect docker://registry.cloider.com/acme/api:1.0
+skopeo copy --all \
+  docker://docker.io/library/nginx:1.27 \
+  docker://registry.cloider.com/acme/nginx:1.27
+```
+
+`--all` copies every platform of a multi-platform image.
+
+</TabItem>
+<TabItem value="crane" label="crane">
+
+crane, from go-containerregistry, is handy in CI:
+
+```bash
+echo "$CLOIDER_REGISTRY_SECRET" | crane auth login registry.cloider.com -u acme --password-stdin
+crane ls registry.cloider.com/acme/api
+crane digest registry.cloider.com/acme/api:1.0
+crane copy docker.io/library/redis:7 registry.cloider.com/acme/redis:7
+```
+
+</TabItem>
+<TabItem value="helm" label="Helm (OCI charts)">
+
+Helm 3.8 and later push charts to OCI registries:
+
+```bash
+echo "$CLOIDER_REGISTRY_SECRET" | helm registry login registry.cloider.com -u acme --password-stdin
+helm package ./charts/api
+helm push api-0.1.0.tgz oci://registry.cloider.com/acme/charts
+helm install api oci://registry.cloider.com/acme/charts/api --version 0.1.0
+```
+
+The chart is stored in the `charts/api` repository, tagged with its version.
+
+</TabItem>
+</Tabs>
+
+## Copy an image to another project
+
+To copy an image between projects, for example to promote a build from `acme-staging` to `acme-releases`, log in with a token that can pull from the source and push to the target (a token for **All projects**, or one that names both). Then copy it without pulling it locally:
+
+```bash
+# Every platform of the image, with docker buildx
+docker buildx imagetools create \
+  -t registry.cloider.com/acme-releases/api:1.4.0 \
+  registry.cloider.com/acme-staging/api:main-4f2a9c1
+```
+
+Or with skopeo:
+
+```bash
+skopeo copy --all \
+  docker://registry.cloider.com/acme-staging/api:main-4f2a9c1 \
+  docker://registry.cloider.com/acme-releases/api:1.4.0
+```
+
+The same commands move images to a new project when you want a different project name.
+
+## Migrate images from another registry
+
+To move images from Docker Hub, GitHub Container Registry, GitLab or another registry, log in to both registries and copy each image with skopeo or crane. This keeps every platform and the digests:
+
+```bash
+skopeo login ghcr.io -u my-github-user
+skopeo login registry.cloider.com -u acme
+
+for tag in 1.2.0 1.3.0 1.4.0; do
+  skopeo copy --all \
+    docker://ghcr.io/acme/api:$tag \
+    docker://registry.cloider.com/acme/api:$tag
+done
+```
+
+Then change the image names in your manifests, Compose files and CI pipelines to `registry.cloider.com/acme/...`.
+
+## Storage limit and refused pushes
+
+Every project has a storage limit (5 GB by default, up to 20 GB). A push that would take the project past it is refused by the registry, and `docker push` fails with an error about the quota. To make room, delete images you no longer need ([Repositories and tags](/container-registry/repositories-and-tags)), set up a [retention policy](/container-registry/retention-policies), or raise the limit in the project's **Settings** tab.
+
+## Verify
+
+After a push, check that the image is there:
+
+- **Dashboard**: open the project, go to the **Repositories** tab, and click the repository. Each image shows its **Tags**, **Digest**, **Platforms**, **Size**, **Pushed** and **Last pulled** time.
+- **CLI**:
+
+  ```bash
+  cloider registry repos acme
+  ```
+
+  ```text title="Output"
+  NAME  IMAGES  PULLS  UPDATED
+  api   3       12     2026-10-20 09:41
+  web   1       4      2026-10-19 17:03
+  ```
+
+- **docker**: `docker manifest inspect registry.cloider.com/acme/api:1.0` prints the manifest without downloading the image.
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+| --- | --- |
+| `unauthorized: unauthorized to access repository` or `authentication required` | You aren't logged in, the token expired or was deleted, or it doesn't cover this project. Run `cloider registry login` or log in with a token that covers the project |
+| `denied: requested access to the resource is denied` on push | The token is **Pull only**, or it doesn't cover the project. Use a **Pull and push** token |
+| `manifest unknown` or `not found` on pull | The tag doesn't exist in that repository. Check the name with `cloider registry images acme api`. Names are case sensitive and lowercase |
+| Push fails with a quota error | The project is at its storage limit. Delete images or raise the limit |
+| Push of a tag fails as immutable | An immutability rule or the **Immutable tags** setting protects the tag. Push a new tag. See [Immutable tags](/container-registry/immutable-tags) |
+| `exec format error` when the container starts | The image was built for another CPU, often arm64 on an Apple silicon Mac. Rebuild with `--platform linux/amd64` or as a multi-platform image |
+| `Error saving credentials` | Docker's credential helper failed. Check `credsStore` in `~/.docker/config.json` |
+
+More on [Troubleshooting](/container-registry/troubleshooting).
+
+## Next steps
+
+- [Create tokens for CI and clusters](/container-registry/tokens).
+- [Run your images on a Kubernetes cluster](/container-registry/use-with-kubernetes).
+- [Build and push from GitHub Actions or GitLab CI](/container-registry/ci-cd).
+- [Clean up old images with a retention policy](/container-registry/retention-policies).

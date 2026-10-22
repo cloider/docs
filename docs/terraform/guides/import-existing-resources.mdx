@@ -1,0 +1,266 @@
+---
+title: Import existing Cloider resources into Terraform
+sidebar_label: Import existing resources
+sidebar_position: 1
+description: Bring Cloider clusters, databases, buckets, registry projects, domains, DNS records and targets created in the dashboard or CLI under Terraform with import blocks or terraform import.
+keywords: [terraform import cloider, import block, generate-config-out, import existing resources terraform, adopt resources terraform, opentofu import, cloider terraform migration]
+---
+
+Importing tells Terraform that a resource which already exists in your Cloider account (created in the dashboard, with the CLI, the API or an AI agent) is now managed by your configuration. Nothing is created or deleted: Terraform reads the resource from the API, records it in its state, and from then on plans changes against it. This guide shows how to find each resource's import ID, import with `import` blocks or the `terraform import` command, let Terraform write the configuration for you, and import many resources at once.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Ways to import** | `import` blocks (Terraform 1.5 or later, OpenTofu 1.6 or later), or `terraform import` (any version) |
+| **Generate configuration** | `terraform plan -generate-config-out=generated.tf` with `import` blocks |
+| **Import many** | `import` blocks with `for_each` (Terraform 1.7 or later, OpenTofu 1.7 or later) |
+| **What can be imported** | Every resource the provider has |
+| **What can't** | The registry project Cloider creates for your apps, and secrets Cloider shows only once (see below) |
+
+## Before you begin
+
+- The provider configured with a token for the account the resources are in, see [Provider configuration](/terraform/provider-configuration). A **Read** token is enough to plan an import, applying it needs **Read & Write**.
+- The [`cloider` CLI](/cli/install), to list the ids. You can also find them in the API's responses (`hashed_id`).
+- A Terraform state you want the resources in, ideally a [remote backend](/terraform/guides/state-backend).
+
+## Step 1: Find the import IDs
+
+Most resources are imported by their id. The CLI's `-o wide` output adds an **ID** column:
+
+| Resource | Import ID | Where to find it | Example |
+| --- | --- | --- | --- |
+| [`cloider_cluster`](/terraform/resources/cluster) | The cluster's id | `cloider cluster list -o wide` | `x8f2kq` |
+| [`cloider_database`](/terraform/resources/database) | The database's id | `cloider db list -o wide` | `p0q9zm` |
+| [`cloider_bucket`](/terraform/resources/bucket) | The bucket's id | `cloider bucket list -o wide` | `b7r2xw` |
+| [`cloider_bucket_key`](/terraform/resources/bucket-key) | The key's id | `cloider bucket key list -o wide` | |
+| [`cloider_registry`](/terraform/resources/registry) | The project's id | `cloider registry list -o wide` | `r4t6yu` |
+| [`cloider_registry_token`](/terraform/resources/registry-token) | The token's id | `cloider registry token list -o wide` | |
+| [`cloider_domain`](/terraform/resources/domain) | The domain name | `cloider domain list` | `example.com` |
+| [`cloider_dns_record`](/terraform/resources/dns-record) | The record's numeric id | `cloider dns list <domain> -o wide` | `48213` |
+| [`cloider_target`](/terraform/resources/target) | `<domain>/<id>` | `cloider target list <domain> -o wide` | `example.com/t4k9vq` |
+
+For example:
+
+```bash
+cloider db list -o wide
+```
+
+```text title="Output"
+ID       NAME        ENGINE         PLAN       STATUS   CREATED
+p0q9zm   orders-db   PostgreSQL 18  Standard   Ready    2026-09-02 14:12
+```
+
+## Step 2: Write import blocks
+
+An `import` block names the resource address to import into (`to`) and the ID (`id`). Put them in their own file:
+
+```hcl title="imports.tf"
+import {
+  to = cloider_cluster.production
+  id = "x8f2kq"
+}
+
+import {
+  to = cloider_database.orders
+  id = "p0q9zm"
+}
+
+import {
+  to = cloider_domain.example
+  id = "example.com"
+}
+```
+
+## Step 3: Let Terraform write the configuration
+
+Instead of writing the `resource` blocks by hand, ask Terraform to generate them from what it reads:
+
+```bash
+terraform plan -generate-config-out=generated.tf
+```
+
+```text title="Output"
+cloider_cluster.production: Preparing import... [id=x8f2kq]
+cloider_database.orders: Preparing import... [id=p0q9zm]
+cloider_domain.example: Preparing import... [id=example.com]
+cloider_cluster.production: Refreshing state... [id=x8f2kq]
+cloider_database.orders: Refreshing state... [id=p0q9zm]
+cloider_domain.example: Refreshing state... [id=example.com]
+
+Terraform will perform the following actions:
+
+  # cloider_cluster.production will be imported
+  # (config will be generated)
+    resource "cloider_cluster" "production" {
+...
+Plan: 3 to import, 0 to add, 0 to change, 0 to destroy.
+
+Terraform has generated configuration and written it to generated.tf.
+```
+
+Open `generated.tf` and review it. It holds every argument with the value the resource has, for example:
+
+```hcl title="generated.tf"
+resource "cloider_database" "orders" {
+  engine          = "postgresql"
+  label           = "orders-db"
+  name            = "orders-db"
+  paused          = false
+  plan            = "standard"
+  ssl             = true
+  trusted_sources = ["cluster:x8f2kq"]
+  user            = "orders_db_user"
+  version         = "18"
+}
+```
+
+Tidy it into your own files: replace literal ids with references (`"cluster:${cloider_cluster.production.id}"`), drop arguments you are happy to leave at their defaults, and add `lifecycle { prevent_destroy = true }` where it matters.
+
+:::note[OpenTofu]
+OpenTofu supports `import` blocks and `-generate-config-out` the same way: `tofu plan -generate-config-out=generated.tf`.
+:::
+
+## Step 4: Plan until there are no changes, then apply
+
+Run `terraform plan` again. A clean import shows only imports:
+
+```text title="Output"
+Plan: 3 to import, 0 to add, 0 to change, 0 to destroy.
+```
+
+If the plan also shows changes, your configuration doesn't match the real resource yet. Change the configuration (not the resource) until only the imports are left. Pay particular attention to:
+
+- **`# forces replacement`** on a database or cluster. Never apply that: it would delete the resource you are importing. Usually `version`, `user` or `name` doesn't match.
+- **Defaults** that differ from the resource: `trusted_sources` (`["*"]`), `ssl`, `plan` (`hobby`) on databases, `public` and `versioning` on buckets, `public`, `storage_limit_gi` and `immutable_tags` on registry projects.
+
+Then apply:
+
+```bash
+terraform apply
+```
+
+```text title="Output"
+cloider_cluster.production: Importing... [id=x8f2kq]
+cloider_cluster.production: Import complete [id=x8f2kq]
+cloider_database.orders: Importing... [id=p0q9zm]
+cloider_database.orders: Import complete [id=p0q9zm]
+cloider_domain.example: Importing... [id=example.com]
+cloider_domain.example: Import complete [id=example.com]
+
+Apply complete! Resources: 3 imported, 0 added, 0 changed, 0 destroyed.
+```
+
+Once applied, the `import` blocks have done their job and can be deleted, or kept as a record.
+
+## Import many resources at once with for_each
+
+In Terraform 1.7 or later, an `import` block takes `for_each`, to import into a resource that itself uses `for_each`:
+
+```hcl title="dns.tf"
+locals {
+  dns_records = {
+    www = { id = "48214", type = "CNAME", values = ["acme-web.cloider.app."] }
+    api = { id = "48216", type = "CNAME", values = ["acme-api.cloider.app."] }
+  }
+}
+
+import {
+  for_each = local.dns_records
+  to       = cloider_dns_record.this[each.key]
+  id       = each.value.id
+}
+
+resource "cloider_dns_record" "this" {
+  for_each = local.dns_records
+
+  domain = "example.com"
+  type   = each.value.type
+  name   = each.key
+  values = each.value.values
+  ttl    = 3600
+}
+```
+
+### Generate import blocks from the CLI
+
+The CLI's `-o json` prints the API's JSON, which `jq` can turn into `import` blocks. For every cluster and database in the account:
+
+```bash
+{
+  cloider cluster list -o json | jq -r '.[] | select(.status != "Terminated") |
+    "import {\n  to = cloider_cluster.\(.cluster_name | gsub("-"; "_"))\n  id = \"\(.hashed_id)\"\n}\n"'
+  cloider db list -o json | jq -r '.[] | select(.status != "Terminated") |
+    "import {\n  to = cloider_database.\(.database_name | gsub("-"; "_"))\n  id = \"\(.hashed_id)\"\n}\n"'
+} > imports.tf
+
+terraform plan -generate-config-out=generated.tf
+```
+
+Resource names in Terraform can't contain `-`, hence the `gsub`. Two clusters with the same name would give two blocks with the same address: rename one of them by hand.
+
+## Import with the terraform import command
+
+Before Terraform 1.5, or for a quick one-off, write the `resource` block first, then import one resource at a time:
+
+```hcl title="main.tf"
+resource "cloider_cluster" "production" {
+  name = "production"
+}
+```
+
+```bash
+terraform import cloider_cluster.production x8f2kq
+```
+
+```text title="Output"
+cloider_cluster.production: Importing from ID "x8f2kq"...
+cloider_cluster.production: Import prepared!
+  Prepared cloider_cluster for import
+cloider_cluster.production: Refreshing state... [id=x8f2kq]
+
+Import successful!
+
+The resources that were imported are shown above. These resources are now in
+your Terraform state and will henceforth be managed by Terraform.
+```
+
+`terraform import` writes to the state immediately, without a plan. Run `terraform plan` right after it and fix the configuration until it shows no changes.
+
+## What can't be imported, or imports without secrets
+
+| Resource | What happens |
+| --- | --- |
+| The apps registry project | Refused with `Can't manage the apps project`. Cloider creates and removes it with your apps |
+| A `cloider_bucket_key` | Imports, but `secret_key` stays null: Cloider shows the secret only when a key is created |
+| A `cloider_registry_token` | Imports, but `secret` stays null for the same reason. `expires_in_days` is worked out from the creation and expiry times |
+| A `cloider_domain` you try to **create** instead | Refused with `Domain already added`, which tells you to import it |
+| Apps, members, API tokens | Not resources of the provider, see [What the provider doesn't manage](/terraform/overview#what-the-provider-doesnt-manage) |
+
+When your configuration needs a key's or token's secret (to hand it to an app, say), create a new one with Terraform instead of importing the old one, switch everything over, then delete the old one.
+
+A database's password and a cluster's kubeconfig can be read at any time, so imported databases and clusters have them.
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| `Cannot import non-existent remote object` | Wrong id, or the resource is in another account | Check the ID column, and which token the provider uses |
+| Plan shows `# forces replacement` after import | `name`, `version`, `user`, `engine` or `region` differs from the resource | Make the configuration match. Don't apply until the plan has no replacement |
+| `Invalid target import id` | A target was imported by its id alone | Use `<domain>/<id>` |
+| `Invalid DNS record id` | A DNS record was imported by name | Use the numeric id from `cloider dns list <domain> -o wide` |
+| `Resource already managed by Terraform` | The address is already in state | `terraform state rm <address>` first, or use another address |
+
+## Next steps
+
+- [Multiple environments](/terraform/guides/multiple-environments): organize what you imported
+- [Store state in a bucket](/terraform/guides/state-backend)
+- [CI/CD with Terraform](/terraform/guides/ci-cd)
+
+<FAQ items={[
+  {q: 'Can I import Cloider resources created in the dashboard into Terraform?', a: 'Yes. Every provider resource can be imported: clusters, databases, buckets, bucket keys, registry projects and tokens, domains, DNS records and targets. Use an import block with the resource\'s id, or terraform import.'},
+  {q: 'How do I find the ID to import a Cloider resource?', a: 'Run the CLI\'s list command with -o wide, which adds an ID column: cloider cluster list -o wide, cloider db list -o wide and so on. Domains are imported by name, and targets as <domain>/<id>.'},
+  {q: 'Can Terraform write the configuration for imported Cloider resources?', a: 'Yes, with Terraform 1.5 or later: write import blocks, then run terraform plan -generate-config-out=generated.tf. Review the generated file before applying.'},
+  {q: 'Why is secret_key empty after importing a bucket key?', a: 'Cloider shows bucket key secrets and registry token secrets only once, when they are created. Terraform never saw it, so it stays null. Create a new key with Terraform if you need the secret.'},
+  {q: 'Does importing change or restart the resource?', a: 'No. Importing only reads the resource and records it in state. Only a later apply with a non-empty plan changes anything.'},
+]} />

@@ -1,0 +1,48 @@
+---
+title: Account and billing on Cloider
+sidebar_label: Account and billing
+sidebar_position: 1
+description: "Manage your Cloider account: members and roles, API tokens, switching accounts, usage and costs, invoices, notifications and support."
+keywords: [cloider account, cloider billing, access control, api tokens, cloider usage, invoices, cloider support, team members]
+---
+
+The account pages cover everything around your resources: who can reach the account, the tokens tools use, what the account costs, its invoices, the messages Cloider sends you, and how to get help.
+
+## At a glance
+
+| Task | Where in the dashboard | CLI | Page |
+| --- | --- | --- | --- |
+| Invite members, change roles | **Access Control**, **Members** | `cloider member list` (read only) | [Access control](/account/access-control) |
+| Create and revoke API tokens | **Access Control**, **API Tokens** | `cloider token list` (read only), `cloider login`, `cloider logout` | [API tokens](/account/api-tokens) |
+| Work in another account | Account menu, **Switch account** | `cloider login --profile`, `cloider profile use` | [Switch accounts](/account/switch-accounts) |
+| See this month's costs and forecast | **Usage** | `cloider usage` | [Usage](/account/usage) |
+| Read invoices (Owner only) | **Billing** | `cloider billing` | [Billing](/account/billing) |
+| Read announcements | Bell icon, **Notifications** | | [Notifications](/account/notifications) |
+| Get help from the Cloider team | **Support** | `cloider support` | [Support](/account/support) |
+
+## Access Control in the dashboard
+
+**Access Control** in the sidebar groups every kind of access to the account in tabs:
+
+| Tab | What it holds | Docs |
+| --- | --- | --- |
+| **Members** | The Owner and every invited member, with their role and status | [Access control](/account/access-control) |
+| **S3 Credentials** | Access keys for S3 tools to reach your buckets | [Access keys](/object-storage/access-keys) |
+| **Registry Tokens** | Tokens for `docker login` and Kubernetes pull secrets | [Registry tokens](/container-registry/tokens) |
+| **API Tokens** | Tokens for the CLI, Terraform, the MCP server and the REST API | [API tokens](/account/api-tokens) |
+
+<Cards cols={2}>
+  <Card title="Access control" href="/account/access-control" icon="account-group-outline">Invite members, change roles, deactivate and remove them.</Card>
+  <Card title="API tokens" href="/account/api-tokens" icon="key-variant">Generate Read and Read & Write tokens and revoke them.</Card>
+  <Card title="Switch accounts" href="/account/switch-accounts" icon="account-group-outline">Move between your own account and the ones you belong to.</Card>
+  <Card title="Usage" href="/account/usage" icon="poll">Costs to date, forecasts and per resource usage.</Card>
+  <Card title="Billing" href="/account/billing" icon="credit-card-outline">Monthly invoices and what each line means.</Card>
+  <Card title="Notifications" href="/account/notifications" icon="bell-outline">Announcements and the emails Cloider sends.</Card>
+  <Card title="Support" href="/account/support" icon="lifebuoy">Open a support request and follow the conversation.</Card>
+</Cards>
+
+## Related concepts
+
+- [Accounts and roles](/concepts/accounts-and-roles): users, accounts, members and the permission matrix.
+- [Billing model](/concepts/billing-model): what is metered and how it is priced.
+- [Security](/concepts/security): tokens, credentials and shared responsibility.

@@ -1,0 +1,281 @@
+---
+title: Cloider CLI overview and first session
+sidebar_label: Overview
+sidebar_position: 1
+description: What the cloider command line tool does, a tour of every command group, how commands name resources, and a first session from login to a cluster and a deployed app.
+keywords: [cloider cli, cloider command line, cloider commands, cloider deploy, cloider cluster, cloider db, cli tour, cloud cli]
+---
+
+The Cloider CLI, `cloider`, does from a terminal what the [Cloider dashboard](/get-started/dashboard-tour) does: it creates and manages Kubernetes clusters, databases, buckets, container registry projects, apps, domains, DNS records and support requests, and shows usage and billing. It is a single binary for macOS, Linux and Windows, built for people at a terminal, for shell scripts and CI pipelines, and for AI agents through its built-in MCP server.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **What it is** | The official command line tool for Cloider, a single binary named `cloider` |
+| **Install** | `curl -fsSL https://cloider.com/install.sh \| sh` on macOS and Linux, a zip on Windows. See [Install](/cli/install) |
+| **Log in** | `cloider login` through the browser, or an API token in `CLOIDER_TOKEN`. See [Authentication](/cli/authentication) |
+| **Command shape** | `cloider <noun> <verb> [arguments] [flags]`, for example `cloider cluster create staging` |
+| **Output** | Tables for people, `-o json` or `-o yaml` for scripts, `-q` for ids only. See [Output and scripting](/cli/output-and-scripting) |
+| **Updates** | Installs new versions by itself, checked once a day. See [Updating](/cli/updating) |
+| **AI agents** | `cloider mcp` serves every command as an MCP tool. See [`cloider mcp`](/cli/commands/mcp) |
+| **Cost** | Free. You pay only for the resources you create, as in the dashboard |
+
+## How does the CLI work?
+
+The CLI is a client of the public [Cloider REST API](/api/overview), the same API the dashboard uses. Each command maps onto one or a few API calls at `https://cloider.com/api`, authenticated with an [API token](/account/api-tokens) that belongs to one account. Anything the CLI creates shows up in the dashboard straight away, and the other way around.
+
+Commands follow a `cloider <noun> <verb>` pattern. The noun is the kind of resource (`cluster`, `db`, `bucket`, `registry`, `app`, `domain`, `dns`, `target`, `support`), and the verb is what to do with it (`list`, `get`, `create`, `delete`, and verbs of its own like `pause`, `kubeconfig` or `logs`). Most nouns also have a plural alias, so `cloider clusters list` works too, and most `list` commands also answer to `ls`.
+
+```bash
+cloider cluster list
+cloider db create orders-db --engine postgresql
+cloider bucket upload acme-assets ./public -r --prefix static/
+cloider app logs blog -f
+```
+
+A few commands are top level verbs: `cloider deploy`, `cloider login`, `cloider logout`, `cloider whoami`, `cloider usage`, `cloider billing`, `cloider pricing`, `cloider version`, `cloider update`, `cloider completion` and `cloider mcp`.
+
+## Tour of the command groups
+
+`cloider --help` lists the commands in two groups, **Account** and **Resources**, plus a few additional commands. Each group has a full reference page:
+
+| Command | What it manages | Reference |
+| --- | --- | --- |
+| `cloider cluster` | Serverless [Kubernetes clusters](/kubernetes/overview): create, pause, resume, kubeconfig, a kubectl shell and `exec` | [cluster](/cli/commands/cluster) |
+| `cloider db` | Managed [PostgreSQL, MySQL, MongoDB and Redis](/databases/overview): create, connect, backups, restore, resize, trusted sources, SSL, insights | [db](/cli/commands/db) |
+| `cloider bucket` | S3 compatible [object storage](/object-storage/overview): buckets, files, versions, policies, lifecycle rules and access keys | [bucket](/cli/commands/bucket) |
+| `cloider registry` | The [container registry](/container-registry/overview): projects, `docker login`, images, tokens, retention and immutability | [registry](/cli/commands/registry) |
+| `cloider app` | [Apps](/apps/overview): create, logs, environment variables, build settings, builds, shell and `exec` | [app](/cli/commands/app) |
+| `cloider deploy` | Deploys a directory as an app, creating the app the first time | [deploy](/cli/commands/deploy) |
+| `cloider git` | GitHub, GitLab and Bitbucket connections apps deploy from | [git](/cli/commands/git) |
+| `cloider domain` | Free subdomains and custom [domains](/domains/overview) | [domain](/cli/commands/domain) |
+| `cloider dns` | DNS records of custom domains | [dns](/cli/commands/dns) |
+| `cloider target` | Routes from a domain's paths to apps or cluster services | [target](/cli/commands/target) |
+| `cloider support` | [Support requests](/account/support): open, reply, download attachments | [support](/cli/commands/support) |
+| `cloider usage`, `billing`, `pricing`, `member`, `token`, `whoami` | Costs, bills, prices, who has access, API tokens, the current identity | [account](/cli/commands/account) |
+| `cloider login`, `logout`, `profile` | Logging in and switching between accounts | [auth and profiles](/cli/commands/auth-and-profiles) |
+| `cloider version`, `update`, `completion` | The CLI itself | [tooling](/cli/commands/tooling) |
+| `cloider mcp` | An MCP server for AI agents | [mcp](/cli/commands/mcp) |
+
+Every command and subcommand is listed on one page in the [command reference](/cli/commands).
+
+### What can't the CLI do?
+
+Two things are deliberately left to the dashboard, so that a leaked token can't hand out more access:
+
+- **Members and roles.** `cloider member list` shows who has access, but `member add`, `member role` and `member remove` only print a link to **Access Control** in the dashboard.
+- **API tokens.** `cloider token list` shows the tokens, but `token create` and `token revoke` only print a link. `cloider logout` revokes the CLI's own token.
+
+Connecting a git provider (`cloider git connect`) also finishes in the browser, because GitHub, GitLab and Bitbucket ask you to approve the connection there.
+
+## A first session
+
+This walk through takes you from nothing to a running Kubernetes cluster and a deployed app. It takes about five minutes.
+
+**1. Install the CLI.** On Windows, see [Install](/cli/install#install-on-windows).
+
+```bash
+curl -fsSL https://cloider.com/install.sh | sh
+```
+
+```text title="Output"
+Downloading cloider 0.6.0 for darwin/arm64
+Installed cloider 0.6.0 to /usr/local/bin/cloider
+Get started with: cloider login
+```
+
+**2. Log in.** Your browser opens; pick the account and **Read and write**, then click **Authorize CLI**.
+
+```bash
+cloider login
+```
+
+```text title="Output"
+Opening the browser to log in. If it doesn't open, visit:
+  https://cloider.com/cli/login?host=janes-macbook&port=53817&state=4qX0...
+✓ Logged in as jane@example.com in account jane@example.com (Read & Write)
+```
+
+**3. Check who you are.**
+
+```bash
+cloider whoami
+```
+
+```text title="Output"
+User:        jane@example.com
+Account:     jane@example.com
+Role:        Owner
+Access:      Read & Write
+Token:       Cloider CLI on janes-macbook
+Profile:     default
+API:         https://cloider.com/api
+Token from:  profile default (/Users/jane/.cloider/token)
+```
+
+**4. Create a Kubernetes cluster** and wait until it is ready. Without `--version` you get the newest Kubernetes version offered.
+
+```bash
+cloider cluster create staging --wait
+```
+
+```text title="Output"
+✓ Creating cluster staging (Kubernetes 1.34)
+✓ Cluster staging is ready. Get its kubeconfig with `cloider cluster kubeconfig staging --merge`.
+```
+
+**5. Point kubectl at it.** `--merge --use` adds the cluster to `~/.kube/config` as the context `cloider-staging` and switches to it.
+
+```bash
+cloider cluster kubeconfig staging --merge --use
+kubectl get namespaces
+```
+
+```text title="Output"
+✓ Added context cloider-staging to /Users/jane/.kube/config
+NAME              STATUS   AGE
+default           Active   2m
+kube-node-lease   Active   2m
+kube-public       Active   2m
+kube-system       Active   2m
+```
+
+**6. Deploy an app** from a project directory. The first deploy detects the language, framework and port, creates the app, claims a free subdomain, links the directory to the app, streams the build and prints the URL.
+
+```bash
+cd ~/code/blog
+cloider deploy
+```
+
+```text title="Output"
+Packaged 37 files (84.2 KB)
+Detected JavaScript Next.js
+✓ Created app blog on port 3000
+Linked . to blog in .cloider/app.json, later deploys from here update it.
+...build output...
+✓ Deployed version 1 of blog
+https://blog-k3m9.cloider.app
+```
+
+Run `cloider deploy` again after changing the code, and it builds version 2 of the same app.
+
+**7. Look at what you have and what it costs.**
+
+```bash
+cloider cluster list
+cloider app list
+cloider usage
+```
+
+```text title="Output"
+NAME      VERSION   STATUS   CREATED
+staging   1.34      Ready    2026-10-20 09:14
+
+NAME   STATUS   VERSION   URL                             CREATED
+blog   Ready    1         https://blog-k3m9.cloider.app   2026-10-20 09:21
+
+NAME      KIND      STATUS   MONTH TO DATE   FORECAST THIS MONTH
+staging   cluster   Ready    $0.04           $2.31
+blog      app       Ready    $0.01           $0.87
+Total                        $0.05           $3.18
+```
+
+**8. Clean up** when you are done. Deleting asks you to type the name back, unless you pass `--yes`.
+
+```bash
+cloider app delete blog
+cloider cluster delete staging --wait
+```
+
+```text title="Output"
+This permanently deletes cluster staging.
+Type staging to confirm: staging
+✓ Deleting cluster staging
+✓ Cluster staging is deleted
+```
+
+## How do commands name resources?
+
+Commands take a resource by its **name**, its **label** or its **id**, whichever you have at hand:
+
+```bash
+cloider cluster get staging            # by name
+cloider cluster get k3m9x2p7q1         # by id
+```
+
+- The **id** is the short random string Cloider gives every resource (the `hashed_id` field in the API). It never changes and never clashes. Tables hide ids; `-o wide` shows them.
+- The **name** (and the **label**, where a resource has both) is what you typed when you created it, as the dashboard shows it. A name is matched exactly first, then without regard to case.
+- If two resources share a name, the command stops and lists them with their ids, so you can pick one. It exits with code `2`:
+
+```text
+Error: 2 clusters are named "staging", pick one by id:
+  staging, staging (id k3m9x2p7q1)
+  staging-1, staging (id p8d2w4n6r0)
+```
+
+- A name nothing has fails with `no cluster named "stagin"` and exit code `4`.
+
+Buckets and registry projects are named by their unique name or id; domains by their domain name. Details are in [Output and scripting](/cli/output-and-scripting#how-do-commands-find-a-resource).
+
+## Getting help in the terminal
+
+Every command has built-in help with its arguments, flags and examples:
+
+```bash
+cloider --help
+cloider db --help
+cloider db create --help
+cloider help db create      # the same
+```
+
+Wrong or missing arguments are explained with the command's usage line:
+
+```text
+Error: missing <name>, usage: cloider cluster create <name>
+```
+
+Turn on [shell completion](/cli/shell-completion) to complete commands and flags with the Tab key.
+
+## Global flags in one minute
+
+These flags work on every command. The full list, with environment variables, is in [Configuration](/cli/configuration#global-flags).
+
+| Flag | What it does |
+| --- | --- |
+| `-o, --output` | `table` (default), `wide` (adds ids), `json` or `yaml` |
+| `-q, --quiet` | Print only ids or names, one per line |
+| `--no-headers` | Tables without the header row |
+| `-y, --yes` | Don't ask for confirmation |
+| `--profile` | Use another [profile](/cli/authentication#work-with-several-accounts-using-profiles) (account) |
+| `--token-file` | Read the API token from a file |
+| `--api-url` | Talk to another API URL |
+| `--no-color` | No colors |
+| `--debug` | Log every API request to stderr, never the token |
+
+## Next steps
+
+<Cards cols={2}>
+  <Card title="Install the CLI" href="/cli/install" icon="download-outline">
+    The install script, Windows zips, checksums, CI and Docker.
+  </Card>
+  <Card title="Authentication" href="/cli/authentication" icon="key-variant">
+    Browser login, API tokens, profiles and CI.
+  </Card>
+  <Card title="Output and scripting" href="/cli/output-and-scripting" icon="code-braces">
+    JSON, exit codes, jq and CI pipelines.
+  </Card>
+  <Card title="Command reference" href="/cli/commands" icon="console">
+    Every command, flag and example.
+  </Card>
+</Cards>
+
+<FAQ items={[
+  {q: 'What is the Cloider CLI?', a: 'cloider is the official command line tool for Cloider. It manages Kubernetes clusters, databases, buckets, container registry projects, apps, domains, DNS records, support requests, usage and billing from a terminal, using the same REST API as the dashboard.'},
+  {q: 'How do I install the Cloider CLI?', a: 'On macOS and Linux run curl -fsSL https://cloider.com/install.sh | sh. On Windows download the zip for your architecture from https://cloider-cli.s3.eu-central-2.cloider.com/<version>/, extract cloider.exe and add its folder to your Path.'},
+  {q: 'Is the CLI free?', a: 'Yes. The CLI itself costs nothing. You pay only for the resources you create with it, exactly as if you created them in the dashboard.'},
+  {q: 'Can I use the CLI in CI/CD pipelines?', a: 'Yes. Set the CLOIDER_TOKEN environment variable to an API token, use -o json for machine readable output, pass --yes to skip confirmations and --wait to wait for changes to finish. Commands never prompt without a terminal.'},
+  {q: 'Can I manage members and API tokens with the CLI?', a: 'You can list them with cloider member list and cloider token list. Adding members, changing roles, creating and revoking tokens are done in the dashboard only, so a leaked token can\'t grant more access.'},
+  {q: 'How do I deploy an app with the CLI?', a: 'Run cloider deploy in the project directory. The first deploy detects the language, framework and port, creates the app, claims a free subdomain and links the directory, later deploys build a new version of the same app.'},
+  {q: 'Can AI agents use the Cloider CLI?', a: 'Yes. cloider mcp starts a Model Context Protocol server that offers the CLI\'s commands as tools to Claude, Cursor, VS Code and other MCP clients, acting with the CLI\'s login.'}
+]} />

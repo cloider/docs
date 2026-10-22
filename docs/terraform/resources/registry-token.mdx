@@ -1,0 +1,225 @@
+---
+title: cloider_registry_token resource (Terraform)
+sidebar_label: cloider_registry_token
+sidebar_position: 6
+description: Create container registry tokens with the cloider_registry_token Terraform resource, for docker login, CI pushes and Kubernetes image pull secrets, with expiry and rotation.
+keywords: [cloider_registry_token, registry token terraform, docker login terraform, image pull secret terraform, kubernetes dockerconfigjson terraform, registry credentials, token rotation terraform]
+---
+
+The `cloider_registry_token` resource creates a [registry token](/container-registry/tokens): a password that pushes and pulls images of some or all of your [registry projects](/terraform/resources/registry). You log in with `docker login registry.cloider.com -u <username> -p <secret>`. A token can be limited to pulling, and can expire after a number of days.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `label`, and either `projects` or `all_projects = true` |
+| **Changes in place** | `label`, `projects`, `all_projects`, `read_only` |
+| **Changes that replace the token** | `expires_in_days` |
+| **Sensitive attributes** | `secret` |
+| **Timeouts** | None, tokens are created immediately |
+| **Import ID** | The token id |
+| **API** | [`/api/registry/tokens`](/api/endpoints/registry-tokens) |
+| **CLI equivalent** | [`cloider registry token`](/cli/commands/registry) |
+
+:::info[The secret is only shown once]
+Cloider shows a token's secret only when the token is created, and Terraform saves it in state at that moment. An **imported** token has no `secret`. To have the secret in Terraform, create a new token with Terraform.
+:::
+
+## Example usage
+
+### A push token for one project
+
+```hcl title="main.tf"
+resource "cloider_registry" "acme" {
+  name = "acme"
+}
+
+resource "cloider_registry_token" "ci" {
+  label    = "CI push"
+  projects = [cloider_registry.acme.id]
+}
+
+output "registry_username" {
+  value = cloider_registry_token.ci.username
+}
+
+output "registry_password" {
+  value     = cloider_registry_token.ci.secret
+  sensitive = true
+}
+```
+
+```bash
+terraform output -raw registry_password | docker login registry.cloider.com -u "$(terraform output -raw registry_username)" --password-stdin
+```
+
+`--password-stdin` keeps the secret out of your shell history.
+
+### A pull only token for every project
+
+```hcl title="main.tf"
+resource "cloider_registry_token" "pull_all" {
+  label        = "clusters pull"
+  all_projects = true
+  read_only    = true
+}
+```
+
+`all_projects = true` includes projects created later.
+
+### Create an image pull secret in a cluster
+
+With the `kubernetes` provider configured from a [`cloider_cluster`](/terraform/resources/cluster), a read only token becomes a `kubernetes.io/dockerconfigjson` Secret that pods reference in `imagePullSecrets`:
+
+```hcl title="main.tf"
+resource "cloider_registry_token" "pull" {
+  label     = "production cluster pull"
+  projects  = [cloider_registry.acme.id]
+  read_only = true
+}
+
+resource "kubernetes_secret_v1" "registry" {
+  metadata {
+    name      = "cloider-registry"
+    namespace = "default"
+  }
+
+  type = "kubernetes.io/dockerconfigjson"
+
+  data = {
+    ".dockerconfigjson" = jsonencode({
+      auths = {
+        (cloider_registry.acme.host) = {
+          username = cloider_registry_token.pull.username
+          password = cloider_registry_token.pull.secret
+          auth     = base64encode("${cloider_registry_token.pull.username}:${cloider_registry_token.pull.secret}")
+        }
+      }
+    })
+  }
+}
+```
+
+```yaml title="deployment.yaml (excerpt)"
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+        - name: cloider-registry
+      containers:
+        - name: web
+          image: registry.cloider.com/acme/web:1.4.2
+```
+
+See [Pull private images](/kubernetes/pull-private-images).
+
+### Hand the token to GitHub Actions
+
+With the [`integrations/github`](https://registry.terraform.io/providers/integrations/github/latest/docs) provider:
+
+```hcl title="main.tf"
+resource "github_actions_secret" "registry_username" {
+  repository      = "web"
+  secret_name     = "CLOIDER_REGISTRY_USERNAME"
+  plaintext_value = cloider_registry_token.ci.username
+}
+
+resource "github_actions_secret" "registry_password" {
+  repository      = "web"
+  secret_name     = "CLOIDER_REGISTRY_PASSWORD"
+  plaintext_value = cloider_registry_token.ci.secret
+}
+```
+
+### Rotate a token automatically
+
+`expires_in_days` can't change in place, and the secret can't be changed at all, so rotation means replacing the token. With the [`time`](https://registry.terraform.io/providers/hashicorp/time/latest/docs) provider's `time_rotating`, Terraform replaces the token every 90 days, a month before it would expire, and creates the new token before deleting the old one:
+
+```hcl title="main.tf"
+resource "time_rotating" "ci" {
+  rotation_days = 90
+}
+
+resource "cloider_registry_token" "ci" {
+  label           = "CI push"
+  projects        = [cloider_registry.acme.id]
+  expires_in_days = 120
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by  = [time_rotating.ci]
+  }
+}
+```
+
+Rotation happens on the first `terraform apply` after the 90 days are up, so run Terraform regularly (for example from a scheduled CI job). Anything that holds the secret, such as the GitHub secret or the Kubernetes Secret above, is updated in the same apply when it refers to `cloider_registry_token.ci.secret`.
+
+To rotate by hand, run `terraform apply -replace=cloider_registry_token.ci`.
+
+## Argument reference
+
+| Argument | Type | Required | Default | Changing it | Description |
+| --- | --- | --- | --- | --- | --- |
+| `label` | String | Yes | | In place | What the token is for |
+| `projects` | Set of String | One of `projects` or `all_projects` | | In place | The ids of the `cloider_registry` projects the token reaches, at least one |
+| `all_projects` | Bool | One of `projects` or `all_projects` | `false` | In place | Whether the token reaches every project, those created later included |
+| `read_only` | Bool | No | `false` | In place | Whether the token may only pull. `false` allows pushing and pulling |
+| `expires_in_days` | Number | No | `0` | **Replaces** the token | Days until the token stops working, `1` to `3650`, or `0` for never |
+
+Setting both `projects` and `all_projects = true` fails with `Conflicting scope: all_projects and projects don't go together.` Setting neither fails with `Missing scope: Set projects, or all_projects = true.`
+
+## Attribute reference
+
+| Attribute | Type | Sensitive | Description |
+| --- | --- | --- | --- |
+| `id` | String | No | The token's id |
+| `username` | String | No | The username to log in with. It is your account's registry username, the same for every token of the account |
+| `secret` | String | Yes | The password to log in with. Only known for a token this configuration created, null after an import |
+| `expires_at` | String | No | When the token stops working, in RFC 3339. Null for a token that never expires |
+| `created_at` | String | No | When the token was created, in RFC 3339 |
+
+## Behavior notes
+
+- **In place changes keep the secret.** Changing `label`, `projects`, `all_projects` or `read_only` updates the token without changing its secret, so whoever uses it keeps working.
+- **Expiry is fixed.** Cloider stores when a token expires, not the number of days, so `expires_in_days` can't change in place. Changing it creates a new token with a new secret.
+- **Expired tokens** stop working but stay in state. Replace them, or use the rotation example above.
+- **Deleted outside Terraform.** The next refresh removes the token from state and the plan creates a new one, with a new secret.
+
+## Import
+
+Import an existing token by its id. `cloider registry token list -o wide` shows the ids:
+
+```bash
+cloider registry token list -o wide
+```
+
+With an `import` block:
+
+```hcl title="imports.tf"
+import {
+  to = cloider_registry_token.pull_all
+  id = "TOKEN_ID"
+}
+```
+
+With the `terraform import` command:
+
+```bash
+terraform import cloider_registry_token.pull_all TOKEN_ID
+```
+
+Replace `TOKEN_ID` with the value of the **ID** column. On import, the provider works out `expires_in_days` from the token's creation and expiry times, rounded to whole days. The imported token has `secret = null`.
+
+## Related
+
+- [`cloider_registry`](/terraform/resources/registry)
+- [Registry tokens](/container-registry/tokens) in the dashboard and CLI
+- [Use the registry with Kubernetes](/container-registry/use-with-kubernetes)
+- [CI/CD with Terraform](/terraform/guides/ci-cd)
+
+<FAQ items={[
+  {q: 'How do I log in to the Cloider registry with a Terraform created token?', a: 'Use the token\'s username and secret attributes: docker login registry.cloider.com -u <username> --password-stdin, piping the secret in. Expose secret as a sensitive output and read it with terraform output -raw.'},
+  {q: 'How do I create a Kubernetes image pull secret for the Cloider registry in Terraform?', a: 'Create a read only cloider_registry_token and a kubernetes_secret_v1 of type kubernetes.io/dockerconfigjson whose .dockerconfigjson has an auths entry for registry.cloider.com with the token\'s username and secret.'},
+  {q: 'Can I change a registry token\'s expiry with Terraform?', a: 'Not in place. Changing expires_in_days replaces the token with a new one, which has a new secret.'},
+  {q: 'Why is the username the same for all my registry tokens?', a: 'The username is your account\'s registry username, shared by every token of the account. The secret is what identifies each token.'},
+]} />

@@ -1,0 +1,188 @@
+---
+title: Git connections API endpoints
+sidebar_label: Git
+sidebar_position: 11
+description: Cloider API reference for GitHub, GitLab and Bitbucket connections, list installations, repositories and branches for app imports, and disconnect a provider.
+keywords: [cloider github api, gitlab integration api, bitbucket integration api, list repositories api, list branches api, git installation, auto deploy]
+---
+
+A git connection lets Cloider read repositories on GitHub, GitLab or Bitbucket, so you can [create an app from a repository](/api/endpoints/apps#import-source-from-a-git-repository) and have every push to its branch deployed. These endpoints list an account's connections, the repositories and branches each one can see, and disconnect a provider. Connecting a provider is an authorization that a person finishes in the browser, so it is done from the dashboard, not with an API token.
+
+All paths are relative to `https://cloider.com/api`. See [Deploy from git](/apps/deploy-from-git) for the whole workflow.
+
+## At a glance
+
+The three providers have the same four endpoints, with `github`, `gitlab` or `bitbucket` in the path:
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/git/<provider>/installations`](#list-connections) | Read |
+| GET | [`/git/<provider>/installations/:installation_hashed_id/repos`](#list-repositories) | Read |
+| GET | [`/git/<provider>/installations/:installation_hashed_id/branches`](#list-branches) | Read |
+| DELETE | [`/git/<provider>/installations/:installation_hashed_id`](#disconnect-a-provider) | Write |
+
+## Connections, installations and repositories
+
+- On **GitHub**, a connection is an installation of the Cloider GitHub App on a user or organization. It reaches the repositories you chose when installing it. One account can have several, one per GitHub user or organization.
+- On **GitLab** and **Bitbucket**, a connection is an OAuth authorization by one GitLab or Bitbucket user. It reaches every project or repository that user can read.
+
+The API calls each of them an **installation**, identified by its `hashed_id`.
+
+## List connections
+
+```http
+GET /git/github/installations
+GET /git/gitlab/installations
+GET /git/bitbucket/installations
+```
+
+Returns the account's connections to one provider, oldest first.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/git/github/installations \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "configured": true,
+  "install_url": "https://github.com/apps/<cloider-app>/installations/select_target",
+  "installations": [
+    {
+      "hashed_id": "g2h6v",
+      "provider": "GitHub",
+      "account_login": "acme",
+      "account_type": "Organization",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1234567?v=4",
+      "suspended_at": null,
+      "created_at": "2026-09-14T10:02:44.210118Z"
+    }
+  ]
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `configured` | Whether the provider can be used at all |
+| `install_url` | Where the provider's own settings for the connection are: the GitHub App's install page, or the GitLab and Bitbucket pages that list authorized applications |
+| `installations[].hashed_id` | The connection's id, used by every other git endpoint and by imports |
+| `installations[].provider` | `GitHub`, `GitLab` or `Bitbucket` |
+| `installations[].account_login`, `account_type`, `avatar_url` | The user or organization the connection belongs to |
+| `installations[].suspended_at` | Set while GitHub reports the installation suspended. A suspended installation can't be imported from until it is re-enabled on GitHub |
+
+## List repositories
+
+```http
+GET /git/github/installations/:installation_hashed_id/repos
+GET /git/gitlab/installations/:installation_hashed_id/repos
+GET /git/bitbucket/installations/:installation_hashed_id/repos
+```
+
+Returns the repositories (GitLab: projects) the connection can read. Large accounts are read for a few seconds at most, so the list can be partial; `truncated` says so.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/git/github/installations/g2h6v/repos \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "repos": [
+    {
+      "id": 812345678,
+      "name": "api",
+      "full_name": "acme/api",
+      "html_url": "https://github.com/acme/api",
+      "private": true,
+      "default_branch": "main",
+      "language": "Go",
+      "pushed_at": "2026-10-19T15:22:08Z"
+    }
+  ],
+  "truncated": false
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `id` | The provider's id for the repository. For GitLab, this is the `project_id` an import needs |
+| `name`, `full_name` | The name, and `owner/name` (GitLab: the full path with its groups) |
+| `html_url` | The repository's page |
+| `private` | Whether it is private |
+| `default_branch` | The default branch |
+| `language` | The main language, when the provider reports one |
+| `pushed_at` | When it last changed |
+| `truncated` | `true` when there were more repositories than could be read |
+
+## List branches
+
+```http
+GET /git/github/installations/:installation_hashed_id/branches?repo=acme/api
+GET /git/gitlab/installations/:installation_hashed_id/branches?repo_id=48151623
+GET /git/bitbucket/installations/:installation_hashed_id/branches?repo=acme/api
+```
+
+Returns the branches of one repository, each with the commit it points to.
+
+**Access:** any token.
+
+| Query parameter | Provider | Description |
+| --- | --- | --- |
+| `repo` | GitHub, Bitbucket | The repository's `full_name`, `owner/name` |
+| `repo_id` | GitLab | The project's numeric `id` |
+
+```bash
+curl -G https://cloider.com/api/git/github/installations/g2h6v/branches \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  --data-urlencode "repo=acme/api"
+```
+
+```json title="Response"
+[
+  {"name": "main", "commit": {"sha": "4f2a9c1e8b7d6a5f3e2c1b0a9d8e7f6c5b4a3d2e"}},
+  {"name": "staging", "commit": {"sha": "9b1d0e7f2c4a6b8d0e1f3a5c7e9b2d4f6a8c0e1b"}}
+]
+```
+
+Errors: `That repository name is not one we can read.` (GitHub), `Pick a project first.` (GitLab), `Pick a repository first.` (Bitbucket), all `400`.
+
+## Errors of the read endpoints
+
+| Status | Message |
+| --- | --- |
+| `404` | `This GitHub connection is no longer available, reconnect it!` (and the same for GitLab and Bitbucket) |
+| `404` | `GitHub no longer gives us access to that. Check the repositories this installation can see.` |
+| `404` | `GitLab no longer gives us access to that project.`, `Bitbucket no longer gives us access to that repository.` |
+| `404` | `This GitLab connection was revoked on GitLab, reconnect it!`, `This Bitbucket connection was revoked on Bitbucket, reconnect it!` |
+| `400` | `We could not reach GitHub, try again in a moment.` (and the same for GitLab and Bitbucket) |
+
+A GitLab or Bitbucket connection that was revoked on the provider's side is removed by Cloider the first time it is used.
+
+## Disconnect a provider
+
+```http
+DELETE /git/github/installations/:installation_hashed_id
+DELETE /git/gitlab/installations/:installation_hashed_id
+DELETE /git/bitbucket/installations/:installation_hashed_id
+```
+
+Removes a connection. Apps that deploy from its repositories keep running and keep their repository details, but their auto deploy is turned off and they can't build from git until the provider is connected again. For GitLab and Bitbucket, Cloider also removes the webhooks it added to the repositories and revokes its access.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/git/github/installations/g2h6v \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+It answers `200` with an empty body. An unknown connection answers `404 This GitHub connection is no longer available!`. On GitHub, uninstall the app from your GitHub settings as well if you want GitHub to forget it.
+
+## Related
+
+- [Import source from a git repository](/api/endpoints/apps#import-source-from-a-git-repository)
+- [Build the latest commit](/api/endpoints/app-builds#build-the-latest-commit)
+- [cloider git](/cli/commands/git) commands

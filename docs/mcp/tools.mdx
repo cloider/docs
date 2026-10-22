@@ -1,0 +1,1778 @@
+---
+title: Cloider MCP tools reference
+sidebar_label: Tools reference
+sidebar_position: 3
+description: Every tool of the Cloider MCP server, by toolset, with its parameters, types, required fields, effect, idempotency, annotations and the CLI command it runs.
+keywords: [cloider mcp tools, mcp tool reference, cloider mcp server tools, mcp tool annotations, readOnlyHint, destructiveHint, cluster_exec, deploy_app, create_database mcp]
+---
+
+This page lists every tool the Cloider MCP server (`cloider mcp`) offers, grouped by toolset. For each tool you get the description the AI agent sees, its parameters with their types and whether they are required, what kind of change it makes, whether repeating it is safe, the MCP annotations your client uses to decide when to ask you first, and the [`cloider` CLI](/cli/overview) command it runs. Setting the server up is covered in [Set up the MCP server](/mcp/setup).
+
+## At a glance
+
+| Toolset | Tools | Read only | Changes resources | Destructive |
+| --- | --- | --- | --- | --- |
+| [`account`](#account-tools-account) | 6 | 6 | 0 | 0 |
+| [`clusters`](#kubernetes-cluster-tools-clusters) | 9 | 4 | 3 | 2 |
+| [`databases`](#database-tools-databases) | 16 | 6 | 8 | 2 |
+| [`buckets`](#object-storage-tools-buckets) | 25 | 10 | 7 | 8 |
+| [`registry`](#container-registry-tools-registry) | 23 | 8 | 7 | 8 |
+| [`apps`](#app-tools-apps) | 23 | 10 | 9 | 4 |
+| [`domains`](#domain-dns-and-target-tools-domains) | 12 | 4 | 5 | 3 |
+| [`support`](#support-tools-support) | 5 | 3 | 2 | 0 |
+| **All** | **119** | **51** | **41** | **27** |
+
+- **Read only** tools change nothing. They are the only tools `cloider mcp --read-only` offers.
+- **Changes resources** tools create or update something but don't delete anything.
+- **Destructive** tools delete or replace something, or run arbitrary commands (the three exec tools), and carry `destructiveHint`.
+- Pick toolsets with `cloider mcp --toolsets account,apps,...`. See [Safety and permissions](/mcp/safety-and-permissions).
+
+## How to read this reference
+
+Each tool has a table like this:
+
+| Column | Meaning |
+| --- | --- |
+| **Effect** | **Read only**, **Changes resources** or **Destructive** |
+| **Idempotent** | **Yes** when calling it again with the same arguments changes nothing more, so a client may retry it safely |
+| **Annotations** | The MCP tool annotations set to `true`: `readOnlyHint`, `destructiveHint`, `idempotentHint`. `openWorldHint` is `false` on every tool, because the tools only reach your Cloider account |
+| **Runs** | The CLI command the tool runs, linked to its reference |
+
+And a parameter table. Parameter names are the exact JSON keys of the tool's arguments. Types are JSON schema types: `object` parameters take `{"KEY": "value"}` maps of strings, and the JSON parameters (`policy`, `rules`) take a JSON document. The server is lenient where models tend to slip: a number sent as a string, `"true"` for a boolean, or one string where a list is expected are all accepted. An unknown parameter fails with `unknown argument "<name>", <tool> takes: ...`, and a missing required one with `<name> is required`.
+
+## Behavior every tool shares
+
+- **Names or ids.** Every resource parameter (`cluster`, `database`, `bucket`, `project`, `app`) takes the resource's name or its id, the same as the CLI.
+- **Answers are JSON.** A tool answers with the command's JSON output, compacted, followed by anything the command printed as notes (its success line and any warnings). Output over 1 MiB is cut, keeping the start, or for logs the end. A tool whose command prints nothing answers `Done.`
+- **Errors** come back as a failed tool call with the command's error message, for example the API's validation message, so the agent can correct its arguments and try again.
+- **Waiting.** Tools that create, pause, resume or delete something take `wait`. Without it they return while the change is under way, and the matching `get_*` tool shows the status. With `wait: true` they wait up to 15 minutes.
+- **Progress.** When the client asks for progress (by sending a `progressToken` with the call), the lines the command prints while it runs are sent as MCP progress notifications, at most one a second, with a heartbeat every 15 seconds when nothing is printed. A client can then show a deploy's build as it happens.
+- **No prompts.** Commands run with `--yes`, so nothing asks for confirmation inside the tool. Asking you is your MCP client's job, guided by the annotations.
+- **Local files.** Paths (`dir`, `paths`, `dest`, `file`, `attachments`) are on the machine the MCP server runs on, which is usually your computer.
+- **Concurrency.** At most 4 tool commands run at once, to stay inside the API's rate limit of 100 requests a minute.
+- **Cancelling** a tool call from the client stops its command, as Ctrl-C would.
+
+## Account tools (account)
+
+The `account` toolset tells the agent who it is acting as and what things cost. Start a session with `whoami`: it says which account the token belongs to, the role, and whether the token can only read. Members and API tokens can be listed but not changed: adding members, changing roles and creating or revoking tokens are dashboard only, see [Access control](/account/access-control) and [API tokens](/account/api-tokens).
+
+Tools: `whoami`, `get_usage`, `get_billing`, `get_pricing`, `list_members`, `list_api_tokens`.
+
+
+### whoami
+
+Who the tools act as: the user, the account, the role, and whether the API token can only read.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider whoami`](/cli/commands/account) |
+
+No parameters.
+
+### get_usage
+
+This month's cost so far and the forecast. Without kind, every resource of the account, clusters (with their load balancers) and databases included, with daily figures. With kind and name, one app's, bucket's or registry project's usage.
+
+:::note
+Without `kind` and `name` it runs `cloider usage`. With both it runs `cloider <kind> usage <name>`. Giving only one of them fails with `kind and name go together`.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider usage`](/cli/commands/account) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `kind` | string | No | App, bucket or registry, to read one resource's usage. One of `app`, `bucket`, `registry`. |
+| `name` | string | No | Name or id of that app, bucket or registry project. |
+
+### get_billing
+
+The account's monthly bills, or one month's bill with its items. Only the account's owner can see bills.
+
+:::note
+With `month` it runs `cloider billing show <month>`.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider billing`](/cli/commands/account) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `month` | string | No | The month of one bill, as the bills list names it. |
+
+### get_pricing
+
+Current prices: cluster compute, volumes and load balancers, app compute, bucket and registry storage, and every database plan per engine with its CPU, RAM, storage and paused price.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider pricing`](/cli/commands/account) |
+
+No parameters.
+
+### list_members
+
+The account's members, their roles and status. Adding members and changing roles is done in the dashboard only.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider member list`](/cli/commands/account) |
+
+No parameters.
+
+### list_api_tokens
+
+The account's API tokens (owners and admins see all of them, other members their own). Tokens are made and revoked in the dashboard only.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider token list`](/cli/commands/account) |
+
+No parameters.
+
+## Kubernetes cluster tools (clusters)
+
+The `clusters` toolset creates, pauses, resumes and deletes [Kubernetes clusters](/kubernetes/overview), hands out their kubeconfig, lists the Services they expose, and runs commands in the cluster's terminal, where `kubectl` and `helm` are already connected. A cluster takes a few minutes to create: pass `wait: true`, or poll `get_cluster`.
+
+Tools: `list_clusters`, `get_cluster`, `create_cluster`, `delete_cluster`, `pause_cluster`, `resume_cluster`, `get_cluster_kubeconfig`, `list_cluster_services`, `cluster_exec`.
+
+
+### list_clusters
+
+List the account's Kubernetes clusters with their version and status.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider cluster list`](/cli/commands/cluster) |
+
+No parameters.
+
+### get_cluster
+
+Show a Kubernetes cluster and its status.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider cluster get`](/cli/commands/cluster) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cluster` | string | Yes | Name or id of the cluster. |
+
+### create_cluster
+
+Create a Kubernetes cluster. It takes a few minutes; pass wait, or check get_cluster. An unknown version fails, naming the versions offered.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider cluster create`](/cli/commands/cluster) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | Yes | Name of the new cluster. |
+| `version` | string | No | Kubernetes version, e.g. 1.33 (default: the newest offered). |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### delete_cluster
+
+Delete a Kubernetes cluster and everything in it.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider cluster delete`](/cli/commands/cluster) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cluster` | string | Yes | Name or id of the cluster. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### pause_cluster
+
+Pause a cluster, stopping its compute until it is resumed.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider cluster pause`](/cli/commands/cluster) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cluster` | string | Yes | Name or id of the cluster. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### resume_cluster
+
+Resume a paused cluster.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider cluster resume`](/cli/commands/cluster) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cluster` | string | Yes | Name or id of the cluster. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### get_cluster_kubeconfig
+
+A cluster's kubeconfig, which holds its credentials. Returned as text, or written to file (0600). merge adds it to ~/.kube/config (or to file) as context `cloider-<cluster>`, and use makes that the current context.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider cluster kubeconfig`](/cli/commands/cluster) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cluster` | string | Yes | Name or id of the cluster. |
+| `file` | string | No | Write it to this path instead of returning it; with merge, the kubeconfig to merge into. |
+| `merge` | boolean | No | Merge it into the kubeconfig on this machine. |
+| `context` | string | No | Context name to merge as (default `cloider-<cluster>`). |
+| `use` | boolean | No | With merge, make it the current context. |
+
+### list_cluster_services
+
+The services clusters expose, with namespace and ports, which domain targets can route to.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider cluster services`](/cli/commands/cluster) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cluster` | string | No | Name or id of one cluster (default: every cluster). |
+
+### cluster_exec
+
+Run one command in a cluster's terminal, where kubectl and helm are already pointed at the cluster, e.g. kubectl get pods -A. stdin can carry a manifest for kubectl apply -f -. Returns `{exit_code, stdout, stderr, timed_out}`.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider cluster exec`](/cli/commands/cluster) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cluster` | string | Yes | Name or id of the cluster. |
+| `command` | string | Yes | The command line. With spaces it runs with sh -c, so pipes, && and $VARS work. |
+| `stdin` | string | No | Text passed to the command's stdin, up to 2 MiB. |
+| `timeout_seconds` | integer | No | Stop the command after this long, 1 to 3600 seconds (default 600). |
+
+## Database tools (databases)
+
+The `databases` toolset manages [PostgreSQL, MySQL, MongoDB and Redis databases](/databases/overview): create, resize, pause, rename, back up and restore, change SSL and trusted sources, read connection details, the password and the CA certificate, and run queries with `database_exec`. `get_database` returns the connection details without the password; the password comes from `get_database_password`, so a client can ask before revealing it.
+
+Tools: `list_databases`, `get_database`, `create_database`, `delete_database`, `pause_database`, `resume_database`, `get_database_password`, `get_database_ca_cert`, `database_exec`, `list_database_backups`, `restore_database_backup`, `resize_database`, `rename_database`, `set_database_ssl`, `update_database_trusted_sources`, `get_database_insights`.
+
+
+### list_databases
+
+List the account's databases (PostgreSQL, MySQL, Redis, MongoDB) with engine, plan and status.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider db list`](/cli/commands/db) |
+
+No parameters.
+
+### get_database
+
+Show a database and how to reach it: host, private host (from the account's clusters and apps), port, database name, user, SSL and trusted sources. The password is get_database_password.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider db get`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+
+### create_database
+
+Create a database. It takes a few minutes; pass wait, or check get_database. Plans and their prices are in get_pricing.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider db create`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | Yes | Name of the new database. |
+| `engine` | string | Yes | The engine. One of `postgresql`, `mysql`, `redis`, `mongodb`. |
+| `version` | string | No | Engine version (default: the newest offered). |
+| `plan` | string | No | Plan: Hobby (the default), Starter, Basic, Standard, Plus or Pro. |
+| `user` | string | No | Database user (default `<name>_user`). |
+| `ssl` | boolean | No | Require TLS (default on, except for Redis, where it makes the server TLS only). |
+| `trusted_sources` | array of strings | No | Who may connect: '*' for anywhere (the default), an IPv4 address or CIDR, `cluster:<name>` or `app:<name>`. |
+| `allow_my_ip` | boolean | No | Also trust the public IP this machine connects from. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### delete_database
+
+Delete a database and its data.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider db delete`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### pause_database
+
+Pause a database, keeping its data at a lower price until it is resumed.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider db pause`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### resume_database
+
+Resume a paused database.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider db resume`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### get_database_password
+
+The database user's password, a secret.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider db password`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+
+### get_database_ca_cert
+
+The CA certificate that signs a database's TLS certificate, which Redis and MongoDB clients need to verify the server. Only for a database with SSL on.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider db cert`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `file` | string | No | Write it to this path instead of returning it. |
+
+### database_exec
+
+Run a query with the database's own client, running next to it and already logged in; trusted sources don't apply. PostgreSQL runs it with psql -c, MySQL with mysql -e, Redis as a redis-cli command ("GET key"), MongoDB as mongosh --eval JavaScript. script runs a whole script instead (a PostgreSQL script stops at its first error). Returns `{exit_code, stdout, stderr, timed_out}`.
+
+:::note
+Give either `query` or `script`, not both (`give either query or script`).
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider db exec`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `query` | string | No | The query or command. |
+| `script` | string | No | A script to run instead of a query, up to 2 MiB. |
+| `timeout_seconds` | integer | No | Stop it after this long, 1 to 3600 seconds (default 600). |
+
+### list_database_backups
+
+A database's backups, newest first, named YYYY-MM-DD_HH-MM in UTC.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider db backups`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+
+### restore_database_backup
+
+Restore a backup into a new database, a fork of this one as it was then. The database itself is left as it is.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider db restore`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `backup` | string | Yes | The backup, YYYY-MM-DD_HH-MM, see list_database_backups. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### resize_database
+
+Move a database to a larger plan. It restarts the database.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider db resize`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `plan` | string | Yes | The larger plan, see get_pricing. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### rename_database
+
+Change the name a database is shown and found by. Its host, user and database name stay as they are.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider db rename`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `new_name` | string | Yes | The new name. |
+
+### set_database_ssl
+
+Require TLS on a database, or stop requiring it. It restarts the database.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider db ssl`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `enabled` | boolean | Yes | Whether TLS is required. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### update_database_trusted_sources
+
+Change who may connect to a database: set replaces the list, add and remove change it. A source is '*' for anywhere, an IPv4 address or CIDR, `cluster:<name>` or `app:<name>`. get_database lists the current ones.
+
+:::note
+Give at least one of `set`, `add`, `remove` or `add_my_ip`, or the call fails with `nothing to change, give set, add, remove or add_my_ip`.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider db trusted-sources`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+| `set` | array of strings | No | Replace the list with these sources. |
+| `add` | array of strings | No | Sources to add. |
+| `remove` | array of strings | No | Sources to remove. |
+| `add_my_ip` | boolean | No | Add the public IP this machine connects from. |
+
+### get_database_insights
+
+A database's resource use, today and per day this month: CPU, memory, storage, disk and network rates, and connections against the maximum.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider db insights`](/cli/commands/db) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | Yes | Name or id of the database. |
+
+## Object storage tools (buckets)
+
+The `buckets` toolset manages [S3 compatible buckets](/object-storage/overview) and what is in them: create and delete buckets, change visibility, versioning, policies and lifecycle rules, list, upload, download and delete files, restore earlier versions, and manage S3 access keys. Uploads go through the API one file at a time; for large syncs, have the agent create a key with `create_bucket_key` and use an S3 tool.
+
+Tools: `list_buckets`, `get_bucket`, `create_bucket`, `delete_bucket`, `list_bucket_regions`, `set_bucket_visibility`, `get_bucket_versioning`, `set_bucket_versioning`, `set_bucket_policy`, `delete_bucket_policy`, `get_bucket_lifecycle`, `set_bucket_lifecycle`, `list_bucket_objects`, `upload_bucket_objects`, `download_bucket_objects`, `delete_bucket_objects`, `create_bucket_folder`, `list_bucket_object_versions`, `restore_bucket_object_version`, `list_deleted_bucket_objects`, `delete_bucket_object_versions`, `list_bucket_keys`, `create_bucket_key`, `update_bucket_key`, `delete_bucket_key`.
+
+
+### list_buckets
+
+List the account's S3 compatible buckets with region, status, access and size.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket list`](/cli/commands/bucket) |
+
+No parameters.
+
+### get_bucket
+
+Show a bucket: its S3 endpoint, public url, size, access and policy.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket get`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+
+### create_bucket
+
+Create a bucket. Its name is global across Cloider, 3 to 63 lowercase letters, digits and dashes, and can't be changed later.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider bucket create`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | Yes | Name of the new bucket. |
+| `region` | string | No | Region code, see list_bucket_regions (default: the first). |
+| `public` | boolean | No | Let anyone read its files over https. |
+| `versioning` | boolean | No | Keep previous versions of overwritten and deleted files. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### delete_bucket
+
+Delete a bucket and every file in it.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider bucket delete`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### list_bucket_regions
+
+The regions a bucket can be created in, with their S3 endpoints.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket regions`](/cli/commands/bucket) |
+
+No parameters.
+
+### set_bucket_visibility
+
+Make a bucket public, letting anyone read every file in it over https, or private again.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider bucket visibility`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `public` | boolean | Yes | True for public, false for private. |
+
+### get_bucket_versioning
+
+Whether a bucket keeps previous versions of its files: Enabled, Suspended or Off.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket versioning`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+
+### set_bucket_versioning
+
+Turn versioning on or off. Once on it can only be suspended: versions already kept stay until deleted or expired by a lifecycle rule.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider bucket versioning`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `enabled` | boolean | Yes | Whether to keep previous versions. |
+
+### set_bucket_policy
+
+Replace a bucket's S3 bucket policy. Principals are access key ids, see list_bucket_keys. get_bucket shows the current one.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | Yes | `destructiveHint`, `idempotentHint` | [`cloider bucket policy set`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `policy` | object (JSON) | Yes | The policy document. |
+
+### delete_bucket_policy
+
+Remove a bucket's S3 bucket policy.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | Yes | `destructiveHint`, `idempotentHint` | [`cloider bucket policy delete`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+
+### get_bucket_lifecycle
+
+A bucket's lifecycle rules, which expire files, previous versions and unfinished uploads after a number of days.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket lifecycle get`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+
+### set_bucket_lifecycle
+
+Replace every lifecycle rule of a bucket; an empty list removes them. 0 days turns that action off. Rules set through the S3 API with other options are replaced too.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | Yes | `destructiveHint`, `idempotentHint` | [`cloider bucket lifecycle set`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `rules` | array of objects (JSON) | Yes | The rules. |
+
+### list_bucket_objects
+
+List a bucket's files and folders under a prefix, or everything under it with recursive.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket ls`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `prefix` | string | No | Folder to list, e.g. images/ (default: the bucket's root). |
+| `recursive` | boolean | No | List everything under the prefix, not just its first level. |
+
+### upload_bucket_objects
+
+Upload files from this machine, up to 5 GB each, or text given as content. A file lands at `<prefix><file` name>, or at key; an existing file there is replaced. Each file is an api call, so many files go slowly: for big syncs make a key with create_bucket_key and use an S3 tool.
+
+:::note
+Give either `paths` or `content`. `content` needs `key`, and is written to a temporary file named after the key, so the content type comes from the key's extension.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider bucket upload`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `paths` | array of strings | No | Files or directories on this machine to upload. |
+| `content` | string | No | Text to upload as a file instead of paths, needs key. |
+| `key` | string | No | Exact key for a single file. |
+| `prefix` | string | No | Folder to upload into, e.g. images/. |
+| `recursive` | boolean | No | Upload directories with what is in them, keeping their paths. |
+
+### download_bucket_objects
+
+Download files to dest on this machine, or without dest return one text file of up to 1 MiB as its content. With recursive, keys are folder prefixes and everything under them lands in dest.
+
+:::note
+Without `dest`, exactly one key and no `recursive`: the file comes back as text, up to 1 MiB. A binary or larger file fails with `The file is binary or over 1 MiB, give dest to download it to a path instead.`
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket download`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `keys` | array of strings | Yes | Keys of the files, or folder prefixes with recursive. |
+| `dest` | string | No | A file or directory path on this machine to write to. |
+| `recursive` | boolean | No | Download everything under the given folder prefixes. |
+| `version_id` | string | No | Download this version of the file, see list_bucket_object_versions. |
+
+### delete_bucket_objects
+
+Delete files, or everything under folders with prefixes. With versioning on, deleted files keep their versions and can be restored, see list_deleted_bucket_objects.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider bucket rm`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `keys` | array of strings | No | Keys of the files to delete. |
+| `prefixes` | array of strings | No | Folders to delete everything under, e.g. tmp/. |
+
+### create_bucket_folder
+
+Create an empty folder in a bucket.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider bucket mkdir`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `folder` | string | Yes | The folder, e.g. images/2026/. |
+
+### list_bucket_object_versions
+
+The versions a file has in a bucket with versioning, newest first, delete markers included.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket versions`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `key` | string | Yes | Key of the file. |
+
+### restore_bucket_object_version
+
+Make a previous version of a file the current one. Given a delete marker's version id (see list_deleted_bucket_objects), the file is undeleted.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider bucket restore`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `key` | string | Yes | Key of the file. |
+| `version_id` | string | Yes | The version to restore. |
+
+### list_deleted_bucket_objects
+
+Deleted files a bucket with versioning can still restore, with their delete marker's version id.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket deleted`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `prefix` | string | No | Folder to list (default: the bucket's root). |
+
+### delete_bucket_object_versions
+
+Permanently delete versions of a file. This can't be undone.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider bucket rm-versions`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `key` | string | Yes | Key of the file. |
+| `version_ids` | array of strings | Yes | The versions to delete. |
+
+### list_bucket_keys
+
+The account's S3 access keys, with the buckets each opens and whether it can only read.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket key list`](/cli/commands/bucket) |
+
+No parameters.
+
+### create_bucket_key
+
+Create an S3 access key for any S3 tool (aws cli, rclone, SDKs). Without buckets it opens every bucket of the account. Its secret key is in the answer and never shown again.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider bucket key create`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `label` | string | Yes | What the key is for. |
+| `buckets` | array of strings | No | Buckets the key opens (default: all of them, including later ones). |
+| `read_only` | boolean | No | Only read, never write or delete. |
+| `print_env` | boolean | No | Answer with AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL and AWS_REGION shell exports instead. |
+
+### update_bucket_key
+
+Change an access key's label, buckets or permission, keeping what isn't given.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider bucket key update`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `key` | string | Yes | Access key id, label or id of the key. |
+| `label` | string | No | New label. |
+| `buckets` | array of strings | No | Buckets the key opens, replacing the ones it has. |
+| `all` | boolean | No | Open every bucket of the account, including later ones. |
+| `read_only` | boolean | No | True to only read, false to read and write. |
+
+### delete_bucket_key
+
+Delete an access key; anything using it loses access.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider bucket key delete`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `key` | string | Yes | Access key id, label or id of the key. |
+
+## Container registry tools (registry)
+
+The `registry` toolset manages [container registry](/container-registry/overview) projects, their repositories and images, registry tokens, retention policies and tag immutability rules. Images live at `registry.cloider.com/<project>/<repository>:<tag>`.
+
+Tools: `list_registry_projects`, `get_registry_project`, `create_registry_project`, `delete_registry_project`, `update_registry_project`, `list_registry_repositories`, `list_registry_images`, `delete_registry_image`, `untag_registry_image`, `delete_registry_repository`, `list_registry_tokens`, `create_registry_token`, `update_registry_token`, `delete_registry_token`, `get_registry_retention`, `set_registry_retention_rules`, `set_registry_retention_schedule`, `run_registry_retention`, `list_registry_retention_runs`, `list_registry_immutability_rules`, `add_registry_immutability_rule`, `update_registry_immutability_rule`, `delete_registry_immutability_rule`.
+
+
+### list_registry_projects
+
+List the account's container registry projects. Images live at `<host>/<project>/<repository>:<tag>`; the apps project holds the images apps are built into.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider registry list`](/cli/commands/registry) |
+
+No parameters.
+
+### get_registry_project
+
+Show a registry project: its host and image url, access, storage and limit.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider registry get`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+
+### create_registry_project
+
+Create a registry project. Its name is the path its images live under, global across Cloider: 3 to 63 lowercase letters, digits and dashes, and can't be changed later.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider registry create`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | Yes | Name of the new project. |
+| `public` | boolean | No | Let anyone pull its images without a token. |
+| `storage_limit_gi` | integer | No | Most GiB it may store, pushes past it are refused (default: Cloider's standard limit). |
+| `immutable_tags` | boolean | No | Refuse pushing over or deleting any tag, latest included. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### delete_registry_project
+
+Delete a registry project and every image in it.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider registry delete`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### update_registry_project
+
+Change who can pull from a project, how much it may store, or whether its tags are immutable.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider registry set`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `public` | boolean | No | True lets anyone pull without a token, false only tokens. |
+| `storage_limit_gi` | integer | No | Most GiB it may store. |
+| `immutable_tags` | boolean | No | True refuses pushing over or deleting any tag, false allows it again. |
+
+### list_registry_repositories
+
+A project's repositories, most recently pushed first, 25 a page.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider registry repos`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `filter` | string | No | Only repositories whose name holds this. |
+| `page` | integer | No | Page, from 1. |
+
+### list_registry_images
+
+The images in a repository with their tags, digest, platforms, size and when they were pushed and pulled, newest first, 25 a page. An image left without a tag is removed by the nightly cleanup.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider registry images`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `repository` | string | Yes | The repository, e.g. api or team/api. |
+| `page` | integer | No | Page, from 1. |
+
+### delete_registry_image
+
+Delete an image and every tag on it. To take one tag off and keep the image, use untag_registry_image.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider registry rm`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `repository` | string | Yes | The repository. |
+| `image` | string | Yes | One of the image's tags, or its digest (12 digits are enough). |
+
+### untag_registry_image
+
+Take a tag off an image; the image stays under its other tags. One left with no tag is removed by the nightly cleanup.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider registry untag`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `repository` | string | Yes | The repository. |
+| `tag` | string | Yes | The tag. |
+
+### delete_registry_repository
+
+Delete a repository and every image in it.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider registry rm-repo`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `repository` | string | Yes | The repository. |
+
+### list_registry_tokens
+
+The registry tokens docker, CI and clusters log in to projects with, with the projects each opens, permission and expiry.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider registry token list`](/cli/commands/registry) |
+
+No parameters.
+
+### create_registry_token
+
+Create a registry token. Without projects it opens every project. The answer holds the username and the secret, never shown again: docker login `<host>` -u `<username>` with the secret as the password, the host is in get_registry_project.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider registry token create`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `label` | string | Yes | What the token is for. |
+| `projects` | array of strings | No | Projects the token opens (default: all of them, including later ones). |
+| `read_only` | boolean | No | Only pull, never push or delete. |
+| `expires_days` | integer | No | Days until it stops working, 0 for never (the default), up to 3650. |
+
+### update_registry_token
+
+Change a registry token's label, projects or permission, keeping what isn't given. Its expiry can't change.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider registry token update`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `token` | string | Yes | Label or id of the token. |
+| `label` | string | No | New label. |
+| `projects` | array of strings | No | Projects the token opens, replacing the ones it has. |
+| `all` | boolean | No | Open every project of the account, including later ones. |
+| `read_only` | boolean | No | True to only pull, false to pull and push. |
+
+### delete_registry_token
+
+Delete a registry token; anything logged in with it loses access.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider registry token delete`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `token` | string | Yes | Label or id of the token. |
+
+### get_registry_retention
+
+A project's retention policy: the rules for which images to keep, and when it runs.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider registry retention get`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+
+### set_registry_retention_rules
+
+Replace every retention rule of a project; an empty list removes them. When the policy runs, an image in a repository some rule covers is deleted unless a rule keeps it; repositories no rule covers are left alone, and so are immutable tags. Each rule is worked out on its own, and an image any rule keeps stays. At most 15 rules. Try them with run_registry_retention and dry_run first.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | Yes | `destructiveHint`, `idempotentHint` | [`cloider registry retention set`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `rules` | array of objects (JSON) | Yes | The rules. |
+
+### set_registry_retention_schedule
+
+Change when a project's retention runs, in UTC; none runs it only by hand.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider registry retention schedule`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `every` | string | Yes | How often. One of `none`, `hourly`, `daily`, `weekly`. |
+| `hour` | integer | No | Hour of the day, 0 to 23, for daily and weekly. |
+| `minute` | integer | No | Minute of the hour, 0 to 59. |
+| `weekday` | integer | No | Day of the week, 0 (Sunday) to 6, for weekly. |
+
+### run_registry_retention
+
+Run a project's retention now, deleting what no rule keeps, or with dry_run only report what it would delete. Follow it with list_registry_retention_runs.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider registry retention run`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `dry_run` | boolean | No | Only report what would be deleted. |
+
+### list_registry_retention_runs
+
+A project's retention runs; with run_id what that run did per repository; with task_id too, what it did with each image (kept, deleted, immutable, failed).
+
+:::note
+`task_id` needs `run_id`.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider registry retention runs`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `run_id` | integer | No | A run's id. |
+| `task_id` | integer | No | A task's id within the run. |
+| `page` | integer | No | Page, from 1. |
+
+### list_registry_immutability_rules
+
+A project's tag immutability rules. A tag a rule covers can't be pushed over or deleted, and retention leaves it alone.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider registry immutability list`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+
+### add_registry_immutability_rule
+
+Protect tags from being pushed over or deleted. Patterns are doublestar patterns: api, team/* or ** for all. At most 15 rules.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider registry immutability add`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `repositories` | array of strings | No | Repository patterns (default **). |
+| `exclude_repositories` | boolean | No | Cover the repositories the patterns don't match. |
+| `tags` | array of strings | No | Tag patterns (default **). |
+| `exclude_tags` | boolean | No | Cover the tags the patterns don't match. |
+| `disabled` | boolean | No | Add the rule without applying it. |
+
+### update_registry_immutability_rule
+
+Change an immutability rule, keeping what isn't given.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider registry immutability update`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `rule_id` | integer | Yes | The rule's id, see list_registry_immutability_rules. |
+| `repositories` | array of strings | No | Repository patterns, replacing the rule's. |
+| `exclude_repositories` | boolean | No | True covers the repositories the patterns don't match. |
+| `tags` | array of strings | No | Tag patterns, replacing the rule's. |
+| `exclude_tags` | boolean | No | True covers the tags the patterns don't match. |
+| `disabled` | boolean | No | True keeps the rule without applying it. |
+
+### delete_registry_immutability_rule
+
+Delete an immutability rule; the tags it protected can be pushed over and deleted again.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider registry immutability delete`](/cli/commands/registry) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `project` | string | Yes | Name or id of the registry project. |
+| `rule_id` | integer | Yes | The rule's id, see list_registry_immutability_rules. |
+
+## App tools (apps)
+
+The `apps` toolset deploys and runs [apps](/apps/overview): deploy a directory from the machine the MCP server runs on, create an app from a GitHub, GitLab or Bitbucket repository, follow builds, read logs, manage environment variables, build args and build environments, run commands in the app's container, and pause, resume or delete apps. `deploy_app` and `create_app_from_git` follow the build until the app is up, reporting progress as they go, unless `detach` is set.
+
+Tools: `list_apps`, `get_app`, `deploy_app`, `create_app_from_git`, `pause_app`, `resume_app`, `delete_app`, `update_app_settings`, `update_app_git`, `get_app_logs`, `list_app_builds`, `get_app_build_logs`, `retry_app_build`, `list_app_variables`, `get_app_variable`, `set_app_variables`, `unset_app_variables`, `app_exec`, `list_git_installations`, `list_git_repositories`, `list_git_branches`, `connect_git_provider`, `disconnect_git_installation`.
+
+
+### list_apps
+
+List the account's apps with status, version and URL.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app list`](/cli/commands/app) |
+
+No parameters.
+
+### get_app
+
+Show an app: status, URL, version, detected language and framework, port, start command, domains, and where it deploys from.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app get`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+
+### deploy_app
+
+Deploy a directory on this machine as an app. The first deploy zips it (leaving out what .gitignore and .cloiderignore list, up to 2000 files and 100 MB), detects the language, framework and port, creates the app with a free subdomain, and links the directory to it in .cloider/app.json; later deploys from the directory build a new version. With git, builds the latest commit of a git app's branch instead. Follows the build until the app is up and answers its URL, unless detach. The params for a new app are ignored when deploying to an existing one.
+
+:::note
+`dir` is required unless `git` is true, and `git` needs `app`. `dir` must be an absolute path on the machine the MCP server runs on.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider deploy`](/cli/commands/deploy) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `dir` | string | No | Absolute path of the directory to deploy. |
+| `app` | string | No | Deploy to this existing app instead of the one the directory is linked to. |
+| `git` | boolean | No | Build the latest commit of the app's git branch instead of uploading, needs app. |
+| `name` | string | No | App name for a new app (default: what detection finds, else the directory or repository name). |
+| `port` | integer | No | Port a new app listens on (default: detected, else 8080). |
+| `start_command` | string | No | Command a new app starts with (default: detected). |
+| `subdomain` | string | No | Free subdomain a new app is served on, a label or a full name (default: `<name>-<random>`). |
+| `no_subdomain` | boolean | No | Don't claim a free subdomain for a new app. |
+| `env` | object | No | Environment variables of a new app, `{"KEY": "value"}`. |
+| `secret_env` | object | No | Secret environment variables of a new app, never listed back. |
+| `build_args` | object | No | Dockerfile build args of a new app (ARG NAME). |
+| `secret_build_args` | object | No | Dockerfile build secrets of a new app, for RUN --mount=type=secret,id=NAME,env=NAME. |
+| `build_env` | object | No | Buildpack build variables of a new app, for an app without a Dockerfile. |
+| `secret_build_env` | object | No | Secret buildpack build variables of a new app. |
+| `detach` | boolean | No | Return once the build starts instead of following it until the app is up. |
+
+### create_app_from_git
+
+Create an app that deploys from a GitHub, GitLab or Bitbucket repository, reachable through a connected installation (see list_git_installations and connect_git_provider). Follows the first build until the app is up, unless detach.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider app create`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | string | Yes | The git provider. One of `github`, `gitlab`, `bitbucket`. |
+| `repo` | string | Yes | The repository, e.g. acme/api. |
+| `branch` | string | No | Branch to deploy (default: the repository's default). |
+| `installation` | string | No | Installation to import through, by id or account (default: the only one). |
+| `name` | string | No | App name for a new app (default: what detection finds, else the directory or repository name). |
+| `port` | integer | No | Port a new app listens on (default: detected, else 8080). |
+| `start_command` | string | No | Command a new app starts with (default: detected). |
+| `subdomain` | string | No | Free subdomain a new app is served on, a label or a full name (default: `<name>-<random>`). |
+| `no_subdomain` | boolean | No | Don't claim a free subdomain for a new app. |
+| `env` | object | No | Environment variables of a new app, `{"KEY": "value"}`. |
+| `secret_env` | object | No | Secret environment variables of a new app, never listed back. |
+| `build_args` | object | No | Dockerfile build args of a new app (ARG NAME). |
+| `secret_build_args` | object | No | Dockerfile build secrets of a new app, for RUN --mount=type=secret,id=NAME,env=NAME. |
+| `build_env` | object | No | Buildpack build variables of a new app, for an app without a Dockerfile. |
+| `secret_build_env` | object | No | Secret buildpack build variables of a new app. |
+| `detach` | boolean | No | Return once the build starts instead of following it until the app is up. |
+
+### pause_app
+
+Stop an app serving, keeping its environment and image.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider app pause`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### resume_app
+
+Start a paused app again.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider app resume`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### delete_app
+
+Delete an app. Its free subdomains go with it unless keep_domains; a custom domain is never deleted, it only loses its route to the app.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider app delete`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `keep_domains` | boolean | No | Keep the app's free subdomains claimed. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### update_app_settings
+
+Change the port an app listens on, which redeploys the running version, or its start command, which builds it again.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider app update`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `port` | integer | No | Port the app listens on. |
+| `start_command` | string | No | Command the app starts with, empty for the detected one. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### update_app_git
+
+Change the branch a git app deploys from, or whether a push deploys it. Neither builds by itself: the next push, or deploy_app with git, picks it up.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider app git`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `branch` | string | No | Branch to deploy from. |
+| `auto_deploy` | boolean | No | Deploy on every push to the branch. |
+
+### get_app_logs
+
+The latest lines a running app printed.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app logs`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `lines` | integer | No | Lines of history: 100, 200 (the default), 500 or 1000. |
+
+### list_app_builds
+
+An app's builds, newest first, with version, status, source (commit or upload) and message.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app builds`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+
+### get_app_build_logs
+
+A build's output. A build still running is followed until it ends.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app build logs`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `build` | string | No | Version or id of the build (default: the latest). |
+
+### retry_app_build
+
+Run a failed build again.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider app build retry`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `build` | string | Yes | Version or id of the failed build. |
+| `follow` | boolean | No | Follow the build until the app is up. |
+
+### list_app_variables
+
+An app's environment variables, or its build args or build variables. Secret values are never listed, read one with get_app_variable.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app env list`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `kind` | string | No | Which variables: env, the running app's environment (the default); build-args, a Dockerfile's build args and build secrets; build-env, a buildpack build's environment. One of `env`, `build-args`, `build-env`. |
+
+### get_app_variable
+
+One variable's value, secrets included.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app env get`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `key` | string | Yes | The variable's name. |
+| `kind` | string | No | Which variables: env, the running app's environment (the default); build-args, a Dockerfile's build args and build secrets; build-env, a buildpack build's environment. One of `env`, `build-args`, `build-env`. |
+
+### set_app_variables
+
+Set variables, keeping the others. Changing the environment restarts the app; changing build args or build variables builds it again.
+
+:::note
+`variables` can't be empty.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider app env set`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `variables` | object | Yes | The variables to set, `{"KEY": "value"}`. |
+| `secret` | boolean | No | Store the values as secrets, never listed back. |
+| `kind` | string | No | Which variables: env, the running app's environment (the default); build-args, a Dockerfile's build args and build secrets; build-env, a buildpack build's environment. One of `env`, `build-args`, `build-env`. |
+
+### unset_app_variables
+
+Remove variables. Changing the environment restarts the app; changing build args or build variables builds it again.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider app env unset`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `keys` | array of strings | Yes | Names of the variables to remove. |
+| `kind` | string | No | Which variables: env, the running app's environment (the default); build-args, a Dockerfile's build args and build secrets; build-env, a buildpack build's environment. One of `env`, `build-args`, `build-env`. |
+
+### app_exec
+
+Run one command inside an app's container, e.g. a migration. Returns `{exit_code, stdout, stderr, timed_out}`; 127 means the command doesn't exist there.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider app exec`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `command` | string | Yes | The command line. With spaces it runs with sh -c, so pipes, && and $VARS work. |
+| `stdin` | string | No | Text passed to the command's stdin, up to 2 MiB. |
+| `timeout_seconds` | integer | No | Stop the command after this long, 1 to 3600 seconds (default 600). |
+
+### list_git_installations
+
+The connected accounts of a git provider, which apps can deploy from.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider git installations`](/cli/commands/git) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | string | Yes | The git provider. One of `github`, `gitlab`, `bitbucket`. |
+
+### list_git_repositories
+
+The repositories a connected git account gives access to.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider git repos`](/cli/commands/git) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | string | Yes | The git provider. One of `github`, `gitlab`, `bitbucket`. |
+| `installation` | string | No | The connected account, by id or name (default: the only one). |
+
+### list_git_branches
+
+A repository's branches.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider git branches`](/cli/commands/git) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | string | Yes | The git provider. One of `github`, `gitlab`, `bitbucket`. |
+| `repo` | string | Yes | The repository, e.g. acme/api. |
+| `installation` | string | No | The connected account, by id or name (default: the only one). |
+
+### connect_git_provider
+
+Open the browser on this machine to connect a git account; the person finishes it there, logged in to the dashboard. Answers the link too.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider git connect`](/cli/commands/git) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | string | Yes | The git provider. One of `github`, `gitlab`, `bitbucket`. |
+
+### disconnect_git_installation
+
+Disconnect a git account; apps deploying from it stop deploying on push.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider git disconnect`](/cli/commands/git) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | string | Yes | The git provider. One of `github`, `gitlab`, `bitbucket`. |
+| `installation` | string | Yes | The connected account, by id or name. |
+
+## Domain, DNS and target tools (domains)
+
+The `domains` toolset claims free `cloider.app` subdomains, adds custom domains, manages a custom domain's [DNS records](/domains/dns-records), and routes paths of a domain to an app or a cluster Service with [targets](/domains/targets). A custom domain comes with an A record for the domain itself that points at Cloider, but a target doesn't add records, so routing a subdomain such as www usually takes a `create_dns_record` too, see [Add a custom domain](/domains/add-a-custom-domain).
+
+There is no tool that lists a domain's targets. Keep the id from `create_domain_target`'s answer, or list them with `cloider target list <domain> -o wide`.
+
+Tools: `list_domains`, `get_domain`, `check_domain_availability`, `create_domain`, `delete_domain`, `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, `create_domain_target`, `update_domain_target`, `delete_domain_target`.
+
+
+### list_domains
+
+List the account's free subdomains and custom domains with their status.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider domain list`](/cli/commands/domain) |
+
+No parameters.
+
+### get_domain
+
+Show a domain and its targets, the routes from its paths to apps and cluster services.
+
+:::note
+The answer holds the domain's name, type, status and creation date, and its targets, each with the `hashed_id` that `update_domain_target` and `delete_domain_target` take.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider domain get`](/cli/commands/domain) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+
+### check_domain_availability
+
+Whether a free subdomain can be claimed, and why not.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider domain check`](/cli/commands/domain) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+
+### create_domain
+
+Claim a free subdomain (a name under one of Cloider's roots, e.g. my-app.cloider.app), or add a domain you own, to point at the nameservers the answer lists. Route it with create_domain_target.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider domain create`](/cli/commands/domain) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+
+### delete_domain
+
+Delete a domain, with its DNS records and targets.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider domain delete`](/cli/commands/domain) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+
+### list_dns_records
+
+A custom domain's DNS records, with their ids.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider dns list`](/cli/commands/dns) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+
+### create_dns_record
+
+Add a DNS record to a custom domain.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider dns create`](/cli/commands/dns) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+| `type` | string | No | Record type (default A). One of `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `CAA`, `HTTPS`, `SPF`, `SRV`, `PTR`, `ALIAS`. |
+| `name` | string | No | Record name, e.g. www; empty for the domain itself. |
+| `value` | string | Yes | Record value. |
+| `ttl` | integer | No | Time to live, 60 to 172800 seconds (default 300). |
+
+### update_dns_record
+
+Change a DNS record, keeping what isn't given.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider dns update`](/cli/commands/dns) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `record_id` | integer | Yes | The record's id, see list_dns_records. |
+| `type` | string | No | Record type. One of `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `CAA`, `HTTPS`, `SPF`, `SRV`, `PTR`, `ALIAS`. |
+| `name` | string | No | Record name, empty for the domain itself. |
+| `value` | string | No | Record value. |
+| `ttl` | integer | No | Time to live, 60 to 172800 seconds. |
+
+### delete_dns_record
+
+Delete a DNS record.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider dns delete`](/cli/commands/dns) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `record_id` | integer | Yes | The record's id, see list_dns_records. |
+
+### create_domain_target
+
+Route a path of a domain to an app, or to a cluster's service. Give app, or cluster with service.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider target create`](/cli/commands/target) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+| `app` | string | No | Route to this app. |
+| `cluster` | string | No | Route to a service in this cluster. |
+| `service` | string | No | The cluster's service as `<namespace>/<service>`, see list_cluster_services. |
+| `port` | integer | No | The service's port (default: its only port). |
+| `protocol` | string | No | TCP or UDP (default: the port's own). One of `TCP`, `UDP`. |
+| `path` | string | No | Path on the domain to route (default /). |
+| `target_path` | string | No | Path the request reaches the target with (default: path). |
+
+### update_domain_target
+
+Change a domain's target, keeping what isn't given; app or cluster moves it to another app or service.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider target update`](/cli/commands/target) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+| `target_id` | string | Yes | The target's id, see get_domain. |
+| `app` | string | No | Route to this app. |
+| `cluster` | string | No | Route to a service in this cluster. |
+| `service` | string | No | The cluster's service as `<namespace>/<service>`, see list_cluster_services. |
+| `port` | integer | No | The service's port (default: its only port). |
+| `protocol` | string | No | TCP or UDP (default: the port's own). One of `TCP`, `UDP`. |
+| `path` | string | No | Path on the domain to route (default /). |
+| `target_path` | string | No | Path the request reaches the target with (default: path). |
+
+### delete_domain_target
+
+Delete a target; its route stops answering.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | No | `destructiveHint` | [`cloider target delete`](/cli/commands/target) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `target_id` | string | Yes | The target's id, see get_domain. |
+
+## Support tools (support)
+
+The `support` toolset reads and writes [support requests](/account/support): list and read them, open a new one, reply, and download attachments. Attachments are read from and saved to the machine the MCP server runs on.
+
+Tools: `list_support_tickets`, `get_support_ticket`, `create_support_ticket`, `reply_support_ticket`, `download_support_attachment`.
+
+
+### list_support_tickets
+
+The account's support requests with their status.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider support list`](/cli/commands/support) |
+
+No parameters.
+
+### get_support_ticket
+
+A support request with its replies and attachment ids.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider support get`](/cli/commands/support) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `ticket_id` | string | Yes | The request's id, see list_support_tickets. |
+
+### create_support_ticket
+
+Open a support request with Cloider's team.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider support create`](/cli/commands/support) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `subject` | string | Yes | What it is about, in a line. |
+| `description` | string | Yes | The details, at least 20 characters. |
+| `type` | string | No | Request type (default QuestionOrIssue). One of `QuestionOrIssue`, `FeatureRequest`, `DocumentationIssue`, `Feedback`, `Billing`, `NotListed`. |
+| `impact` | string | No | Business impact (default Question). One of `Question`, `Issue`, `PartiallyBlocked`, `CompletelyBlocked`. |
+| `service` | string | No | The service it is about (default App). One of `App`, `Kubernetes`, `Database`, `Bucket`, `Registry`, `Volume`, `LoadBalancer`, `Domain`, `Other`. |
+| `attachments` | array of strings | No | Files on this machine to attach: text, pdf, doc, images or zip, up to 5 of 10 MB each. |
+
+### reply_support_ticket
+
+Reply to a support request.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider support reply`](/cli/commands/support) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `ticket_id` | string | Yes | The request's id. |
+| `message` | string | Yes | The reply. |
+| `attachments` | array of strings | No | Files on this machine to attach, up to 5 of 10 MB each. |
+
+### download_support_attachment
+
+Download an attachment of a support request to a file on this machine.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider support attachment`](/cli/commands/support) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `attachment_id` | string | Yes | The attachment's id, see get_support_ticket. |
+| `file` | string | Yes | Path to save it to. |
+
+## Commands that have no tool
+
+Some CLI commands are interactive or only make sense in a terminal, so `cloider mcp` doesn't offer them: `cloider cluster shell`, `cloider db shell`, `cloider app shell`, `cloider db connect`, `cloider login`, `cloider logout`, `cloider profile`, `cloider update`, `cloider app open`, `cloider app link` and `cloider registry login`. Adding members, changing roles and creating or revoking API tokens aren't tools either, because the API only takes those from the dashboard.
+
+## Next steps
+
+- [Set up the MCP server](/mcp/setup) in your AI client
+- [Safety and permissions](/mcp/safety-and-permissions): read only tokens, `--read-only`, toolsets and annotations
+- [Example prompts](/mcp/example-prompts) and which tools each one calls
+- [`cloider mcp` command reference](/cli/commands/mcp)
+
+<FAQ items={[
+  {q: 'How many tools does the Cloider MCP server have?', a: '119 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 51 of them only read, 41 create or change resources, and 27 are destructive, which includes the three exec tools.'},
+  {q: 'Which Cloider MCP tools are destructive?', a: 'Every delete tool, the tools that replace a whole setting (bucket policy, lifecycle rules, retention rules), uploads (which overwrite files with the same key), unsetting app variables, untagging and running retention, disconnecting a git account, and the exec tools app_exec, cluster_exec and database_exec. They all carry destructiveHint, so clients ask before running them.'},
+  {q: 'Can the MCP server show a database password?', a: 'Yes, with get_database_password, which is read only. get_database returns the connection details without the password, so a client can let the agent read connection details freely and still ask before it reads the password.'},
+  {q: 'Can the agent deploy code from my computer?', a: 'Yes. deploy_app uploads a directory on the machine the MCP server runs on, given as an absolute path in dir, detects the language and port, and follows the build until the app is up.'},
+  {q: 'How does an agent list a domain\'s targets?', a: 'There is no MCP tool for that, and get_domain doesn\'t include targets. create_domain_target answers with the new target and its id; to list existing ones, run cloider target list <domain> -o wide.'},
+]} />

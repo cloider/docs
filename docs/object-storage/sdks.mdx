@@ -1,0 +1,758 @@
+---
+title: Use the AWS SDKs with Cloider Object Storage
+sidebar_label: SDKs
+sidebar_position: 5
+description: Connect to Cloider buckets from JavaScript, Python, Go, PHP, Java, Ruby and .NET with the AWS SDKs, with uploads, downloads, listing and presigned URLs.
+keywords: [aws sdk custom endpoint, s3 sdk javascript, boto3 endpoint_url, aws sdk go v2 s3 endpoint, php s3client endpoint, java s3 endpointOverride, presigned url, s3 compatible sdk, requestChecksumCalculation]
+---
+
+Your code reaches Cloider buckets with the official AWS SDKs, because the buckets speak the S3 API. You configure the S3 client with Cloider's endpoint, the region `eu-central-2`, an access key and one checksum setting, and every S3 call (upload, download, list, delete, presign) works as it does on Amazon S3.
+
+This page has a complete, runnable example for each language, then shows the patterns most apps need: large uploads, presigned URLs for downloads and browser uploads, and configuration through environment variables.
+
+## Before you begin
+
+- A bucket, here `acme-assets`. See [Create a bucket](/object-storage/create-a-bucket).
+- An [access key](/object-storage/access-keys) for it, read and write if your code uploads or deletes.
+- The key in your app's environment, never in the source code:
+
+```bash title=".env"
+AWS_ACCESS_KEY_ID=CLDRZ8Q4M2X7KD1PLW0B
+AWS_SECRET_ACCESS_KEY=7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+AWS_REGION=eu-central-2
+AWS_ENDPOINT_URL_S3=https://s3.eu-central-2.cloider.com
+AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+S3_BUCKET=acme-assets
+```
+
+## The four settings every SDK needs
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Endpoint | `https://s3.eu-central-2.cloider.com` | Sends requests to Cloider instead of AWS |
+| Region | `eu-central-2` | The region requests are signed for |
+| Credentials | access key id and secret key | Signs every request |
+| Checksum calculation | `when_required` | AWS SDKs released since January 2025 add a checksum to every upload by default, which Cloider's storage doesn't accept. `when_required` sends one only where the S3 API requires it |
+
+Path style addressing is optional: Cloider serves both `https://acme-assets.s3.eu-central-2.cloider.com/key` and `https://s3.eu-central-2.cloider.com/acme-assets/key`. The examples set it explicitly so you can see where the switch is. Older SDK versions that don't know the checksum settings don't send the default checksums either, so for them you can leave the setting out.
+
+:::tip[Configuration from the environment only]
+Recent versions of every AWS SDK read `AWS_ENDPOINT_URL_S3`, `AWS_REGION`, the credentials and `AWS_REQUEST_CHECKSUM_CALCULATION` from the environment. With the `.env` above, a client created with no options at all (`new S3Client({})`, `boto3.client("s3")`) talks to Cloider. The explicit examples below work with every SDK version that supports the settings, and make the configuration visible in code.
+:::
+
+## Complete examples
+
+Each example uploads a file, lists the bucket, downloads the file, creates a presigned download link and deletes the file.
+
+<Tabs groupId="language" queryString>
+<TabItem value="javascript" label="JavaScript" default>
+
+Install the AWS SDK for JavaScript v3:
+
+```bash
+npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner @aws-sdk/lib-storage
+```
+
+```js title="s3.mjs"
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { readFile } from "node:fs/promises";
+
+const s3 = new S3Client({
+  region: "eu-central-2",
+  endpoint: "https://s3.eu-central-2.cloider.com",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+  forcePathStyle: false, // true works too
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
+});
+
+const Bucket = "acme-assets";
+
+// Upload
+await s3.send(new PutObjectCommand({
+  Bucket,
+  Key: "images/logo.png",
+  Body: await readFile("./logo.png"),
+  ContentType: "image/png",
+  CacheControl: "public, max-age=86400",
+}));
+
+// List
+const list = await s3.send(new ListObjectsV2Command({ Bucket, Prefix: "images/" }));
+for (const obj of list.Contents ?? []) {
+  console.log(obj.Key, obj.Size, obj.LastModified);
+}
+
+// Download
+const file = await s3.send(new GetObjectCommand({ Bucket, Key: "images/logo.png" }));
+const bytes = await file.Body.transformToByteArray();
+console.log("downloaded", bytes.length, "bytes");
+
+// Presigned download link, valid for 15 minutes
+const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket, Key: "images/logo.png" }), {
+  expiresIn: 900,
+});
+console.log(url);
+
+// Delete
+await s3.send(new DeleteObjectCommand({ Bucket, Key: "images/logo.png" }));
+```
+
+Run it with `node --env-file=.env s3.mjs` (Node.js 20.6 or later).
+
+**Large files.** `@aws-sdk/lib-storage` splits big files into a multipart upload and sends parts in parallel:
+
+```js title="upload-large.mjs"
+import { S3Client } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+import { createReadStream } from "node:fs";
+
+const s3 = new S3Client({
+  region: "eu-central-2",
+  endpoint: "https://s3.eu-central-2.cloider.com",
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
+});
+
+const upload = new Upload({
+  client: s3,
+  params: {
+    Bucket: "acme-backups",
+    Key: "dumps/orders-2026-10-20.sql.gz",
+    Body: createReadStream("./orders.sql.gz"),
+  },
+  partSize: 16 * 1024 * 1024, // 16 MiB parts
+  queueSize: 4,               // 4 parts in parallel
+});
+
+upload.on("httpUploadProgress", (p) => console.log(p.loaded, "/", p.total));
+await upload.done();
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+Install boto3 (version 1.36 or later knows the checksum settings):
+
+```bash
+pip install "boto3>=1.36"
+```
+
+```python title="s3.py"
+import os
+
+import boto3
+from botocore.config import Config
+
+s3 = boto3.client(
+    "s3",
+    endpoint_url="https://s3.eu-central-2.cloider.com",
+    region_name="eu-central-2",
+    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    config=Config(
+        signature_version="s3v4",
+        s3={"addressing_style": "virtual"},  # "path" works too
+        request_checksum_calculation="when_required",
+        response_checksum_validation="when_required",
+    ),
+)
+
+bucket = "acme-assets"
+
+# Upload (multipart automatically for large files)
+s3.upload_file(
+    "logo.png", bucket, "images/logo.png",
+    ExtraArgs={"ContentType": "image/png", "CacheControl": "public, max-age=86400"},
+)
+
+# Upload bytes directly
+s3.put_object(Bucket=bucket, Key="notes/hello.txt", Body=b"Hello from Cloider", ContentType="text/plain")
+
+# List every object under a prefix, across pages
+paginator = s3.get_paginator("list_objects_v2")
+for page in paginator.paginate(Bucket=bucket, Prefix="images/"):
+    for obj in page.get("Contents", []):
+        print(obj["Key"], obj["Size"], obj["LastModified"])
+
+# Download
+s3.download_file(bucket, "images/logo.png", "logo-copy.png")
+body = s3.get_object(Bucket=bucket, Key="notes/hello.txt")["Body"].read()
+print(body.decode())
+
+# Presigned download link, valid for 15 minutes
+url = s3.generate_presigned_url(
+    "get_object",
+    Params={"Bucket": bucket, "Key": "images/logo.png"},
+    ExpiresIn=900,
+)
+print(url)
+
+# Delete one object, then several at once
+s3.delete_object(Bucket=bucket, Key="notes/hello.txt")
+s3.delete_objects(
+    Bucket=bucket,
+    Delete={"Objects": [{"Key": "images/logo.png"}, {"Key": "images/old.png"}]},
+)
+```
+
+**Django** with `django-storages`:
+
+```python title="settings.py"
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": "acme-assets",
+            "endpoint_url": "https://s3.eu-central-2.cloider.com",
+            "region_name": "eu-central-2",
+            "access_key": os.environ["AWS_ACCESS_KEY_ID"],
+            "secret_key": os.environ["AWS_SECRET_ACCESS_KEY"],
+            "signature_version": "s3v4",
+            "addressing_style": "virtual",
+        },
+    },
+}
+```
+
+Set `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` and `AWS_RESPONSE_CHECKSUM_VALIDATION=when_required` in the app's environment, which boto3 reads under django-storages too.
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+Install the AWS SDK for Go v2:
+
+```bash
+go get github.com/aws/aws-sdk-go-v2/aws github.com/aws/aws-sdk-go-v2/config \
+  github.com/aws/aws-sdk-go-v2/credentials github.com/aws/aws-sdk-go-v2/service/s3
+```
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+)
+
+const bucket = "acme-assets"
+
+func main() {
+	ctx := context.Background()
+
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("eu-central-2"),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("AWS_SECRET_ACCESS_KEY"), "",
+		)),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String("https://s3.eu-central-2.cloider.com")
+		o.UsePathStyle = false // true works too
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+	})
+
+	// Upload
+	f, err := os.Open("logo.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String("images/logo.png"),
+		Body:        f,
+		ContentType: aws.String("image/png"),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// List, across pages
+	pages := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+		Prefix: aws.String("images/"),
+	})
+	for pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, obj := range page.Contents {
+			fmt.Println(aws.ToString(obj.Key), aws.ToInt64(obj.Size))
+		}
+	}
+
+	// Download
+	out, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String("images/logo.png"),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	data, _ := io.ReadAll(out.Body)
+	out.Body.Close()
+	fmt.Println("downloaded", len(data), "bytes")
+
+	// Presigned download link, valid for 15 minutes
+	presigner := s3.NewPresignClient(client)
+	req, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String("images/logo.png"),
+	}, s3.WithPresignExpires(15*time.Minute))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(req.URL)
+
+	// Delete several objects in one request
+	_, err = client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		Bucket: aws.String(bucket),
+		Delete: &types.Delete{Objects: []types.ObjectIdentifier{
+			{Key: aws.String("images/logo.png")},
+		}},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+For large files, `github.com/aws/aws-sdk-go-v2/feature/s3/manager` provides an `Uploader` that sends multipart uploads in parallel. Create it with `manager.NewUploader(client)` from the same client.
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+Install the AWS SDK for PHP:
+
+```bash
+composer require aws/aws-sdk-php
+```
+
+```php title="s3.php"
+<?php
+require __DIR__ . '/vendor/autoload.php';
+
+use Aws\S3\S3Client;
+
+$s3 = new S3Client([
+    'version' => 'latest',
+    'region' => 'eu-central-2',
+    'endpoint' => 'https://s3.eu-central-2.cloider.com',
+    'use_path_style_endpoint' => false, // true works too
+    'credentials' => [
+        'key' => getenv('AWS_ACCESS_KEY_ID'),
+        'secret' => getenv('AWS_SECRET_ACCESS_KEY'),
+    ],
+    'request_checksum_calculation' => 'when_required',
+    'response_checksum_validation' => 'when_required',
+]);
+
+$bucket = 'acme-assets';
+
+// Upload
+$s3->putObject([
+    'Bucket' => $bucket,
+    'Key' => 'images/logo.png',
+    'SourceFile' => __DIR__ . '/logo.png',
+    'ContentType' => 'image/png',
+]);
+
+// List
+$result = $s3->listObjectsV2(['Bucket' => $bucket, 'Prefix' => 'images/']);
+foreach ($result['Contents'] ?? [] as $object) {
+    echo $object['Key'], ' ', $object['Size'], PHP_EOL;
+}
+
+// Download
+$file = $s3->getObject(['Bucket' => $bucket, 'Key' => 'images/logo.png']);
+file_put_contents(__DIR__ . '/logo-copy.png', $file['Body']);
+
+// Presigned download link, valid for 15 minutes
+$command = $s3->getCommand('GetObject', ['Bucket' => $bucket, 'Key' => 'images/logo.png']);
+$request = $s3->createPresignedRequest($command, '+15 minutes');
+echo (string) $request->getUri(), PHP_EOL;
+
+// Delete
+$s3->deleteObject(['Bucket' => $bucket, 'Key' => 'images/logo.png']);
+```
+
+**Laravel.** The built in `s3` disk works with Cloider through these `.env` values:
+
+```bash title=".env"
+FILESYSTEM_DISK=s3
+AWS_ACCESS_KEY_ID=CLDRZ8Q4M2X7KD1PLW0B
+AWS_SECRET_ACCESS_KEY=7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+AWS_DEFAULT_REGION=eu-central-2
+AWS_BUCKET=acme-assets
+AWS_ENDPOINT=https://s3.eu-central-2.cloider.com
+AWS_URL=https://acme-assets.s3.eu-central-2.cloider.com
+AWS_USE_PATH_STYLE_ENDPOINT=false
+AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+```
+
+`Storage::put('images/logo.png', $contents)`, `Storage::url(...)` (for a public bucket) and `Storage::temporaryUrl(...)` (a presigned link) then use the bucket.
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+Add the AWS SDK for Java v2 S3 module (Maven):
+
+```xml title="pom.xml"
+<dependency>
+  <groupId>software.amazon.awssdk</groupId>
+  <artifactId>s3</artifactId>
+  <version>2.31.0</version>
+</dependency>
+```
+
+Any 2.30 or later version has the checksum settings.
+
+```java title="CloiderS3.java"
+import java.net.URI;
+import java.nio.file.Path;
+import java.time.Duration;
+
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+
+public class CloiderS3 {
+    static final URI ENDPOINT = URI.create("https://s3.eu-central-2.cloider.com");
+    static final Region REGION = Region.of("eu-central-2");
+    static final String BUCKET = "acme-assets";
+
+    public static void main(String[] args) {
+        var credentials = StaticCredentialsProvider.create(AwsBasicCredentials.create(
+                System.getenv("AWS_ACCESS_KEY_ID"), System.getenv("AWS_SECRET_ACCESS_KEY")));
+
+        try (S3Client s3 = S3Client.builder()
+                .region(REGION)
+                .endpointOverride(ENDPOINT)
+                .credentialsProvider(credentials)
+                .forcePathStyle(false) // true works too
+                .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
+                .build()) {
+
+            // Upload
+            s3.putObject(r -> r.bucket(BUCKET).key("images/logo.png").contentType("image/png"),
+                    RequestBody.fromFile(Path.of("logo.png")));
+
+            // List, across pages
+            for (S3Object obj : s3.listObjectsV2Paginator(r -> r.bucket(BUCKET).prefix("images/")).contents()) {
+                System.out.println(obj.key() + " " + obj.size());
+            }
+
+            // Download
+            byte[] bytes = s3.getObjectAsBytes(r -> r.bucket(BUCKET).key("images/logo.png")).asByteArray();
+            System.out.println("downloaded " + bytes.length + " bytes");
+
+            // Presigned download link, valid for 15 minutes
+            try (S3Presigner presigner = S3Presigner.builder()
+                    .region(REGION)
+                    .endpointOverride(ENDPOINT)
+                    .credentialsProvider(credentials)
+                    .build()) {
+                var presigned = presigner.presignGetObject(p -> p
+                        .signatureDuration(Duration.ofMinutes(15))
+                        .getObjectRequest(r -> r.bucket(BUCKET).key("images/logo.png")));
+                System.out.println(presigned.url());
+            }
+
+            // Delete
+            s3.deleteObject(r -> r.bucket(BUCKET).key("images/logo.png"));
+        }
+    }
+}
+```
+
+</TabItem>
+<TabItem value="ruby" label="Ruby">
+
+Install the S3 gem:
+
+```bash
+gem install aws-sdk-s3
+```
+
+```ruby title="s3.rb"
+require "aws-sdk-s3"
+
+s3 = Aws::S3::Client.new(
+  region: "eu-central-2",
+  endpoint: "https://s3.eu-central-2.cloider.com",
+  access_key_id: ENV.fetch("AWS_ACCESS_KEY_ID"),
+  secret_access_key: ENV.fetch("AWS_SECRET_ACCESS_KEY"),
+  force_path_style: false, # true works too
+  request_checksum_calculation: "when_required",
+  response_checksum_validation: "when_required"
+)
+
+bucket = "acme-assets"
+
+# Upload
+File.open("logo.png", "rb") do |file|
+  s3.put_object(bucket: bucket, key: "images/logo.png", body: file, content_type: "image/png")
+end
+
+# List
+s3.list_objects_v2(bucket: bucket, prefix: "images/").each do |page|
+  page.contents.each { |obj| puts "#{obj.key} #{obj.size}" }
+end
+
+# Download
+s3.get_object(bucket: bucket, key: "images/logo.png", response_target: "logo-copy.png")
+
+# Presigned download link, valid for 15 minutes
+presigner = Aws::S3::Presigner.new(client: s3)
+puts presigner.presigned_url(:get_object, bucket: bucket, key: "images/logo.png", expires_in: 900)
+
+# Delete
+s3.delete_object(bucket: bucket, key: "images/logo.png")
+```
+
+**Rails Active Storage:**
+
+```yaml title="config/storage.yml"
+cloider:
+  service: S3
+  access_key_id: <%= ENV["AWS_ACCESS_KEY_ID"] %>
+  secret_access_key: <%= ENV["AWS_SECRET_ACCESS_KEY"] %>
+  region: eu-central-2
+  bucket: acme-assets
+  endpoint: https://s3.eu-central-2.cloider.com
+  request_checksum_calculation: when_required
+  response_checksum_validation: when_required
+```
+
+Then set `config.active_storage.service = :cloider` in the environment's config.
+
+</TabItem>
+<TabItem value="dotnet" label=".NET">
+
+Install the AWS SDK for .NET S3 package:
+
+```bash
+dotnet add package AWSSDK.S3
+```
+
+```csharp title="Program.cs"
+using Amazon.Runtime;
+using Amazon.S3;
+using Amazon.S3.Model;
+
+var config = new AmazonS3Config
+{
+    ServiceURL = "https://s3.eu-central-2.cloider.com",
+    AuthenticationRegion = "eu-central-2",
+    ForcePathStyle = true, // false works too
+    RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
+    ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED,
+};
+
+var credentials = new BasicAWSCredentials(
+    Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID"),
+    Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY"));
+
+using var s3 = new AmazonS3Client(credentials, config);
+const string bucket = "acme-assets";
+
+// Upload
+await s3.PutObjectAsync(new PutObjectRequest
+{
+    BucketName = bucket,
+    Key = "images/logo.png",
+    FilePath = "logo.png",
+    ContentType = "image/png",
+});
+
+// List
+var list = await s3.ListObjectsV2Async(new ListObjectsV2Request { BucketName = bucket, Prefix = "images/" });
+foreach (var obj in list.S3Objects ?? new List<S3Object>())
+{
+    Console.WriteLine($"{obj.Key} {obj.Size}");
+}
+
+// Download
+using (var response = await s3.GetObjectAsync(bucket, "images/logo.png"))
+{
+    await response.WriteResponseStreamToFileAsync("logo-copy.png", false, CancellationToken.None);
+}
+
+// Presigned download link, valid for 15 minutes
+var url = s3.GetPreSignedURL(new GetPreSignedUrlRequest
+{
+    BucketName = bucket,
+    Key = "images/logo.png",
+    Verb = HttpVerb.GET,
+    Expires = DateTime.UtcNow.AddMinutes(15),
+});
+Console.WriteLine(url);
+
+// Delete
+await s3.DeleteObjectAsync(bucket, "images/logo.png");
+```
+
+</TabItem>
+</Tabs>
+
+## Create a presigned URL {#create-a-presigned-url}
+
+A presigned URL is a normal object URL with a signature in its query string. Anyone holding it can perform that one request (download or upload one object) until it expires, without having an access key. It is the standard way to:
+
+- let users download private files (invoices, reports, purchased files) straight from the bucket,
+- let browsers and mobile apps upload directly to the bucket, so large files don't pass through your server,
+- hand a file to another service for a limited time.
+
+The URL is signed locally by the SDK with your secret key: creating one doesn't call Cloider, and it can't be revoked individually. It stops working when it expires, or when the access key that signed it is deleted or loses access to the bucket. The longest validity S3 allows is 7 days (604800 seconds).
+
+### Let a browser upload directly to the bucket
+
+Your server creates a presigned **PUT** URL for one key and content type, and the browser sends the file to it. The dashboard's own file browser uploads files exactly this way.
+
+```js title="server.mjs (Node.js, Express)"
+import express from "express";
+import { randomUUID } from "node:crypto";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+const s3 = new S3Client({
+  region: "eu-central-2",
+  endpoint: "https://s3.eu-central-2.cloider.com",
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
+});
+
+const app = express();
+app.use(express.json());
+
+app.post("/api/uploads", async (req, res) => {
+  // Check here that the user may upload, and validate the type and size
+  const { contentType } = req.body;
+  const key = `uploads/${randomUUID()}`;
+  const url = await getSignedUrl(
+    s3,
+    new PutObjectCommand({ Bucket: "acme-assets", Key: key, ContentType: contentType }),
+    { expiresIn: 600 },
+  );
+  res.json({ url, key });
+});
+
+app.listen(3000);
+```
+
+```js title="browser.js"
+async function upload(file) {
+  const res = await fetch("/api/uploads", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contentType: file.type || "application/octet-stream" }),
+  });
+  const { url, key } = await res.json();
+
+  // The Content-Type must be the one the URL was signed for
+  const put = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!put.ok) throw new Error(`Upload failed: ${put.status}`);
+  return key;
+}
+```
+
+Headers you sign (such as `Content-Type`) must be sent with exactly the same value, otherwise the storage answers `SignatureDoesNotMatch`.
+
+### Force a download file name
+
+Add a response header override to a presigned GET to make browsers download the file under a given name instead of displaying it:
+
+```python
+url = s3.generate_presigned_url(
+    "get_object",
+    Params={
+        "Bucket": "acme-assets",
+        "Key": "invoices/2026/0042.pdf",
+        "ResponseContentDisposition": 'attachment; filename="invoice-0042.pdf"',
+    },
+    ExpiresIn=600,
+)
+```
+
+## Common patterns
+
+### Store the key, not the URL
+
+Save an object's key (`uploads/3f2c...`) in your database rather than a full URL. You can then build the public URL (`https://acme-assets.s3.eu-central-2.cloider.com/<key>` on a [public bucket](/object-storage/public-and-private-buckets)) or create a fresh presigned URL whenever you need one.
+
+### Reuse one client
+
+Create the S3 client once when your app starts and reuse it. Each client keeps a pool of connections, and creating one per request pays a new TLS handshake every time.
+
+### Set Content-Type on upload
+
+Browsers display or download a file based on its `Content-Type`. Set it when uploading (`ContentType` in the SDKs), otherwise files are stored as `application/octet-stream` or whatever the SDK guesses.
+
+### Handle versioned buckets
+
+On a bucket with [versioning](/object-storage/versioning), `PutObject` returns a `VersionId`, `GetObject` and `DeleteObject` accept a `VersionId`, and `ListObjectVersions` lists the history. Deleting without a version id adds a delete marker instead of removing data.
+
+## Troubleshooting
+
+| Error | Fix |
+| --- | --- |
+| `XAmzContentSHA256Mismatch`, `InvalidRequest` or another error on every upload | Set the checksum calculation to `when_required` as in the examples. See [Checksum errors on upload](/object-storage/troubleshooting#checksum-errors) |
+| `getaddrinfo ENOTFOUND acme-assets.s3.eu-central-2.amazonaws.com` or a similar AWS host | The endpoint isn't set, so the SDK talks to AWS |
+| `SignatureDoesNotMatch` | Wrong secret key, a header sent differently from the presigned one, or the client signs for another host. See [Troubleshooting](/object-storage/troubleshooting#signaturedoesnotmatch) |
+| `AccessDenied` | The key is read only, doesn't open the bucket, or a policy denies the action. See [Troubleshooting](/object-storage/troubleshooting#accessdenied) |
+| `NoSuchKey` | No object under that key. Keys are case sensitive and have no leading `/` |
+| `TypeError: Got an unexpected keyword argument 'request_checksum_calculation'` (Python) | boto3 is older than 1.36. Upgrade it, or remove the two checksum arguments (older versions don't send the new checksums) |
+
+## Next steps
+
+- [Use the key from an app or a Kubernetes workload](/object-storage/use-with-apps-and-clusters).
+- [Serve static assets from a public bucket](/guides/static-assets-on-object-storage).
+- [Restrict what a key can do with a bucket policy](/object-storage/bucket-policies).
+
+<FAQ items={[
+  {q: 'Can I use the AWS SDK with Cloider Object Storage?', a: 'Yes. Configure the SDK\'s S3 client with the endpoint https://s3.eu-central-2.cloider.com, the region eu-central-2, a Cloider access key and secret, and request checksum calculation set to when_required. Uploads, downloads, listing, deletes, multipart uploads and presigned URLs then work as on Amazon S3.'},
+  {q: 'Do I need forcePathStyle for Cloider?', a: 'No. Cloider serves both virtual hosted style (https://<bucket>.s3.eu-central-2.cloider.com) and path style (https://s3.eu-central-2.cloider.com/<bucket>), so forcePathStyle can be true or false.'},
+  {q: 'Why do uploads fail with the latest AWS SDK?', a: 'AWS SDKs released since January 2025 add a checksum to every upload by default, which Cloider\'s storage doesn\'t accept. Set requestChecksumCalculation (or request_checksum_calculation) to WHEN_REQUIRED, or set AWS_REQUEST_CHECKSUM_CALCULATION=when_required and AWS_RESPONSE_CHECKSUM_VALIDATION=when_required in the environment.'},
+  {q: 'How long can a presigned URL be valid?', a: 'Up to 7 days (604800 seconds), as on Amazon S3. It also stops working as soon as the access key that signed it is deleted or loses access to the bucket.'},
+  {q: 'Can users upload files from the browser directly to a bucket?', a: 'Yes. Your server creates a presigned PUT URL for one key and content type with an SDK, and the browser sends the file to that URL with the same Content-Type header. The dashboard\'s file browser uploads this way.'},
+]} />

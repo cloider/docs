@@ -1,0 +1,421 @@
+---
+title: Bucket objects API endpoints
+sidebar_label: Bucket objects
+sidebar_position: 5
+description: Cloider API reference for files in a bucket, list folders, upload and download with presigned URLs, delete files and folders, versions, restore deleted files.
+keywords: [cloider bucket objects api, presigned upload url, presigned download url, list bucket files api, restore deleted file s3, object versions api]
+---
+
+These endpoints work with the files (objects) inside a Cloider bucket: list a folder, upload and download files through short lived presigned URLs, create folders, delete files and folders, and, on a versioned bucket, list versions, restore deleted files and old versions, and delete versions for good. They are what the dashboard's **Files** tab and `cloider bucket ls`, `upload`, `download` and `rm` use.
+
+For heavy transfers, many files or files over 5 GB, use an S3 tool with an [access key](/api/endpoints/bucket-keys) instead: see [S3 tools](/object-storage/s3-tools). All paths are relative to `https://cloider.com/api`.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/buckets/:hashed_id/objects`](#list-a-folder) | Read |
+| POST | [`/buckets/:hashed_id/objects/upload`](#upload-a-file) | Write |
+| GET | [`/buckets/:hashed_id/objects/download`](#download-a-file) | Read |
+| POST | [`/buckets/:hashed_id/folders`](#create-a-folder) | Write |
+| POST | [`/buckets/:hashed_id/objects/delete`](#delete-files-and-folders) | Write |
+| GET | [`/buckets/:hashed_id/objects/versions`](#list-a-files-versions) | Read |
+| GET | [`/buckets/:hashed_id/objects/deleted`](#list-deleted-files) | Read |
+| POST | [`/buckets/:hashed_id/objects/restore`](#restore-a-deleted-file-or-an-old-version) | Write |
+| POST | [`/buckets/:hashed_id/objects/versions/delete`](#delete-versions-for-good) | Write |
+
+## Keys, folders and prefixes
+
+S3 has no real folders. Every object has a **key**, its full path such as `images/logo.png`, and a "folder" is all the keys that share a **prefix** ending in `/`, such as `images/`. These endpoints follow that model:
+
+- A **key** is 1 to 1024 characters, doesn't start with `/` and doesn't contain `//`.
+- A **prefix** is empty for the bucket's root, or a valid key that ends with `/`.
+- An empty folder is a zero byte object whose key is the folder's prefix. [Create a folder](#create-a-folder) makes one.
+
+Every endpoint here needs the bucket to be `Ready`. Before that, they answer `409` with `The bucket isn't ready!`. A bucket whose file browser can't be used answers `503` with `The file browser isn't available for this bucket!`.
+
+## List a folder
+
+```http
+GET /buckets/:hashed_id/objects
+```
+
+Lists the subfolders and files directly inside one folder, 200 entries per page.
+
+**Access:** any token.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `prefix` | No | The folder, for example `images/`. Empty or left out for the bucket's root |
+| `token` | No | The `next_token` of the previous page, to read the next one |
+
+```bash
+curl -G https://cloider.com/api/buckets/b7r2x/objects \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  --data-urlencode "prefix=images/"
+```
+
+```json title="Response"
+{
+  "prefix": "images/",
+  "folders": [
+    {"prefix": "images/icons/", "name": "icons"}
+  ],
+  "objects": [
+    {"key": "images/logo.png", "name": "logo.png", "size": 18342, "last_modified": "2026-10-18T13:02:51Z"},
+    {"key": "images/hero.jpg", "name": "hero.jpg", "size": 412880, "last_modified": "2026-10-19T08:47:12Z"}
+  ],
+  "next_token": ""
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `prefix` | The folder listed |
+| `folders` | Subfolders, each with its full `prefix` and its `name` inside this folder |
+| `objects` | Files, each with its full `key`, its `name` inside this folder, its `size` in bytes and `last_modified` |
+| `next_token` | Pass it as `token` to get the next page. Empty on the last page |
+
+Read every page of a large folder:
+
+```bash
+TOKEN=""
+while :; do
+  PAGE=$(curl -s -G https://cloider.com/api/buckets/b7r2x/objects \
+    -H "Authorization: Bearer $CLOIDER_TOKEN" \
+    --data-urlencode "prefix=images/" --data-urlencode "token=$TOKEN")
+  jq -r '.objects[].key' <<<"$PAGE"
+  TOKEN=$(jq -r .next_token <<<"$PAGE")
+  [ -z "$TOKEN" ] && break
+done
+```
+
+Errors: `400 Invalid folder!` for a malformed prefix, `404 Bucket not found!`, `502 Couldn't list the files, try again in a moment!`.
+
+## Upload a file
+
+```http
+POST /buckets/:hashed_id/objects/upload
+```
+
+Uploading is two steps. First you ask the API for a **presigned URL** for one file, giving its key, size and content type. Then you `PUT` the file's bytes to that URL, straight to the storage service. The bytes never pass through the API.
+
+**Access:** Read & Write token.
+
+### Step 1: get a presigned URL
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `key` | string | Yes | The file's full key, for example `images/logo.png`. Can't end with `/` |
+| `size` | integer | Yes | The file's exact size in bytes, at most 5 GB (5368709120) |
+| `content_type` | string | No | The file's MIME type, for example `image/png`. Default `application/octet-stream` |
+
+```bash
+FILE=logo.png
+URL=$(curl -s -X POST https://cloider.com/api/buckets/b7r2x/objects/upload \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"key\": \"images/$FILE\", \"size\": $(wc -c < $FILE), \"content_type\": \"image/png\"}" \
+  | jq -r .url)
+```
+
+```json title="Response"
+{"url": "https://s3.eu-central-2.cloider.com/acme-assets/images/logo.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&..."}
+```
+
+### Step 2: PUT the bytes
+
+The URL is signed for that exact size and content type, so send exactly those. Don't send the `Authorization` header to the storage URL: the signature in the URL is the authorization.
+
+```bash
+curl -X PUT "$URL" \
+  -H "Content-Type: image/png" \
+  --data-binary @"$FILE"
+```
+
+A `200` from the storage service means the file is stored. The URL is valid for one hour and for this one file. An existing file with the same key is replaced (on a versioned bucket, the old one becomes a previous version).
+
+<details>
+<summary>Upload in JavaScript</summary>
+
+```js title="upload.mjs"
+import { readFile, stat } from 'node:fs/promises';
+
+const path = 'logo.png';
+const key = 'images/logo.png';
+const type = 'image/png';
+const { size } = await stat(path);
+
+const res = await fetch('https://cloider.com/api/buckets/b7r2x/objects/upload', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${process.env.CLOIDER_TOKEN}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ key, size, content_type: type }),
+});
+if (!res.ok) throw new Error(JSON.stringify((await res.json()).errors));
+const { url } = await res.json();
+
+const put = await fetch(url, {
+  method: 'PUT',
+  headers: { 'Content-Type': type },
+  body: await readFile(path),
+});
+if (!put.ok) throw new Error(`upload failed: ${put.status} ${await put.text()}`);
+```
+
+</details>
+
+| Status | Message |
+| --- | --- |
+| `400` | `Invalid file name!` |
+| `400` | `Files over 5 GB can't be uploaded from the dashboard, use an S3 client!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not change files!` |
+| `502` | `Couldn't start the upload, try again in a moment!` |
+
+## Download a file
+
+```http
+GET /buckets/:hashed_id/objects/download
+```
+
+Returns a presigned URL that downloads one file, or one version of it. Fetch the URL to get the bytes; it is valid for one hour and makes the browser save the file under its name.
+
+**Access:** any token, including read only tokens.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `key` | Yes | The file's full key |
+| `version_id` | No | A version from [the versions list](#list-a-files-versions), to download that version instead of the current one |
+
+```bash
+URL=$(curl -s -G https://cloider.com/api/buckets/b7r2x/objects/download \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  --data-urlencode "key=images/logo.png" | jq -r .url)
+
+curl -o logo.png "$URL"
+```
+
+```json title="Response"
+{"url": "https://s3.eu-central-2.cloider.com/acme-assets/images/logo.png?response-content-disposition=attachment...&X-Amz-Signature=..."}
+```
+
+On a public bucket you can also download a file without any API call, from `<bucket url>/<key>`, for example `https://acme-assets.s3.eu-central-2.cloider.com/images/logo.png`.
+
+Errors: `400 Invalid file!`, `404 Bucket not found!`, `502 Couldn't download the file, try again in a moment!`.
+
+## Create a folder
+
+```http
+POST /buckets/:hashed_id/folders
+```
+
+Creates an empty folder, a zero byte object named like the folder, so it shows in listings before any file is in it. You don't need it to upload into a folder: uploading `reports/2026/q3.pdf` makes the folders appear by itself.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `prefix` | string | Yes | The folder's full path, ending with `/`, for example `reports/2026/` |
+
+```bash
+curl -X POST https://cloider.com/api/buckets/b7r2x/folders \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prefix": "reports/2026/"}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+A malformed prefix answers `400` with `Invalid folder name` on `prefix`.
+
+## Delete files and folders
+
+```http
+POST /buckets/:hashed_id/objects/delete
+```
+
+Deletes files by key, and folders with everything under them. On a versioned bucket a delete keeps the previous version, so the file can be [restored](#restore-a-deleted-file-or-an-old-version).
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `keys` | string list | One of the two | Files to delete, by full key |
+| `prefixes` | string list | One of the two | Folders to delete, each ending with `/`, with every file under them. Can't be empty (the whole bucket) |
+
+Together, `keys` and `prefixes` can name up to 1000 entries. A folder can hold at most 10000 files to be deleted this way.
+
+```bash
+curl -X POST https://cloider.com/api/buckets/b7r2x/objects/delete \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"keys": ["images/old-logo.png"], "prefixes": ["tmp/"]}'
+```
+
+```json title="Response"
+{"failed": []}
+```
+
+`failed` lists the keys that couldn't be deleted. An empty list means everything was deleted.
+
+| Status | Message |
+| --- | --- |
+| `400` | `Nothing to delete!`, `Too many files at once, select fewer!`, `Invalid file!`, `Invalid folder!` |
+| `400` | `The folder "tmp/" holds over 10000 files, delete it with an S3 client!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not change files!` |
+| `502` | `Couldn't delete the files, try again in a moment!` |
+
+## List a file's versions
+
+```http
+GET /buckets/:hashed_id/objects/versions
+```
+
+Lists the versions of one file on a versioned bucket, newest first, up to the latest 1000. Deletions show as delete markers.
+
+**Access:** any token.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `key` | Yes | The file's full key |
+
+```bash
+curl -G https://cloider.com/api/buckets/k5t1v/objects/versions \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  --data-urlencode "key=db/orders.sql.gz"
+```
+
+```json title="Response"
+{
+  "versions": [
+    {"version_id": "0000019a2c1f8e4b", "size": 0, "last_modified": "2026-10-20T07:11:02Z", "is_latest": true, "delete_marker": true},
+    {"version_id": "0000019a27d03c18", "size": 52428800, "last_modified": "2026-10-19T02:30:44Z", "is_latest": false, "delete_marker": false},
+    {"version_id": "0000019a22a9f001", "size": 51380224, "last_modified": "2026-10-18T02:30:39Z", "is_latest": false, "delete_marker": false}
+  ],
+  "truncated": false
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `version_id` | The version's id |
+| `size` | Size in bytes. `0` for a delete marker |
+| `last_modified` | When the version was written, or the file deleted |
+| `is_latest` | The current version. When it is a delete marker, the file is deleted |
+| `delete_marker` | `true` for a deletion |
+| `truncated` | `true` when the file has more than 1000 versions and the older ones aren't listed |
+
+## List deleted files
+
+```http
+GET /buckets/:hashed_id/objects/deleted
+```
+
+Lists the files of one folder that were deleted on a versioned bucket and can still be restored, with subfolders that contain such files.
+
+**Access:** any token.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `prefix` | No | The folder. Empty for the root |
+| `token` | No | The previous page's `next_token` |
+
+```bash
+curl -G https://cloider.com/api/buckets/k5t1v/objects/deleted \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  --data-urlencode "prefix=db/"
+```
+
+```json title="Response"
+{
+  "prefix": "db/",
+  "folders": [],
+  "objects": [
+    {
+      "key": "db/orders.sql.gz",
+      "name": "orders.sql.gz",
+      "deleted_at": "2026-10-20T07:11:02Z",
+      "marker_version_id": "0000019a2c1f8e4b"
+    }
+  ],
+  "next_token": ""
+}
+```
+
+`marker_version_id` is the delete marker's version. Restoring that version undeletes the file.
+
+## Restore a deleted file or an old version
+
+```http
+POST /buckets/:hashed_id/objects/restore
+```
+
+On a versioned bucket, makes a file current again:
+
+- Given the **latest delete marker** of a deleted file, it undeletes the file by removing the marker.
+- Given an **older version**, it copies that version on top, so it becomes the current version. The versions in between are kept.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `key` | string | Yes | The file's full key |
+| `version_id` | string | Yes | The version to restore, or the delete marker to remove |
+
+```bash
+curl -X POST https://cloider.com/api/buckets/k5t1v/objects/restore \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "db/orders.sql.gz", "version_id": "0000019a2c1f8e4b"}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+| Status | Message |
+| --- | --- |
+| `400` | `Invalid version!` |
+| `400` | `Only the latest deletion can be undone!` (an older delete marker) |
+| `400` | `This is already the current version!` |
+| `400` | `Versions over 5 GB can't be restored from the dashboard, use an S3 client!` |
+| `404` | `This version doesn't exist anymore!` |
+| `502` | `Couldn't restore the file, try again in a moment!`, `Couldn't restore the version, try again in a moment!` |
+
+## Delete versions for good
+
+```http
+POST /buckets/:hashed_id/objects/versions/delete
+```
+
+Permanently deletes chosen versions of one file. Deleted versions can't be restored. Deleting the latest delete marker this way also undeletes the file.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `key` | string | Yes | The file's full key |
+| `version_ids` | string list | Yes | 1 to 1000 version ids |
+
+```bash
+curl -X POST https://cloider.com/api/buckets/k5t1v/objects/versions/delete \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"key": "db/orders.sql.gz", "version_ids": ["0000019a22a9f001"]}'
+```
+
+```json title="Response"
+{"failed": []}
+```
+
+Errors: `400` with `Invalid file!`, `Nothing to delete!`, `Too many versions at once, select fewer!` or `Invalid version!`, and `502 Couldn't delete the versions, try again in a moment!`. See [Versioning](/object-storage/versioning) and [Data protection](/object-storage/data-protection).
+
+## Related
+
+- [Manage files](/object-storage/manage-files) in the dashboard and CLI
+- [Buckets](/api/endpoints/buckets) and [bucket keys](/api/endpoints/bucket-keys)
+- [SDKs](/object-storage/sdks) for S3 access from your code

@@ -1,0 +1,370 @@
+---
+title: Immutable tags and tag immutability rules
+sidebar_label: Immutable tags
+sidebar_position: 9
+description: Stop image tags from being pushed over or deleted in a Cloider registry project, with the Immutable tags setting or tag immutability rules.
+keywords: [immutable tags, tag immutability, prevent docker tag overwrite, protect release tags, registry immutability rules, cloider registry immutability]
+---
+
+An **immutable tag** always points to the same image: pushing a new image to it fails, and so does deleting it. Make release tags such as `v1.2.0` immutable, and a deployment that names `api:v1.2.0` can never get a different image than the one you tested. A project can make **every** tag immutable with the **Immutable tags** setting, or protect only some tags with **tag immutability rules**.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **What it protects** | A tag from being pushed over (moved to another image) or deleted, and its image from being deleted |
+| **Project wide** | The **Immutable tags** setting: every tag of every repository, `latest` included |
+| **Selective** | Tag immutability rules with repository and tag patterns, in the **Policy** tab |
+| **Rules per project** | Up to 15, the **Immutable tags** setting counting as one |
+| **Retention** | Retention policies never delete an image an immutability rule protects |
+| **Turning it off** | Disable or delete the rule, or turn the setting off. Existing tags can then be moved or deleted again |
+| **Not available** | In the apps project |
+
+## Why make tags immutable?
+
+Tags are mutable by default: `docker push registry.cloider.com/acme/api:1.0` replaces whatever `1.0` pointed to. That is convenient for `latest` and `staging`, but dangerous for releases:
+
+- A rebuild pushed by mistake can silently change what `1.0` means, and the next pod restart runs code nobody tested.
+- Two clusters running `api:1.0` can end up on different images.
+- Audits and rollbacks rely on a version meaning exactly one build.
+
+Immutable tags remove that risk. The alternative is to pin images by digest (`api@sha256:...`), which is exact but hard to read.
+
+## Option 1: Make every tag immutable
+
+The **Immutable tags** setting protects every tag in every repository of the project, including `latest`. Use it for a project that only holds releases, such as `acme-releases`, where nothing is ever pushed twice.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+When you create the project, turn on **Immutable tags** in the form. For an existing project:
+
+1. Open the project and go to the **Settings** tab.
+2. Turn on **Immutable Tags**.
+3. In **Make Tags Immutable**, read the warning (*Every tag in the project will keep pointing to the image it was pushed with. Pushing over a tag, latest included, or deleting it will fail.*) and click **Make immutable**.
+
+Turning it off needs no confirmation.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+# At creation
+cloider registry create acme-releases --immutable-tags
+
+# On an existing project
+cloider registry set acme --immutable-tags
+```
+
+```text title="Output"
+✓ Project acme has immutable tags
+```
+
+Turn it off again:
+
+```bash
+cloider registry set acme --mutable-tags
+```
+
+`cloider registry get acme` shows `Tags: immutable` or `Tags: mutable`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="main.tf"
+resource "cloider_registry" "releases" {
+  name           = "acme-releases"
+  immutable_tags = true
+}
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X PUT https://cloider.com/api/registry/projects/r4t6yu/immutable-tags \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"immutable_tags": true}'
+```
+
+```json title="Response"
+{
+  "rules": [
+    {
+      "id": 31,
+      "repositories": {"match": "matching", "patterns": ["**"]},
+      "tags": {"match": "matching", "patterns": ["**"]},
+      "disabled": false
+    }
+  ],
+  "immutable_tags": true
+}
+```
+
+At creation, send `"immutable_tags": true` in `POST /registry/projects`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Make every tag in the acme-releases registry project immutable.
+```
+
+It calls the `update_registry_project` tool:
+
+```json title="Tool call: update_registry_project"
+{"project": "acme-releases", "immutable_tags": true}
+```
+
+</TabItem>
+</Tabs>
+
+### How the setting relates to the rules
+
+The **Immutable tags** setting **is** an immutability rule: repositories matching `**`, tags matching `**`. Turning the setting on adds that rule (or enables it if it exists but is disabled), and turning it off deletes it. That is why:
+
+- the rule appears in the **Policy** tab's **Tag Immutability** list,
+- adding the same rule by hand in the **Policy** tab turns the setting on,
+- the setting counts toward the 15 rule limit, and can't be turned on when a project already has 15 other rules.
+
+## Option 2: Protect only some tags with rules
+
+Rules protect the tags that match their patterns and leave the others mutable. The most common setup: release tags immutable, `latest`, branch and cache tags movable.
+
+### Patterns
+
+Each rule has a **repositories** selector and a **tags** selector, each **matching** or **excluding** a list of up to 20 patterns. `*` stays within one path segment, `**` crosses them, `?` is any one character, and `[...]` is a character class.
+
+| Goal | Repositories | Tags |
+| --- | --- | --- |
+| Version tags starting with `v` everywhere | matching `**` | matching `v*` |
+| Semantic versions like `1.4.0` everywhere | matching `**` | matching `[0-9]*` |
+| Every tag except moving ones | matching `**` | excluding `latest`, `main`, `staging`, `buildcache` |
+| Every tag of production repositories | matching `prod/**` | matching `**` |
+| Release tags of every repository but `sandbox` | excluding `sandbox` | matching `v*`, `release-*` |
+
+Each rule is worked out on its own, and a tag that **any** rule picks is protected.
+
+### Add a rule
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the project and go to the **Policy** tab.
+2. In **Tag Immutability**, click **Add rule**.
+3. **For the repositories**: **matching** `**`.
+4. **Tags**: **matching** `v*`. Separate several patterns with commas.
+5. Click **Add rule**.
+
+The rule reads *In repositories matching `**`, tags matching `v*` can't be deleted or pushed over*, with an **Enabled** switch, and edit and delete buttons.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider registry immutability add acme --tag 'v*'
+```
+
+```text title="Output"
+✓ Tags v* in repositories ** of acme are immutable
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--repo <pattern>` | Repository pattern, repeatable. Default `**` |
+| `--exclude-repos` | Cover the repositories the patterns don't match |
+| `--tag <pattern>` | Tag pattern, repeatable. Default `**` |
+| `--exclude-tags` | Cover the tags the patterns don't match |
+| `--disabled` | Add the rule without applying it |
+
+Quote patterns so your shell doesn't expand `*`. More examples:
+
+```bash
+# Every tag except the moving ones
+cloider registry immutability add acme --tag latest --tag main --tag buildcache --exclude-tags
+
+# Everything in the team repositories, except latest
+cloider registry immutability add acme --repo 'team/**' --tag latest --exclude-tags
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider manages the project wide `immutable_tags` setting, not individual rules. Add rules with the dashboard, the CLI, the API or MCP.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X POST https://cloider.com/api/registry/projects/r4t6yu/immutability \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repositories": {"match": "matching", "patterns": ["**"]},
+    "tags": {"match": "matching", "patterns": ["v*"]},
+    "disabled": false
+  }'
+```
+
+```json title="Response"
+{
+  "rules": [
+    {
+      "id": 32,
+      "repositories": {"match": "matching", "patterns": ["**"]},
+      "tags": {"match": "matching", "patterns": ["v*"]},
+      "disabled": false
+    }
+  ],
+  "immutable_tags": false
+}
+```
+
+Every immutability call answers with all the project's rules and the `immutable_tags` setting they add up to.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+In the acme registry project, make every tag that starts with v immutable.
+```
+
+It calls the `add_registry_immutability_rule` tool:
+
+```json title="Tool call: add_registry_immutability_rule"
+{"project": "acme", "tags": ["v*"]}
+```
+
+</TabItem>
+</Tabs>
+
+### List, change, disable and delete rules
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+In the **Policy** tab, **Tag Immutability**:
+
+- The **Enabled** switch turns a rule off without deleting it. Its tags can be pushed over and deleted while it is off.
+- The pencil opens **Edit Tag Immutability Rule**; click **Save rule**.
+- The trash icon asks **Delete this immutability rule? The tags it protects can be deleted and pushed over again.**
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider registry immutability list acme
+```
+
+```text title="Output"
+ID  REPOSITORIES  TAGS                     ENABLED
+32  **            v*                       yes
+33  team/**       all but latest           yes
+```
+
+```bash
+# Change the tag patterns of rule 32, keeping the rest
+cloider registry immutability update acme 32 --tag 'v*' --tag 'release-*'
+
+# Disable and enable it again
+cloider registry immutability update acme 32 --disabled
+cloider registry immutability update acme 32 --disabled=false
+
+# Delete it (asks to confirm, --yes in scripts)
+cloider registry immutability delete acme 32
+```
+
+`ls` and `rm` are aliases of `list` and `delete`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Not available in Terraform, except the project wide `immutable_tags` attribute.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+# List
+curl https://cloider.com/api/registry/projects/r4t6yu/immutability \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+
+# Replace rule 32 (send the whole rule)
+curl -X PUT https://cloider.com/api/registry/projects/r4t6yu/immutability/32 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"repositories": {"match": "matching", "patterns": ["**"]}, "tags": {"match": "matching", "patterns": ["v*", "release-*"]}, "disabled": false}'
+
+# Delete rule 32
+curl -X DELETE https://cloider.com/api/registry/projects/r4t6yu/immutability/32 \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Disable immutability rule 32 in the acme registry project.
+```
+
+It calls the `update_registry_immutability_rule` tool:
+
+```json title="Tool call: update_registry_immutability_rule"
+{"project": "acme", "rule_id": 32, "disabled": true}
+```
+
+`list_registry_immutability_rules` lists the rules with their ids, and `delete_registry_immutability_rule` deletes one.
+
+</TabItem>
+</Tabs>
+
+## What an immutable tag changes in practice
+
+| You do | With a mutable tag | With an immutable tag |
+| --- | --- | --- |
+| `docker push` a new image to an existing tag | The tag moves to the new image | The push is refused |
+| `docker push` a new tag | Works | Works |
+| Push the exact same image to the existing tag again | Works | May be refused; push only new tags |
+| Remove the tag (untag) | Works | Refused |
+| Delete the image | Works | Refused while any of its tags is protected |
+| Delete the repository | Works | Refused while it holds protected tags |
+| Retention run | Deletes the image if no rule keeps it | Keeps it, reported as **Kept, immutable** |
+
+In the dashboard's **Repositories** tab, a protected tag shows a lock icon (**Immutable, a rule in the Policy tab protects it**) instead of the remove button, and the delete button of its image is disabled.
+
+## Immutable tags and CI pipelines
+
+A pipeline that pushes `latest`, a branch tag or a build cache tag on every run fails on the second run if those tags are immutable. Two patterns work well:
+
+- **Unique tags only**: tag each build with its commit (`sha-4f2a9c1`) and releases with their version, never push `latest`. Then **Immutable tags** for the whole project is safe.
+- **Selective rules**: protect `v*` (or `[0-9]*`) and leave `latest`, branch and `buildcache` tags mutable.
+
+See [CI/CD pipelines](/container-registry/ci-cd).
+
+## Troubleshooting
+
+| Problem | Cause and fix |
+| --- | --- |
+| `docker push` of a tag fails although the token can push | The tag already exists and is immutable. Push a new tag, or disable the rule while you fix it |
+| `A tag immutability rule protects this tag. Disable the rule in the Policy tab to delete it.` | You tried to remove a tag or delete an image or repository that a rule protects |
+| `The project already has a rule like this one.` | An identical rule exists. Edit it instead |
+| `A project holds at most 15 immutability rules.` | Combine rules: one rule takes up to 20 patterns |
+| `A project holds at most 15 immutability rules, delete one in the Policy tab first.` | Turning on **Immutable tags** needs a free rule slot |
+| `Enter at least one pattern, ** for all` | A selector has no pattern |
+| `This project holds your apps' images and is managed by Cloider, its policies can't be changed.` | The apps project's tags are managed by Cloider |
+| `This project's policies were changed outside the dashboard, contact support to edit them.` | Contact [support](/account/support) |
+| `Invalid rule` | The rule id isn't a number |
+| `It doesn't exist any more, reload and try again!` | The rule was deleted meanwhile |
+
+## Next steps
+
+- [Retention policies](/container-registry/retention-policies), which never delete protected tags.
+- [Tagging strategies](/container-registry/push-and-pull-images#tagging-strategies).
+- [Repositories and tags](/container-registry/repositories-and-tags).

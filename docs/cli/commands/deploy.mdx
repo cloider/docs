@@ -1,0 +1,265 @@
+---
+title: cloider deploy command reference
+sidebar_label: deploy
+sidebar_position: 7
+description: Reference for cloider deploy, which uploads a directory as an app, creates the app on the first deploy, links the directory, builds new versions and redeploys git apps.
+keywords: [cloider deploy, deploy from cli, deploy directory, cloiderignore, app.json, build args, environment variables, cloider deploy --git, paas cli deploy]
+---
+
+`cloider deploy` turns a directory on your computer into a running app. The first time, it packages the directory, detects the language, framework and port, creates the app, claims a free subdomain, links the directory to the app, streams the build and prints the app's URL. Every later run in that directory uploads the code again and deploys it as a new version of the same app.
+
+```text
+cloider deploy [dir] [flags]
+```
+
+`cloider app deploy` is the same command. To create an app from a git repository instead, use [`cloider app create`](/cli/commands/app#cloider-app-create); to rebuild a git app from its latest commit, use `cloider deploy --git`.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Deploys** | The current directory, or `[dir]` |
+| **First run** | Creates the app and writes `.cloider/app.json` to link the directory |
+| **Later runs** | Build a new version of the linked app |
+| **Leaves out** | What `.gitignore` and `.cloiderignore` list, plus `.git`, `.cloider` and `.DS_Store` |
+| **Limits** | Up to 2000 files and 100 MB (compressed) per upload |
+| **Output** | Progress and build logs on stderr, the app's URL on stdout |
+| **Waits** | Until the new version is serving, unless `--detach` |
+| **MCP tool** | `deploy_app` |
+
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--app` | string | the linked app | App to deploy to, instead of the linked one |
+| `--git` | bool | `false` | Build the latest commit of the app's branch instead of uploading |
+| `-d, --detach` | bool | `false` | Don't wait for the build |
+| `--name` | string | detected, else the directory name | App name (new apps only) |
+| `--port` | int | detected, else `8080` | Port the app listens on (new apps only) |
+| `--start-command` | string | detected | Command to start the app with (new apps only) |
+| `--subdomain` | string | `<name>-<random>` | Free subdomain to serve the app on, a label (`blog`) or a full name (`blog.cloider.app`) (new apps only) |
+| `--no-subdomain` | bool | `false` | Don't claim a free subdomain (new apps only). Can't be combined with `--subdomain` |
+| `-e, --env` | string, repeatable | | Environment variable `KEY=VALUE` (new apps only) |
+| `--secret-env` | string, repeatable | | Secret environment variable `KEY=VALUE` (new apps only) |
+| `--env-file` | string | | Read environment variables from a `.env` file (new apps only) |
+| `--build-arg` | string, repeatable | | Dockerfile build arg `KEY=VALUE` (new apps only) |
+| `--secret-build-arg` | string, repeatable | | Dockerfile build secret `KEY=VALUE`, for `RUN --mount=type=secret,id=KEY` (new apps only) |
+| `--build-arg-file` | string | | Read Dockerfile build args from a `.env` file (new apps only) |
+| `--build-env` | string, repeatable | | Buildpack build variable `KEY=VALUE` (new apps only) |
+| `--secret-build-env` | string, repeatable | | Secret buildpack build variable `KEY=VALUE` (new apps only) |
+| `--build-env-file` | string | | Read buildpack build variables from a `.env` file (new apps only) |
+
+Plus the [global flags](/cli/configuration#global-flags).
+
+:::note[Flags marked "new apps only"]
+These flags describe the app the first deploy creates. When `cloider deploy` updates an existing app, they are not applied. Change an existing app with [`cloider app update`](/cli/commands/app#cloider-app-update), [`cloider app env`](/cli/commands/app#cloider-app-env), [`cloider app build-args`](/cli/commands/app#cloider-app-build-args) and [`cloider app build-env`](/cli/commands/app#cloider-app-build-env).
+:::
+
+## Deploy a directory for the first time
+
+Run `cloider deploy` in your project's root:
+
+```bash
+cd ~/code/blog
+cloider deploy
+```
+
+```text title="Output"
+Packaged 42 files (18.3 KB)
+Detected JavaScript Express
+✓ Created app blog on port 3000
+Linked . to blog in .cloider/app.json, later deploys from here update it.
+...build output...
+✓ Deployed version 1 of blog
+https://blog-k3m9.cloider.app
+```
+
+Step by step, the first deploy:
+
+1. **Packages** the directory into a zip archive, leaving out ignored files (see [Which files are uploaded?](#which-files-are-uploaded)).
+2. **Uploads** the archive to Cloider.
+3. **Detects** what the code is: language, framework, port, app name and the `ARG`s a Dockerfile declares. Detection gives up after 3 minutes (`detection took too long, try again`). If it can't recognize the app, it warns (`Detection didn't recognize the app: ...`) and goes on with the defaults.
+4. **Chooses the settings**: the name from `--name`, else the detected name, else the directory name made valid (lowercase letters, digits and dashes, starting with a letter); the port from `--port`, else the detected one, else `8080`.
+5. **Claims a free subdomain** `<name>-<4 random characters>.cloider.app`, trying three random suffixes, unless you pass `--subdomain` or `--no-subdomain`.
+6. **Creates the app** with your variables, and warns about anything that couldn't be set (for example `The subdomain wasn't claimed: ...`), with the command to fix it.
+7. **Links** the directory by writing `.cloider/app.json`.
+8. **Follows the build**, streaming its output to stderr, waits until the app is up, and prints the app's URL to stdout.
+
+If the Dockerfile declares `ARG`s without a default that you didn't pass, the CLI tells you which, so you can add them with `--build-arg` or `cloider app build-args set`.
+
+## Deploy again
+
+Run the same command again after changing the code. The directory is linked, so the CLI uploads it as a new version of the same app:
+
+```bash
+cloider deploy
+```
+
+```text title="Output"
+Packaged 43 files (18.9 KB)
+✓ Uploaded version 2 of blog
+...build output...
+✓ Deployed version 2 of blog
+https://blog-k3m9.cloider.app
+```
+
+## How does deploy know which app to update?
+
+`cloider deploy` picks the app in this order:
+
+1. `--app <name or id>`, if given.
+2. The app in `.cloider/app.json` in the deployed directory, written by the first deploy or by [`cloider app link`](/cli/commands/app#cloider-app-link).
+3. Otherwise it creates a new app.
+
+```json title=".cloider/app.json"
+{
+  "app": "q7w2e9r4t1",
+  "name": "blog",
+  "account": "jane@example.com",
+  "api_url": "https://cloider.com/api"
+}
+```
+
+The link contains no secrets, so you can commit it and let your team and CI deploy to the same app. Two safety checks apply:
+
+- If the link was made against a different API URL than the one in use, the deploy stops: ``... is linked to an app on <url>, not <url>; use --app or `cloider app link` ``.
+- If the linked app doesn't exist in the account you are logged in to (for example after switching [profiles](/cli/authentication#work-with-several-accounts-using-profiles)), it stops with exit code `4`: ``... is linked to app ..., which this account doesn't have; deploy with --app, or relink with `cloider app link` ``.
+
+```bash
+cloider deploy --app blog            # deploy this directory to blog, whatever the link says
+cloider deploy ./site --app web      # deploy another directory
+cloider app link web                 # relink this directory to web
+```
+
+## Which files are uploaded?
+
+The archive contains every regular file in the directory except:
+
+- what `.gitignore` and `.cloiderignore` **in the deployed directory's root** list, in `.gitignore` syntax;
+- the `.git` and `.cloider` directories and `.DS_Store` files, always;
+- symbolic links and other special files.
+
+Use `.cloiderignore` for files you keep in git but don't need on Cloider, such as tests, docs or local data:
+
+```text title=".cloiderignore"
+# not needed to run the app
+tests/
+docs/
+*.md
+coverage/
+.env.local
+```
+
+An upload holds at most **2000 files** and **100 MB** after compression. Above that, the deploy stops before uploading:
+
+```text
+Error: more than 2000 files to deploy, list what isn't needed in .cloiderignore
+Error: the archive is 143 MB, over the 100 MB limit; list what isn't needed in .cloiderignore
+```
+
+Dependencies such as `node_modules/` or `vendor/` are usually in `.gitignore` already; the build installs them on Cloider. A directory where every file is ignored fails with `nothing to deploy, every file is ignored`.
+
+## Environment variables, build args and build variables
+
+A new app can be created with three kinds of variables. Each has plain, secret and file flags:
+
+| Kind | Who sees it | Plain | Secret | From a file |
+| --- | --- | --- | --- | --- |
+| Environment variables | The running app | `-e, --env` | `--secret-env` | `--env-file` |
+| Build args | A Dockerfile build, as `ARG NAME` or a build secret `RUN --mount=type=secret,id=NAME,env=NAME` | `--build-arg` | `--secret-build-arg` | `--build-arg-file` |
+| Build variables | A buildpack build (an app without a Dockerfile) | `--build-env` | `--secret-build-env` | `--build-env-file` |
+
+Within each kind, the file is read first, then the plain pairs, then the secret pairs, and a later variable replaces an earlier one with the same name. Values are checked before anything is uploaded, so a typo (`"PORT" is not KEY=VALUE`) fails the command without leaving a half-made app. Secret values are never listed back.
+
+```bash
+cloider deploy --name blog --env NODE_ENV=production --secret-env DATABASE_URL="postgresql://..."
+cloider deploy --env-file .env.production
+cloider deploy --build-arg NEXT_PUBLIC_API_URL=https://api.example.com --secret-build-arg NPM_TOKEN=npm_xxxxxxxxxxxxxxxx
+cloider deploy --build-env BP_NODE_RUN_SCRIPTS=build
+```
+
+Neither build args nor build variables reach the running app. See [Build configuration](/apps/build-configuration) and [Environment variables](/apps/environment-variables).
+
+## Choose the subdomain
+
+Every new app gets a free subdomain under `cloider.app` unless you opt out:
+
+```bash
+cloider deploy --subdomain blog                 # blog.cloider.app, if it's free
+cloider deploy --subdomain blog.cloider.app     # the same, written in full
+cloider deploy --no-subdomain                   # no free subdomain
+```
+
+A subdomain that is taken or not allowed fails before the app is created, with the reason (`blog.cloider.app can't be used: ...`). If three random suggestions are all taken, the CLI asks you to pick one with `--subdomain`. Add custom domains later, see [Domains](/apps/domains).
+
+## Redeploy a git app (--git)
+
+For an app that deploys from a git repository, `--git` builds the latest commit of its branch, without uploading anything:
+
+```bash
+cloider deploy --git --app api
+```
+
+```text title="Output"
+✓ Building version 24 of api from acme/api@main
+...build output...
+✓ Deployed version 24 of api
+https://api-x2p7.cloider.app
+```
+
+In a directory linked to the app, `--app` can be left out. Without either, it fails with `--git needs an app, give --app or run it in a linked directory` (exit code `2`).
+
+## Don't wait for the build (--detach)
+
+By default the command follows the build until the new version serves. `--detach` (`-d`) returns once the build has started:
+
+```bash
+cloider deploy --detach
+```
+
+```text title="Output"
+Packaged 43 files (18.9 KB)
+✓ Uploaded version 3 of blog
+Follow the build with `cloider app build logs q7w2e9r4t1`.
+```
+
+While following, the CLI waits up to 15 minutes for the build and then for the app. If the build fails, the command fails with `the build ended failed` (plus the reason when known), and if the app doesn't come up, with `the app is <status>`.
+
+## Use deploy in CI
+
+`cloider deploy` is made for pipelines: build output goes to stderr, so the job log shows it, and only the URL goes to stdout.
+
+```bash
+export CLOIDER_TOKEN=cldr_xxxxxxxxxxxxxxxxxxxxxxxx
+URL=$(cloider deploy --app blog)
+curl -fsS "$URL/healthz"
+```
+
+Commit `.cloider/app.json`, or pass `--app` in CI so the pipeline never creates a new app by accident. Complete pipelines are in [Output and scripting](/cli/output-and-scripting#use-the-cli-in-cicd).
+
+## Troubleshooting
+
+| Message | Cause and fix |
+| --- | --- |
+| `more than 2000 files to deploy, list what isn't needed in .cloiderignore` | Add build output, dependencies and data folders to `.cloiderignore`. |
+| `the archive is N MB, over the 100 MB limit; ...` | The same: leave out large files. Store assets in a [bucket](/object-storage/overview) instead. |
+| `detection took too long, try again` | Detection didn't finish within 3 minutes. Run the command again. |
+| `... is linked to app ..., which this account doesn't have; ...` | You are logged in to another account or the app was deleted. Use `--app`, `cloider app link`, or `--profile`. |
+| `couldn't find a free subdomain, pick one with --subdomain` | Pick a subdomain yourself, or use `--no-subdomain`. |
+| `the build ended failed: ...` | Read the build output above the error, or run `cloider app build logs <app>`. See [Apps troubleshooting](/apps/troubleshooting). |
+| `The app ... was created but not fully set up.` | The app exists but a setting failed. Check it with `cloider app get` and fix it with the `cloider app` commands. |
+
+## Related
+
+- [Deploy from your computer](/apps/deploy-from-your-computer)
+- [`cloider app`](/cli/commands/app) for logs, variables and builds
+- [Deploy your first app](/get-started/deploy-your-first-app)
+
+<FAQ items={[
+  {q: 'How do I deploy an app with the Cloider CLI?', a: 'Run cloider deploy in your project directory. The first deploy creates the app, claims a free subdomain and links the directory in .cloider/app.json; every later cloider deploy there builds a new version of the same app.'},
+  {q: 'How do I exclude files from cloider deploy?', a: 'List them in .cloiderignore in the project root, in .gitignore syntax. Files listed in .gitignore are left out too, as are .git, .cloider and .DS_Store.'},
+  {q: 'What are the upload limits of cloider deploy?', a: 'An upload holds at most 2000 files and 100 MB after compression.'},
+  {q: 'How do I deploy to an existing app?', a: 'Pass --app with its name or id, or link the directory once with cloider app link <app>. Then cloider deploy updates that app.'},
+  {q: 'Do --env and --port change an existing app?', a: 'No. They only apply when cloider deploy creates a new app. Use cloider app env set and cloider app update to change an existing app.'},
+  {q: 'How do I get the app URL in a script?', a: 'The URL is the only thing cloider deploy prints to stdout: URL=$(cloider deploy --app blog).'}
+]} />

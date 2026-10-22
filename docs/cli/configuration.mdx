@@ -1,0 +1,268 @@
+---
+title: Configure the Cloider CLI with flags, env vars and files
+sidebar_label: Configuration
+sidebar_position: 4
+description: Every global flag and environment variable of the cloider CLI, the ~/.cloider directory with config.json, update.json and token files, profiles, and per-project files.
+keywords: [cloider cli configuration, cloider global flags, CLOIDER_CONFIG_DIR, CLOIDER_PROFILE, CLOIDER_API_URL, cloider config.json, cloider environment variables, cloiderignore]
+---
+
+The `cloider` CLI needs no configuration file to work: log in and go. What it does keep is small and readable: a JSON settings file, one plain text file per token, and a record of the last update check, all in `~/.cloider`. This page lists every global flag, every environment variable the CLI reads, and every file it writes, so you can set it up for several accounts, CI, containers or locked down machines.
+
+## At a glance
+
+| What | Where |
+| --- | --- |
+| Settings and profiles | `~/.cloider/config.json` |
+| Token of the `default` profile | `~/.cloider/token` |
+| Tokens of other profiles | `~/.cloider/tokens/<profile>` |
+| Automatic update state | `~/.cloider/update.json` |
+| Move the whole directory | `CLOIDER_CONFIG_DIR=/path/to/dir` |
+| Per-project app link | `.cloider/app.json` in a directory you deployed from |
+| Files left out of a deploy | `.gitignore` and `.cloiderignore` in the deployed directory |
+
+On Windows, `~` is your user profile folder, so the directory is `%USERPROFILE%\.cloider`.
+
+## Global flags
+
+Global flags work on every command and can go anywhere on the command line, before or after the command:
+
+```bash
+cloider --profile acme cluster list -o json
+cloider cluster list --profile acme -o json     # the same
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--profile` | string | the current profile | Profile to use. Overrides `CLOIDER_PROFILE` and `cloider profile use`. See [profiles](#profiles) |
+| `--api-url` | string | `https://cloider.com/api` | API to talk to. Overrides `CLOIDER_API_URL` and the profile's API URL |
+| `--token-file` | string | | Read the API token from this file. Overrides `CLOIDER_TOKEN` and every other token source |
+| `-o, --output` | string | `table` | Output format: `table`, `wide` (adds ids), `json` or `yaml` |
+| `-q, --quiet` | bool | `false` | Print only ids or names, one per line |
+| `--no-headers` | bool | `false` | Print tables without the header row |
+| `--no-color` | bool | `false` | Disable colors. Also set by `NO_COLOR` |
+| `-y, --yes` | bool | `false` | Don't ask for confirmation. Required for deletes and other confirmations when there is no terminal |
+| `--debug` | bool | `false` | Log every API request to stderr (method, URL, status, duration), never the token |
+| `-h, --help` | bool | | Help for the command |
+| `-v, --version` | bool | | Print the version (only on `cloider` itself) |
+
+How output flags behave in detail, with examples, is in [Output and scripting](/cli/output-and-scripting).
+
+### Flags many commands share
+
+Some flags aren't global but appear on every command of a kind, always with the same meaning:
+
+| Flag | On | Description |
+| --- | --- | --- |
+| `-w, --wait` | `create`, `delete`, `pause`, `resume`, `resize` and similar | Wait until the change is done before returning |
+| `--timeout` | the same commands | How long `--wait` waits, as a Go duration such as `90s`, `10m` or `1h`. Default `15m` |
+
+### See every request with --debug
+
+`--debug` prints each API request and its answer to stderr, so stdout stays clean for your script:
+
+```bash
+cloider cluster list --debug
+```
+
+```text title="Output (stderr)"
+→ GET https://cloider.com/api/clusters
+← 200 OK (143ms)
+```
+
+The token is never printed. Retries are logged too: the CLI retries a request the API answered with `429 Too Many Requests` (honoring `Retry-After` up to 60 seconds), and retries reads that got `502`, `503` or `504` or failed on the network, up to 4 attempts in total. Writes are never retried after a server error, since they may have gone through.
+
+## Environment variables
+
+| Variable | Effect | Same as |
+| --- | --- | --- |
+| `CLOIDER_TOKEN` | API token to use. Takes precedence over `CLOIDER_TOKEN_FILE` and the profile's token | |
+| `CLOIDER_TOKEN_FILE` | Path of a file holding the API token | `--token-file` (which wins over both) |
+| `CLOIDER_PROFILE` | Profile to use | `--profile` (which wins) |
+| `CLOIDER_API_URL` | API to talk to | `--api-url` (which wins) |
+| `CLOIDER_CONFIG_DIR` | Directory for `config.json`, tokens and `update.json`, instead of `~/.cloider` | |
+| `CLOIDER_AUTO_UPDATE` | `1` or `true` turns automatic updates on, `0` or `false` turns them off, whatever `config.json` says. Any other value is ignored with a warning | `cloider update enable` and `disable` |
+| `CI` | When set to anything, automatic updates are off by default (`CLOIDER_AUTO_UPDATE=1` turns them back on) | |
+| `NO_COLOR` | When set to anything, disables colors and spinners | `--no-color` |
+| `TERM` | `TERM=dumb` disables colors and spinners | |
+| `KUBECONFIG` | `cloider cluster kubeconfig --merge` merges into the first file it lists, instead of `~/.kube/config` | |
+
+The install script also reads `CLOIDER_VERSION` and `CLOIDER_INSTALL_DIR`. See [Install](/cli/install#install-script-options).
+
+### Order of precedence
+
+For each setting, the first source that is set wins:
+
+| Setting | 1st | 2nd | 3rd | 4th | Default |
+| --- | --- | --- | --- | --- | --- |
+| Profile | `--profile` | `CLOIDER_PROFILE` | `current_profile` in `config.json` | | `default` |
+| API URL | `--api-url` | `CLOIDER_API_URL` | the profile's `api_url` | | `https://cloider.com/api` |
+| Token | `--token-file` | `CLOIDER_TOKEN` | `CLOIDER_TOKEN_FILE` | the profile's token file | none (not logged in) |
+| Auto-update | `CLOIDER_AUTO_UPDATE` | `auto_update` in `config.json` | `CI` set means off | | on |
+
+## The configuration directory
+
+Everything the CLI stores lives in one directory, `~/.cloider` by default. The CLI creates it with mode `0700` and writes every file in it with mode `0600`, through a temporary file and a rename, so a crash never leaves a half written file.
+
+```text
+~/.cloider/
+├── config.json        profiles, current profile, auto-update setting
+├── token              the default profile's API token
+├── tokens/
+│   ├── acme           the acme profile's API token
+│   └── personal       the personal profile's API token
+└── update.json        what the daily update check last found and did
+```
+
+While an update is being installed, a short lived `update.lock` file also exists there, so two `cloider` processes never update at once.
+
+### Move the directory with CLOIDER_CONFIG_DIR
+
+Set `CLOIDER_CONFIG_DIR` to keep the CLI's files somewhere else, for example per project, on an encrypted volume, or in a CI workspace:
+
+```bash
+export CLOIDER_CONFIG_DIR="$PWD/.cloider-config"
+cloider login --with-token < token.txt
+```
+
+Every file listed on this page moves with it, including the token files.
+
+### config.json
+
+`config.json` holds the profiles and two settings. The CLI writes it for you (`cloider login`, `cloider profile use`, `cloider profile add`, `cloider update disable`), but it is plain JSON you can read and edit:
+
+```json title="~/.cloider/config.json"
+{
+  "current_profile": "acme",
+  "profiles": {
+    "acme": {
+      "api_url": "https://cloider.com/api",
+      "account": "billing@acme.example"
+    },
+    "ci": {
+      "api_url": "https://cloider.com/api",
+      "token_file": "/run/secrets/cloider"
+    },
+    "default": {
+      "api_url": "https://cloider.com/api",
+      "account": "jane@example.com"
+    }
+  },
+  "auto_update": false
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `current_profile` | The profile commands use when neither `--profile` nor `CLOIDER_PROFILE` is set. Set by `cloider profile use`, and by the first `cloider login` |
+| `profiles.<name>.api_url` | The API this profile talks to |
+| `profiles.<name>.account` | The account the token was for, as `cloider login` last saw it. For display only: the token itself decides the account |
+| `profiles.<name>.token_file` | A token file of your own. When empty, the token is in `~/.cloider/token` or `~/.cloider/tokens/<name>` |
+| `auto_update` | `false` after `cloider update disable`. Absent means automatic updates are on |
+
+An invalid `config.json` stops every command with `~/.cloider/config.json is not valid json: ...`. A missing one is fine and means no profiles yet.
+
+### Token files
+
+A token file contains one API token, optionally followed by a newline. The CLI reads `~/.cloider/token` for the `default` profile and `~/.cloider/tokens/<profile>` for the others, unless the profile's `token_file` points elsewhere. On macOS and Linux it warns when a token file is readable by other users:
+
+```text
+! /Users/jane/.cloider/token is readable by others (mode 644), run: chmod 600 /Users/jane/.cloider/token
+```
+
+See [Where are tokens stored?](/cli/authentication#where-are-tokens-stored) for how they get there and how logout removes them.
+
+### update.json
+
+`update.json` records what the daily update check last did. It is separate from `config.json` so the updater never rewrites your settings. `cloider update status` shows its contents in a readable form.
+
+```json title="~/.cloider/update.json"
+{
+  "last_check": "2026-10-20T08:02:11.512+02:00",
+  "latest": "0.6.0",
+  "updated_from": "0.5.0",
+  "updated_to": "0.6.0",
+  "notified": true
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `last_check` | When the CLI last looked for a new version. The next check is due 24 hours later |
+| `latest` | The newest stable version that check found |
+| `updated_from`, `updated_to` | The last automatic update the CLI installed |
+| `notified` | Whether you have been told about that update |
+| `blocked_dir`, `blocked_notified` | The install directory the CLI couldn't write to, and the version it last warned about |
+| `error` | Why the last check or install failed, if it did |
+
+Deleting `update.json` is harmless: the CLI just checks again on the next command. See [Updating the CLI](/cli/updating).
+
+## Profiles
+
+A profile is a named combination of an API URL and a token, so you can switch between Cloider accounts without logging in again. Profile names use letters, digits, `.`, `_` and `-`, up to 64 characters. The `default` profile always exists.
+
+```bash
+cloider login --profile acme                     # create a profile by logging in
+cloider profile add ci --token-file /run/secrets/cloider   # or point one at a token file
+cloider profile list                             # show them, * marks the current one
+cloider profile use acme                         # switch for good
+cloider --profile personal app list              # or for one command
+CLOIDER_PROFILE=personal cloider app list        # or for one shell
+cloider profile remove ci                        # forget one (doesn't revoke its token)
+```
+
+A profile's API URL is set the first time you log in to it, from `--api-url`, `CLOIDER_API_URL` or the default, and stays with the profile. Every profile command is described in [Auth and profiles commands](/cli/commands/auth-and-profiles), and how to use profiles for several accounts in [Authentication](/cli/authentication#work-with-several-accounts-using-profiles).
+
+## Files in your project directories
+
+Two kinds of files in a directory you deploy from affect the CLI:
+
+| File | Written by | Purpose |
+| --- | --- | --- |
+| `.cloider/app.json` | `cloider deploy` (first deploy) and `cloider app link` | Links the directory to an app, so `cloider deploy` there updates it. Holds the app's id, name, account and API URL. Safe to commit, it contains no secrets |
+| `.cloiderignore` | You | Files and folders to leave out of `cloider deploy`, in `.gitignore` syntax, in addition to `.gitignore` itself |
+
+```json title=".cloider/app.json"
+{
+  "app": "q7w2e9r4t1",
+  "name": "blog",
+  "account": "jane@example.com",
+  "api_url": "https://cloider.com/api"
+}
+```
+
+Details are in [`cloider deploy`](/cli/commands/deploy).
+
+## Configure the CLI for CI
+
+A typical CI job sets only the token and leaves everything else at its default:
+
+```bash
+export CLOIDER_TOKEN="$CLOIDER_TOKEN_SECRET"   # from your CI secret store
+cloider whoami
+```
+
+Useful extras for CI:
+
+```bash
+export CLOIDER_CONFIG_DIR="$CI_PROJECT_DIR/.cloider"   # keep state inside the workspace
+export NO_COLOR=1                                      # plain logs
+cloider db list -o json --no-color
+```
+
+Automatic updates are already off when `CI` is set. See [Output and scripting](/cli/output-and-scripting#use-the-cli-in-cicd) for complete pipelines.
+
+## Next steps
+
+- [Authentication](/cli/authentication): every login flow and token source.
+- [Output and scripting](/cli/output-and-scripting): formats, exit codes and CI.
+- [Updating the CLI](/cli/updating): the daily update and how to turn it off.
+- [Auth and profiles commands](/cli/commands/auth-and-profiles): `login`, `logout` and `profile` in detail.
+
+<FAQ items={[
+  {q: 'Where does the Cloider CLI keep its configuration?', a: 'In ~/.cloider (%USERPROFILE%\\.cloider on Windows): config.json for profiles and settings, token and tokens/<profile> for API tokens, and update.json for the update check. CLOIDER_CONFIG_DIR moves the whole directory.'},
+  {q: 'Which environment variables does the CLI read?', a: 'CLOIDER_TOKEN, CLOIDER_TOKEN_FILE, CLOIDER_PROFILE, CLOIDER_API_URL, CLOIDER_CONFIG_DIR and CLOIDER_AUTO_UPDATE, plus the standard CI, NO_COLOR, TERM and KUBECONFIG.'},
+  {q: 'Do flags or environment variables win?', a: 'Flags win. --profile beats CLOIDER_PROFILE, --api-url beats CLOIDER_API_URL, and --token-file beats CLOIDER_TOKEN and CLOIDER_TOKEN_FILE.'},
+  {q: 'How do I turn off colors?', a: 'Pass --no-color or set NO_COLOR to any value. Colors are also off automatically when stdout or stderr is not a terminal, or when TERM is dumb.'},
+  {q: 'How do I see which API requests the CLI makes?', a: 'Add --debug to any command. Each request and response status is logged to stderr with its duration. The token is never printed.'},
+  {q: 'Can I commit .cloider/app.json to git?', a: 'Yes. It only contains the app\'s id and name, the account email and the API URL, no secrets. Committing it lets everyone on the team run cloider deploy to the same app.'}
+]} />

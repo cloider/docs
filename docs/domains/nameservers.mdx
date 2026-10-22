@@ -1,0 +1,233 @@
+---
+title: Point your domain to Cloider's nameservers
+sidebar_label: Nameservers
+sidebar_position: 5
+description: Set your nameservers to ns1.cloider.com to ns4.cloider.com at Namecheap, GoDaddy, Route 53 and others, check them with dig, and see how Cloider DNS answers.
+keywords: [cloider nameservers, ns1.cloider.com, change nameservers, namecheap custom dns, godaddy nameservers, squarespace domains nameservers, route 53 nameservers, dns delegation, check nameservers]
+---
+
+Cloider's nameservers are `ns1.cloider.com`, `ns2.cloider.com`, `ns3.cloider.com` and `ns4.cloider.com`. When you set
+them as your domain's nameservers at your registrar, Cloider answers DNS for the domain with the records you manage in
+Cloider. This page shows how to change the nameservers at popular registrars, how to check the change, and exactly how
+Cloider's nameservers answer queries.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Nameservers** | `ns1.cloider.com`, `ns2.cloider.com`, `ns3.cloider.com`, `ns4.cloider.com` |
+| **Set them at** | Your registrar, where the domain is registered |
+| **Time to take effect** | Usually minutes to a few hours, up to 48 hours |
+| **What they answer with** | The records on the domain's **DNS records** list in Cloider, plus the domain's `SOA` and `NS` records |
+| **Record types answered** | `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `SOA`, `SRV`, `PTR`, `CAA`, `HTTPS`, `SPF`. `ALIAS` records are answered as `A` and `AAAA` |
+| **Transport** | UDP and TCP on port 53 |
+| **DNSSEC** | Not supported. Turn DNSSEC off at your registrar before switching |
+| **Cost** | No charge |
+
+## Where to find the nameservers
+
+The four names are the same for every domain and every account. You find them:
+
+- **Dashboard**: on the **Activate Cloider DNS** step when you add a custom domain, and in the **Name servers** section
+  of every custom domain's page, each with a copy button. The text reads **Login into your domain provider and change
+  your name servers to the following:**.
+- **CLI**: `cloider domain create example.com` prints them.
+- **Terraform**: the `nameservers` attribute of the [`cloider_options`](/terraform/data-sources/options) data source.
+- **API**: `nameservers` in `GET https://cloider.com/api/options`.
+
+<Screenshot
+  src="/img/screenshots/domains/detail.webp"
+  url="/dashboard/domains/example.com"
+  alt="The example.com domain page with its Targets, its DNS records and the Name servers section listing ns1.cloider.com to ns4.cloider.com"
+  caption="A custom domain's page: targets, DNS records and the nameservers to set at your registrar."
+/>
+
+## Before you change the nameservers
+
+1. **Add the domain to Cloider.** See [Add a custom domain](/domains/add-a-custom-domain).
+2. **Copy the records the domain already uses** into Cloider, especially `MX` and `TXT` records for email. Once the
+   nameservers switch, only Cloider's records answer. See
+   [Recreate your existing DNS records](/domains/add-a-custom-domain#step-2-recreate-your-existing-dns-records).
+3. **Turn off DNSSEC** if it is enabled. At most registrars this is a DNSSEC switch or a list of DS records to delete.
+   Cloider's nameservers don't sign answers, and a domain that keeps a DS record while its nameservers don't sign
+   stops resolving for every resolver that validates DNSSEC.
+4. **Lower the TTL** of important records at your current DNS provider a day ahead, if you can. That shortens the time
+   some visitors see old answers.
+
+## Change the nameservers at your registrar
+
+At every registrar the change is the same: find the domain's nameserver setting, switch from the registrar's own DNS to
+custom nameservers, enter the four Cloider names, remove any others, and save. Registrars rename their menus from time
+to time, so if a label below doesn't match, look for **Nameservers**, **DNS** or **Custom DNS** in the domain's
+settings, or search your registrar's help center for "change nameservers".
+
+<Tabs groupId="registrar" queryString="registrar">
+<TabItem value="namecheap" label="Namecheap" default>
+
+1. Sign in to Namecheap and open **Domain List**.
+2. Click **Manage** next to the domain.
+3. In the **Nameservers** section, change the dropdown from **Namecheap BasicDNS** to **Custom DNS**.
+4. Enter `ns1.cloider.com` and `ns2.cloider.com`, click **Add Nameserver** and enter `ns3.cloider.com` and
+   `ns4.cloider.com`.
+5. Click the green check mark to save.
+
+Namecheap says the change can take up to 48 hours, and it is often visible much sooner.
+
+</TabItem>
+<TabItem value="godaddy" label="GoDaddy">
+
+1. Sign in to GoDaddy and open your **Domain Portfolio**.
+2. Select the domain, then open its **DNS** settings and the **Nameservers** tab.
+3. Click **Change Nameservers** and choose to use your own nameservers.
+4. Enter the four Cloider nameservers, adding fields as needed.
+5. Save, and confirm the warning that GoDaddy's DNS records will no longer be used.
+
+</TabItem>
+<TabItem value="cloudflare" label="Cloudflare">
+
+**Domains registered with Cloudflare Registrar** use Cloudflare's own nameservers, and Cloudflare doesn't let you
+replace them with another provider's. Keep DNS at Cloudflare and point the host names you serve at Cloider from there,
+as described in [Keep your current DNS provider](/domains/add-a-custom-domain#keep-your-current-dns-provider). Set those
+records to **DNS only** (grey cloud).
+
+**Domains registered elsewhere but using Cloudflare DNS**: change the nameservers at the registrar where the domain is
+registered, using that registrar's steps. Cloudflare's dashboard can't change them for you.
+
+</TabItem>
+<TabItem value="squarespace" label="Squarespace Domains">
+
+Squarespace Domains took over domains registered with Google Domains.
+
+1. Sign in to Squarespace and open the **Domains** dashboard.
+2. Select the domain and open its **DNS** settings.
+3. Find **Domain nameservers** and choose to use custom nameservers.
+4. Enter the four Cloider nameservers and save.
+
+</TabItem>
+<TabItem value="route53" label="Amazon Route 53">
+
+For domains registered with Route 53 (the registrar part of the service):
+
+1. Open the Route 53 console and choose **Registered domains**.
+2. Select the domain and choose the action to edit its name servers.
+3. Replace the four `awsdns` name servers with `ns1.cloider.com`, `ns2.cloider.com`, `ns3.cloider.com` and
+   `ns4.cloider.com`.
+4. Save the change.
+
+A Route 53 hosted zone for the domain stops being used once the name servers change. Delete it when you no longer need
+it, to stop paying for it.
+
+</TabItem>
+<TabItem value="other" label="Other registrars">
+
+Porkbun, Gandi, IONOS, OVHcloud, Hostinger, Dynadot and most other registrars work the same way:
+
+1. Open the domain's settings at the registrar.
+2. Find **Nameservers** (sometimes under **DNS**) and choose custom or external nameservers.
+3. Enter all four Cloider nameservers and remove the registrar's.
+4. Save.
+
+Some registrars also offer "glue records" or "child nameservers" in the same area. You don't need them for Cloider.
+
+</TabItem>
+</Tabs>
+
+:::note[Country code domains with strict registry checks]
+Some country code registries test new nameservers before accepting a change, and expect them to answer for the domain
+with `SOA` and `NS` records. Cloider's nameservers answer both within seconds of the domain being added. If your
+registrar still reports a failed nameserver check, keep DNS at your current provider and point the host names at
+Cloider from there, or contact [support](/account/support).
+:::
+
+## Does the domain need NS records?
+
+No. Cloider's nameservers answer `NS` queries for the domain itself with `ns1.cloider.com` to `ns4.cloider.com`, and
+`SOA` queries with the domain's `SOA` record, within seconds of the domain being added. Tools and services that ask "which
+nameservers does `example.com` use?" get the right answer from Cloider without any record of yours.
+
+An `NS` record you add at the apex replaces those four in the answer, so leave the name blank only for nameservers the
+domain is really delegated to. `NS` records on another name, such as `dev`, are answered as you add them.
+
+## Check that the nameservers have changed
+
+There are two places to look: the registry, which says which nameservers the domain uses, and Cloider's nameservers,
+which answer with your records.
+
+```bash
+# What the .com registry hands out (use your TLD's servers for other TLDs)
+dig example.com NS @a.gtld-servers.net +noall +authority
+
+# Follow the whole chain from the root, for any TLD
+dig +trace example.com A
+
+# What Cloider's nameservers answer for the domain
+dig @ns1.cloider.com example.com A +short
+```
+
+```text title="Output"
+example.com.		172800	IN	NS	ns1.cloider.com.
+example.com.		172800	IN	NS	ns2.cloider.com.
+example.com.		172800	IN	NS	ns3.cloider.com.
+example.com.		172800	IN	NS	ns4.cloider.com.
+```
+
+On Windows, use `nslookup` against Cloider's nameserver, and your registrar's dashboard or a `whois` lookup for the
+registry's view:
+
+```bash
+nslookup -type=A example.com ns1.cloider.com
+```
+
+If the registry still lists the old nameservers, the change hasn't been saved or published yet: check the registrar.
+If it lists Cloider's nameservers but your browser still sees the old site, resolvers still have old answers cached.
+Wait, or test with a public resolver such as `dig @1.1.1.1 example.com`.
+
+## How Cloider's nameservers answer
+
+Cloider's nameservers are **authoritative only**: they answer questions about domains added to Cloider, from the
+records you add, and they don't look up other names for you. Knowing their behavior helps you read `dig` output.
+
+| Behavior | What you see |
+| --- | --- |
+| **Authoritative answers** | Answers for domains added to Cloider carry the `aa` flag. Recursion isn't offered (no `ra` flag), so don't use `ns1.cloider.com` as your computer's resolver |
+| **Other domains** | A query for a domain that isn't added to Cloider gets `REFUSED` |
+| **Record types** | `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `SOA`, `SRV`, `PTR`, `CAA`, `HTTPS` and `SPF` queries are answered. Other types get an empty answer. An [`ALIAS`](/domains/dns-records#alias-record) record answers `A` and `AAAA` queries with its target's addresses, and `SERVFAIL` when the target can't be looked up |
+| **TTL** | Each answer carries the TTL you set on the record, 60 to 172800 seconds. An `ALIAS` answer carries the target's TTL when that is lower, at least 30 seconds and at most an hour |
+| **Name exists, type doesn't** | Status `NOERROR` with an empty answer (NODATA), for example an `AAAA` query for a name that has only an `A` record |
+| **Name doesn't exist** | Status `NXDOMAIN`. The apex always exists, since it has `SOA` and `NS` records even before you add any |
+| **CNAME** | A query for a name that has a CNAME returns the CNAME. When the target is in the same domain, its records (or an `ALIAS`'s addresses) follow in the same answer, up to 8 CNAMEs deep. Otherwise your resolver follows the CNAME itself, also to another domain on Cloider |
+| **Wildcards** | A record named `*` answers for any name below the domain that has no record of the queried type, under the queried name. It doesn't answer for the apex |
+| **TXT** | Each value is a TXT record of its own. A value longer than 255 characters is sent as several strings in one record, as the DNS standard requires |
+| **SPF type** | Records of type `SPF` are also returned for `TXT` queries, because mail servers look SPF up as TXT |
+| **SOA** | Every domain has an `SOA` record naming `ns1.cloider.com` as the primary nameserver and `hostmaster.cloider.com` as the contact. `NXDOMAIN` and empty answers carry it in the authority section, so resolvers cache them for at most 300 seconds |
+| **NS** | The apex answers with `ns1.cloider.com` to `ns4.cloider.com`, unless you add `NS` records there |
+| **Transport** | UDP and TCP on port 53. A UDP answer too big for the client comes back truncated, and the client asks again over TCP |
+| **DNSSEC** | Answers aren't signed |
+
+## Move your DNS away from Cloider
+
+To move the domain to another DNS provider later:
+
+1. Recreate every record at the new provider. List them with `cloider dns list example.com` or export them with
+   `cloider dns list example.com -o json`.
+2. Change the nameservers at your registrar to the new provider's.
+3. Wait at least 48 hours, so resolvers stop asking Cloider.
+4. Delete the domain in Cloider if you no longer route it with targets. See
+   [Delete a domain](/domains/delete-a-domain).
+
+The domain's page in the dashboard reminds you of this order: **Make sure to configure your domain with another DNS
+provider before deleting this domain.**
+
+## Next steps
+
+- [DNS records](/domains/dns-records): add the records the domain needs.
+- [Targets](/domains/targets): route the domain to an app or a cluster Service.
+- [Troubleshooting](/domains/troubleshooting): what to do when the domain doesn't resolve.
+
+<FAQ items={[
+  {q: 'What are Cloider\'s nameservers?', a: 'ns1.cloider.com, ns2.cloider.com, ns3.cloider.com and ns4.cloider.com. Enter all four at your registrar as custom nameservers.'},
+  {q: 'How long does a nameserver change take?', a: 'Usually from a few minutes to a few hours. Resolvers can keep the old nameservers cached for up to 48 hours, so plan for that in the worst case.'},
+  {q: 'Do I need to transfer my domain to Cloider?', a: 'No. The domain stays registered at your registrar. You only change its nameservers there.'},
+  {q: 'Does Cloider DNS support DNSSEC?', a: 'No. Turn DNSSEC off at your registrar, by removing the DS record, before you switch the nameservers to Cloider. Otherwise validating resolvers reject the domain\'s answers.'},
+  {q: 'Can I use Cloider\'s nameservers with a domain registered at Cloudflare?', a: 'Domains registered with Cloudflare Registrar keep Cloudflare\'s nameservers. Keep DNS at Cloudflare and add CNAME or A records that point the host names you serve at Cloider, in DNS only mode.'},
+]} />

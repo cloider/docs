@@ -1,0 +1,719 @@
+---
+title: cloider db command reference
+sidebar_label: db
+sidebar_position: 3
+description: Reference for cloider db, to create and manage PostgreSQL, MySQL, MongoDB and Redis databases, connect, run queries, back up, restore, resize and control access.
+keywords: [cloider db, cloider db create, cloider db connect, cloider db exec, cloider db restore, managed postgresql cli, mysql cli, redis cli, mongodb cli]
+---
+
+`cloider db` manages your [managed databases](/databases/overview): PostgreSQL, MySQL, MongoDB and Redis. It creates and deletes them, shows how to reach them, prints passwords and CA certificates, connects your local client, opens a client in the browser terminal, runs queries for scripts, lists and restores backups, resizes, renames, toggles SSL, controls who may connect, and shows resource usage.
+
+```text
+cloider db <command> [flags]
+```
+
+**Aliases:** `cloider database`, `cloider databases`, `cloider dbs`. Every subcommand that takes `<database>` accepts the database's name (label), its original name or its id.
+
+## Subcommands
+
+| Command | Description |
+| --- | --- |
+| [`cloider db list`](#cloider-db-list) | List databases |
+| [`cloider db get`](#cloider-db-get) | Show a database and how to reach it |
+| [`cloider db create`](#cloider-db-create) | Create a database |
+| [`cloider db delete`](#cloider-db-delete) | Delete a database and its data |
+| [`cloider db pause`](#cloider-db-pause) | Pause a database, keeping its data at a lower price until it is resumed |
+| [`cloider db resume`](#cloider-db-resume) | Resume a paused database |
+| [`cloider db status`](#cloider-db-status) | Print a database's status |
+| [`cloider db password`](#cloider-db-password) | Print a database user's password |
+| [`cloider db cert`](#cloider-db-cert) | Print the CA certificate that signs a database's TLS certificate |
+| [`cloider db connect`](#cloider-db-connect) | Connect with the engine's own client (psql, mysql, redis-cli, mongosh) |
+| [`cloider db shell`](#cloider-db-shell) | Open the engine's client inside the platform, already logged in |
+| [`cloider db exec`](#cloider-db-exec) | Run a query or script with the database's client, for scripts and AI agents |
+| [`cloider db backups`](#cloider-db-backups) | List a database's backups, newest first |
+| [`cloider db restore`](#cloider-db-restore) | Restore a backup into a new database, leaving this one as it is |
+| [`cloider db resize`](#cloider-db-resize) | Move a database to a larger plan (restarts it) |
+| [`cloider db rename`](#cloider-db-rename) | Change the name a database is shown and found by |
+| [`cloider db ssl`](#cloider-db-ssl) | Require TLS on a database, or stop requiring it (restarts it) |
+| [`cloider db trusted-sources`](#cloider-db-trusted-sources) | List or change who may connect to a database |
+| [`cloider db insights`](#cloider-db-insights) | Show a database's resource usage today (`-o json` for the month) |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## cloider db list
+
+List the account's databases with their engine, plan and status.
+
+```text
+cloider db list [flags]
+```
+
+**Alias:** `cloider db ls`.
+
+```bash
+cloider db list
+```
+
+```text title="Output"
+NAME         ENGINE          PLAN       STATUS   CREATED
+orders-db    PostgreSQL 18   Standard   Ready    2026-09-02 14:12
+shop-db      MySQL 9         Starter    Ready    2026-09-10 08:30
+catalog-db   MongoDB 8       Basic      Paused   2026-09-18 17:02
+cache        Redis 8         Hobby      Ready    2026-10-01 10:45
+```
+
+`-o wide` adds the **ID** column, `-q` prints the ids, and `-o json` prints the API's list with fields such as `hashed_id`, `database_name`, `database_label`, `database_user`, `service`, `database_version`, `database_plan`, `trusted_sources`, `ssl`, `status` and `created_at`.
+
+```bash
+# Every PostgreSQL database
+cloider db list -o json | jq -r '.[] | select(.service == "PostgreSQL") | .database_label'
+```
+
+MCP tool: `list_databases`.
+
+## cloider db get
+
+Show a database and how to reach it: hosts, port, database name, user, SSL and trusted sources. The password is printed by [`cloider db password`](#cloider-db-password).
+
+```text
+cloider db get <database> [flags]
+```
+
+**Alias:** `cloider db show`.
+
+| Argument | Description |
+| --- | --- |
+| `<database>` | Name or id of the database |
+
+```bash
+cloider db get orders-db
+```
+
+```text title="Output"
+Name:             orders-db
+Engine:           PostgreSQL 18
+Plan:             Standard
+Status:           Ready
+Host:             orders-db-p0q9zm.db.cloider.com
+Private host:     orders-db-p0q9zm.db.cloider.internal
+Port:             20417
+Database:         orders-db
+User:             orders_db_user
+SSL:              yes
+Trusted sources:  anywhere
+Created:          2026-09-02 14:12
+
+Password: `cloider db password orders-db`, connect: `cloider db connect orders-db`
+```
+
+- **Host** is the public host, reachable from the internet if the trusted sources allow it.
+- **Private host** is reachable only from your own Cloider clusters and apps.
+- **Trusted sources** lists who may connect: `anywhere`, IPv4 addresses and ranges, `cluster:<name>` and `app:<name>`.
+
+`-o json` adds `host`, `private_host` and `database_port` to the list fields:
+
+```bash
+cloider db get orders-db -o json | jq -r '"\(.host):\(.database_port)"'
+```
+
+```text title="Output"
+orders-db-p0q9zm.db.cloider.com:20417
+```
+
+See [Connect to a database](/databases/connect). MCP tool: `get_database`.
+
+## cloider db create
+
+Create a database.
+
+```text
+cloider db create <name> [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<name>` | Name of the new database. It becomes the database name inside the engine and part of the host name |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--engine` | string | (required) | `postgresql`, `mysql`, `redis` or `mongodb`. Also accepted: `postgres`, `pg`, `mongo` |
+| `--version` | string | the newest offered | Engine version |
+| `--plan` | string | `Hobby` | Plan: `Hobby`, `Starter`, `Basic`, `Standard`, `Plus` or `Pro` (any case). See [`cloider pricing`](/cli/commands/account#cloider-pricing) |
+| `--user` | string | `<name>_user` | Database user. Dashes in the name become underscores: `orders-db` gets `orders_db_user` |
+| `--ssl` | bool | on, except for Redis | Require TLS |
+| `--no-ssl` | bool | `false` | Don't require TLS. Can't be combined with `--ssl` |
+| `--trusted-source` | string, repeatable | `*` (anywhere) | Who may connect: `*`, an IPv4 address or CIDR, `cluster:<name>` or `app:<name>` |
+| `--allow-my-ip` | bool | `false` | Also trust the public IPv4 address this command runs from |
+| `-w, --wait` | bool | `false` | Wait until the database is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The CLI checks the engine, version and plan against what Cloider offers before creating anything, and names the valid choices when one is wrong:
+
+```text
+Error: PostgreSQL 15 isn't offered, pick one of: 18
+Error: unknown plan "large", pick one of: Hobby, Starter, Basic, Standard, Plus, Pro (see `cloider pricing`)
+```
+
+SSL is on by default for every engine except Redis, where turning it on makes the server accept TLS connections only. `--allow-my-ip` asks a public IP lookup service (`api.ipify.org`) for this machine's address, as the dashboard's **Allow My IP** button does.
+
+Create a PostgreSQL database with the defaults (Hobby plan, newest version, SSL, open to anywhere):
+
+```bash
+cloider db create orders-db --engine postgresql
+```
+
+```text title="Output"
+✓ Creating PostgreSQL 18 database orders-db (plan Hobby)
+Follow it with `cloider db status orders-db`, or pass --wait next time.
+```
+
+A Redis cache only your app can reach, waiting until it is ready:
+
+```bash
+cloider db create cache --engine redis --plan starter --trusted-source app:blog --wait
+```
+
+```text title="Output"
+✓ Creating Redis 8 database cache (plan Starter)
+✓ Database cache is ready. Connect with `cloider db connect cache`.
+```
+
+A MySQL database open to an office network and your current IP:
+
+```bash
+cloider db create shop-db --engine mysql --trusted-source 203.0.113.0/24 --allow-my-ip
+```
+
+A MongoDB database reachable from a cluster, with a custom user:
+
+```bash
+cloider db create catalog-db --engine mongodb --plan basic --user catalog --trusted-source cluster:production
+```
+
+`-q` prints the new id and `-o json` prints `{"hashed_id": "..."}`. See [Create a database](/databases/create-a-database). MCP tool: `create_database`.
+
+## cloider db delete
+
+Delete a database and its data.
+
+```text
+cloider db delete <database> [flags]
+```
+
+**Alias:** `cloider db rm`.
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the database is gone |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The command asks you to type the database's name to confirm; pass `--yes` to skip it (required without a terminal).
+
+```bash
+cloider db delete shop-db
+```
+
+```text title="Output"
+This permanently deletes database shop-db.
+Type shop-db to confirm: shop-db
+✓ Deleting database shop-db
+```
+
+```bash
+cloider db delete shop-db --yes --wait
+```
+
+See [Pause, resume and delete](/databases/pause-resume-and-delete). MCP tool: `delete_database`.
+
+## cloider db pause
+
+Pause a database. It stops serving connections and keeps its data at a lower price until you resume it.
+
+```text
+cloider db pause <database> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the database is `Paused` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider db pause catalog-db --wait
+```
+
+```text title="Output"
+✓ Pausing database catalog-db
+✓ Database catalog-db is Paused
+```
+
+MCP tool: `pause_database`.
+
+## cloider db resume
+
+Resume a paused database.
+
+```text
+cloider db resume <database> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the database is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider db resume catalog-db --wait
+```
+
+```text title="Output"
+✓ Resuming database catalog-db
+✓ Database catalog-db is Ready
+```
+
+MCP tool: `resume_database`.
+
+## cloider db status
+
+Print a database's status and nothing else.
+
+```text
+cloider db status <database> [flags]
+```
+
+```bash
+cloider db status orders-db
+```
+
+```text title="Output"
+Ready
+```
+
+With `-o json` it prints `{"hashed_id": "...", "status": "Ready"}`. See [Status values](/reference/status-values).
+
+## cloider db password
+
+Print the password of the database's user, to stdout and nothing else.
+
+```text
+cloider db password <database> [flags]
+```
+
+```bash
+cloider db password orders-db
+```
+
+```text title="Output"
+Xk9vQ2mL7pR4tW8zN3bY
+```
+
+```bash
+# Build a connection string
+export DATABASE_URL="postgresql://orders_db_user:$(cloider db password orders-db)@orders-db-p0q9zm.db.cloider.com:20417/orders-db?sslmode=require"
+
+# User and password as JSON
+cloider db password orders-db -o json      # {"user": "orders_db_user", "password": "..."}
+```
+
+MCP tool: `get_database_password`.
+
+## cloider db cert
+
+Print the CA certificate that signs the database's TLS certificate, for clients that verify the server. A database with SSL off has none.
+
+```text
+cloider db cert <database> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --file` | string | stdout | Write to this file (mode `0600`) instead of stdout |
+
+```bash
+cloider db cert cache -f ca.crt
+```
+
+```text title="Output"
+✓ Wrote the CA certificate of cache to ca.crt
+```
+
+```bash
+cloider db cert orders-db > orders-ca.pem
+psql "host=orders-db-p0q9zm.db.cloider.com port=20417 user=orders_db_user dbname=orders-db sslmode=verify-ca sslrootcert=orders-ca.pem"
+```
+
+With SSL off, it fails with exit code `4`: ``database cache has SSL off, so it has no certificate (turn it on with `cloider db ssl ... on`)``. See [SSL/TLS](/databases/ssl-tls). MCP tool: `get_database_ca_cert`.
+
+## cloider db connect
+
+Connect to the database with the engine's own client, already logged in: `psql`, `mysql`, `redis-cli` or `mongosh`. The client must be installed on your machine, and the database's [trusted sources](#cloider-db-trusted-sources) must allow where you connect from. [`cloider db shell`](#cloider-db-shell) needs nothing installed.
+
+```text
+cloider db connect <database> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--print` | bool | `false` | Print the command instead of running it, without the password |
+| `--private` | bool | `false` | Use the private host, reachable from your clusters and apps |
+
+```bash
+cloider db connect orders-db
+```
+
+```text title="Output"
+psql (18.0)
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off)
+Type "help" for help.
+
+orders-db=>
+```
+
+The CLI fetches the password and hands it to the client through its environment variable (`PGPASSWORD`, `MYSQL_PWD`, `REDISCLI_AUTH`), so it doesn't show in your process list. `mongosh` has no such variable, so its password is passed as an argument. For Redis and MongoDB with SSL on, the CLI downloads the CA certificate into a temporary file for the client and removes it afterwards. When the client exits with an error, `cloider db connect` exits with the same code.
+
+See the command for each engine with `--print`:
+
+```bash
+cloider db connect orders-db --print
+```
+
+```text title="Output"
+psql -h orders-db-p0q9zm.db.cloider.com -U orders_db_user -d orders-db -p 20417
+Password: `cloider db password orders-db`
+```
+
+| Engine | Command `--print` shows |
+| --- | --- |
+| PostgreSQL | `psql -h <host> -U <user> -d <database> -p <port>` (with `PGSSLMODE=require` when SSL is on) |
+| MySQL | `mysql -h <host> -P <port> -u <user> <database> --ssl-mode=REQUIRED` (SSL on), or `--ssl-mode=DISABLED --get-server-public-key` (SSL off) |
+| Redis | `redis-cli -h <host> -p <port> --user <user> --tls --cacert ca.crt` (`--tls --cacert` only with SSL on) |
+| MongoDB | `mongosh mongodb://<user>@<host>:<port>/<database>?tls=true --tlsCAFile ca.crt` (TLS parts only with SSL on) |
+
+If the client isn't installed, the command says so: ``psql isn't installed, install it or use `cloider db shell ...`, which needs nothing installed``. If the database isn't `Ready`, it warns first. See [Connect to a database](/databases/connect).
+
+There is no MCP tool for `connect`, since it runs an interactive client.
+
+## cloider db shell
+
+Open the engine's client (`psql`, `mysql`, `redis-cli` or `mongosh`) running next to the database, already logged in, in an interactive terminal session. Nothing has to be installed, and the trusted sources don't apply. It is the same terminal as the database's **Terminal** tab in the dashboard. The CLI shows `Starting the terminal…` while it gets ready, and keeps the session open while you use it.
+
+```text
+cloider db shell <database> [flags]
+```
+
+```bash
+cloider db shell orders-db
+```
+
+```text title="Output"
+Connected, exit the shell to end the session.
+orders-db=> SELECT count(*) FROM orders;
+ count
+-------
+  1284
+(1 row)
+```
+
+A shell needs a terminal on both ends; in scripts use [`cloider db exec`](#cloider-db-exec). See [Terminal and exec](/databases/terminal-and-exec).
+
+## cloider db exec
+
+Run a query or a script with the database's own client, already logged in and running next to the database, and exit with the client's exit code. Nothing has to be installed and the trusted sources don't apply, which makes it the way for scripts, CI jobs and AI agents to query a database.
+
+```text
+cloider db exec [flags] <database> [--] <query...>
+```
+
+| Argument | Description |
+| --- | --- |
+| `<database>` | Name or id of the database |
+| `<query...>` | What to run. How the arguments are read depends on the engine, see below |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-i, --stdin` | bool | `false` | Run a script from stdin instead of a query, up to 2 MiB |
+| `--timeout` | duration | `10m0s` | Stop after this long, from `1s` up to `1h` |
+
+| Engine | The arguments are | Run with |
+| --- | --- | --- |
+| PostgreSQL | One SQL string | `psql -c` |
+| MySQL | One SQL string | `mysql -e` |
+| Redis | One command; one quoted argument is a command line | `redis-cli` |
+| MongoDB | JavaScript | `mongosh --eval` |
+
+Flags for `exec` go before the database. Give either a query or `-i`, not both. A PostgreSQL script run with `-i` stops at its first error.
+
+```bash
+# PostgreSQL
+cloider db exec orders-db "SELECT count(*) FROM orders"
+cloider db exec orders-db "\dt"
+cloider db exec -i orders-db < migration.sql
+
+# MySQL
+cloider db exec shop-db "SHOW TABLES"
+
+# Redis
+cloider db exec cache SET greeting "hello world"
+cloider db exec cache GET greeting
+
+# MongoDB
+cloider db exec catalog-db "db.products.countDocuments()"
+```
+
+```text title="Output of the first command"
+ count
+-------
+  1284
+(1 row)
+```
+
+One JSON object for a script or agent:
+
+```bash
+cloider db exec -o json orders-db "SELECT now()"
+```
+
+```json title="Output"
+{
+  "exit_code": 0,
+  "stdout": "              now\n-------------------------------\n 2026-10-20 09:41:07.112+00\n(1 row)\n\n",
+  "stderr": "",
+  "timed_out": false
+}
+```
+
+The exit code is the client's own, `124` when `--timeout` stopped it. See [exit codes of exec commands](/cli/output-and-scripting#exit-codes-of-exec-commands) and [Terminal and exec](/databases/terminal-and-exec). MCP tool: `database_exec`.
+
+## cloider db backups
+
+List the database's automatic daily backups, newest first.
+
+```text
+cloider db backups <database> [flags]
+```
+
+```bash
+cloider db backups orders-db
+```
+
+```text title="Output"
+BACKUP             TAKEN
+2026-10-19_02-00   2026-10-19 02:00 UTC
+2026-10-18_02-00   2026-10-18 02:00 UTC
+2026-10-17_02-00   2026-10-17 02:00 UTC
+
+Restore one into a new database with `cloider db restore orders-db 2026-10-19_02-00`.
+```
+
+The **BACKUP** column is the backup's name in `YYYY-MM-DD_HH-MM` form (UTC), which `cloider db restore` takes. `-o json` prints the names as a JSON array. See [Backups and restore](/databases/backups-and-restore). MCP tool: `list_database_backups`.
+
+## cloider db restore
+
+Restore a backup into a **new** database, a copy of this one as it was when the backup was taken. The original database is left as it is.
+
+```text
+cloider db restore <database> [backup] [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<database>` | Name or id of the database the backup belongs to |
+| `[backup]` | The backup to restore, `YYYY-MM-DD_HH-MM`, as `cloider db backups` lists it. Can also be given with `--backup` |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--backup` | string | | Backup to restore, `YYYY-MM-DD_HH-MM` |
+| `-w, --wait` | bool | `false` | Wait until the new database is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The command asks `Restore backup ... of ... into a new database? [y/N]`. Pass `--yes` to skip it (required without a terminal).
+
+```bash
+cloider db restore orders-db 2026-10-18_02-00 --wait
+```
+
+```text title="Output"
+Restore backup 2026-10-18_02-00 of orders-db into a new database? [y/N] y
+✓ Restoring orders-db from 2026-10-18_02-00 into a new database orders-db-2026-10-18-02-00
+✓ The restored database is ready: `cloider db get orders-db-2026-10-18-02-00`
+```
+
+The new database is named after the original and the backup, `<name>-<backup>` with the underscore turned into a dash (plus `-1`, `-2` if that name is taken). It has the same user, password, plan, version, trusted sources and SSL setting as the original. `-q` prints its id and `-o json` prints `{"hashed_id", "database_label"}`. MCP tool: `restore_database_backup`.
+
+## cloider db resize
+
+Move a database to a larger plan. Resizing restarts the database.
+
+```text
+cloider db resize <database> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--plan` | string | (required) | The larger plan: `Starter`, `Basic`, `Standard`, `Plus` or `Pro` (any case) |
+| `-w, --wait` | bool | `false` | Wait until the database is `Ready` again |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The command asks `Resize ... from ... to ...? It restarts the database. [y/N]`; pass `--yes` to skip it.
+
+```bash
+cloider db resize orders-db --plan plus --wait
+```
+
+```text title="Output"
+Resize orders-db from Standard to Plus? It restarts the database. [y/N] y
+✓ Resizing orders-db to Plus
+✓ Database orders-db runs on Plus
+```
+
+See [Resize a database](/databases/resize) and compare plans with [`cloider pricing`](/cli/commands/account#cloider-pricing). MCP tool: `resize_database`.
+
+## cloider db rename
+
+Change the name a database is shown and found by (its label). Its host, user and database name stay as they are, so nothing that connects to it breaks.
+
+```text
+cloider db rename <database> <new-name> [flags]
+```
+
+```bash
+cloider db rename orders-db orders-primary
+```
+
+```text title="Output"
+✓ Renamed orders-db to orders-primary
+```
+
+MCP tool: `rename_database`.
+
+## cloider db ssl
+
+Require TLS on a database, or stop requiring it. Changing SSL restarts the database.
+
+```text
+cloider db ssl <database> on|off [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<database>` | Name or id of the database |
+| `on\|off` | `on` (also `true`, `yes`, `enable`, `enabled`) or `off` (also `false`, `no`, `disable`, `disabled`) |
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the database is `Ready` again |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The command asks `Turn SSL on for ...? It restarts the database. [y/N]`; pass `--yes` to skip it.
+
+```bash
+cloider db ssl orders-db on --yes --wait
+```
+
+```text title="Output"
+✓ Turning SSL on for orders-db
+✓ Database orders-db is ready
+```
+
+See [SSL/TLS](/databases/ssl-tls). MCP tool: `set_database_ssl`.
+
+## cloider db trusted-sources
+
+List or change who may connect to a database over the network. Without flags it lists the trusted sources; with flags it changes them and then lists the result.
+
+```text
+cloider db trusted-sources <database> [flags]
+```
+
+**Alias:** `cloider db firewall`.
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--set` | string, repeatable | | Replace the list with these sources |
+| `--add` | string, repeatable | | Add a source |
+| `--remove` | string, repeatable | | Remove a source |
+| `--add-my-ip` | bool | `false` | Add the public IPv4 address this command runs from |
+
+A source is one of:
+
+| Source | Example | Allows |
+| --- | --- | --- |
+| `*` (also `0.0.0.0/0` or `anywhere`) | `--set '*'` | Any address on the internet |
+| An IPv4 address | `--add 203.0.113.7` | That address (stored as `203.0.113.7/32`) |
+| An IPv4 CIDR range | `--add 203.0.113.0/24` | That network |
+| `cluster:<name>` | `--add cluster:production` | Your Cloider cluster |
+| `app:<name>` | `--add app:blog` | Your Cloider app |
+
+Adding `*` replaces the whole list, and adding anything else removes `*`, as in the dashboard. The order is: `--set`, then `--remove`, then `--add`, then `--add-my-ip`. A change that would leave nobody able to connect fails with `that leaves nobody able to connect; use '*' to allow anywhere`.
+
+```bash
+cloider db trusted-sources orders-db
+```
+
+```text title="Output"
+SOURCE   TYPE       NAME
+*        Anywhere   Allow Everything
+```
+
+Lock a database down to an app, a cluster and one office IP:
+
+```bash
+cloider db trusted-sources orders-db --set app:blog --set cluster:staging --add 203.0.113.7
+```
+
+```text title="Output"
+✓ Updated who may connect to orders-db
+SOURCE           TYPE      NAME
+q7w2e9r4t1       App       blog
+k3m9x2p7q1       Cluster   staging
+203.0.113.7/32   Custom    203.0.113.7/32
+```
+
+```bash
+# Allow your own IP for a local psql session, then remove it again
+cloider db trusted-sources orders-db --add-my-ip
+cloider db trusted-sources orders-db --remove 198.51.100.24
+```
+
+See [Trusted sources](/databases/trusted-sources). MCP tool: `update_database_trusted_sources`.
+
+## cloider db insights
+
+Show how much of its plan a database uses today: CPU, memory, storage, disk and network throughput, and connections. `-o json` prints the API's full answer, with the month so far.
+
+```text
+cloider db insights <database> [flags]
+```
+
+```bash
+cloider db insights orders-db
+```
+
+```text title="Output"
+Date:         2026-10-20
+CPU:          142 millicores
+Memory:       612 MiB
+Storage:      3.41 GiB
+Disk read:    18.2 KiB/s
+Disk write:   96.4 KiB/s
+Network in:   41.7 KiB/s
+Network out:  233.0 KiB/s
+Connections:  14 (max 100)
+```
+
+Early in the day, before anything was recorded, it says `No usage recorded for today yet.` A paused database records nothing. See [Database insights](/databases/insights). MCP tool: `get_database_insights`.
+
+## Related
+
+- [Databases overview](/databases/overview) and [Create a database](/databases/create-a-database)
+- [PostgreSQL](/databases/postgresql), [MySQL](/databases/mysql), [MongoDB](/databases/mongodb), [Redis](/databases/redis)
+- [Terraform `cloider_database`](/terraform/resources/database)
+
+<FAQ items={[
+  {q: 'How do I create a PostgreSQL database with the Cloider CLI?', a: 'Run cloider db create orders-db --engine postgresql --wait. Add --plan to pick a plan (Hobby by default), --version for an engine version, and --trusted-source to limit who may connect.'},
+  {q: 'How do I connect to a Cloider database from my terminal?', a: 'Run cloider db connect orders-db, which starts psql, mysql, redis-cli or mongosh already logged in, if the client is installed and the trusted sources allow your IP. cloider db shell orders-db opens the client in Cloider\'s terminal with nothing installed.'},
+  {q: 'How do I run a SQL query from a script?', a: 'Use cloider db exec orders-db "SELECT count(*) FROM orders", or cloider db exec -i orders-db < migration.sql for a script. It exits with the client\'s exit code, and -o json returns exit_code, stdout and stderr in one object.'},
+  {q: 'How do I get a database password with the CLI?', a: 'cloider db password orders-db prints the password of the database user to stdout. cloider db get orders-db shows the host, port, database name and user.'},
+  {q: 'How do I restore a database backup?', a: 'List backups with cloider db backups orders-db, then run cloider db restore orders-db 2026-10-18_02-00 --wait. The backup is restored into a new database; the original is not changed.'},
+  {q: 'How do I allow my IP address to connect to a database?', a: 'Run cloider db trusted-sources orders-db --add-my-ip. It looks up this machine\'s public IPv4 address and adds it to the database\'s trusted sources.'}
+]} />

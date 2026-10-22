@@ -1,0 +1,28 @@
+{
+  "shots": [
+    {
+      "file": "kubernetes/actions-menu.webp",
+      "route": "/dashboard/clusters",
+      "state": "Kubernetes list with staging (Ready) and production (Ready); the actions menu of staging is open, showing Kubeconfig, Terminal, Pause and Delete",
+      "actions": "click the three dots button on the staging row"
+    },
+    {
+      "file": "kubernetes/usage-loadbalancers.webp",
+      "route": "/dashboard/usage",
+      "state": "Usage page scrolled to the staging cluster card: Avg. Usage (This Month) and (Today) for CPU, memory and persistent volumes, Cost to Date, Cost Forecast, and the LoadBalancers Usage table with one active load balancer named iot/mqtt with an IP, usage time and cost",
+      "actions": "scroll to the staging cluster"
+    },
+    {
+      "file": "kubernetes/target-form.webp",
+      "route": "/dashboard/domains/:domain",
+      "state": "domain page of a free subdomain with the Add a new target dialog open: Target type Cluster, Cluster staging, Namespace shop, Service web, Port 80, Path /",
+      "actions": "click Add target, choose Cluster, pick staging, shop, web and port 80"
+    },
+    {
+      "file": "kubernetes/resume-dialog.webp",
+      "route": "/dashboard/clusters",
+      "state": "Resume Cluster confirmation dialog for a paused cluster, with the Cancel and Resume cluster buttons",
+      "actions": "open the actions menu of the paused cluster and click Resume"
+    }
+  ]
+}

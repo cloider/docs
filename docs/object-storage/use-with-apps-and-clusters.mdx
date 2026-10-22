@@ -1,0 +1,311 @@
+---
+title: Use buckets from Cloider apps and Kubernetes
+sidebar_label: Use from apps and clusters
+sidebar_position: 5.5
+description: Connect App Engine apps and Kubernetes workloads on Cloider to S3 buckets with an access key in environment variables or a Kubernetes Secret.
+keywords: [s3 credentials environment variables, kubernetes s3 secret, app engine s3, AWS_ENDPOINT_URL_S3, use bucket from kubernetes, s3 from app]
+---
+
+Apps and Kubernetes workloads on Cloider reach buckets the same way any other program does: with the S3 endpoint and an access key, passed in as environment variables. This page shows how to create a key for a workload, hand it to an [App Engine app](/apps/overview) or a [Kubernetes cluster](/kubernetes/overview), and use it from code.
+
+## The environment variables
+
+Every AWS SDK, the AWS CLI and most S3 libraries read these variables on their own, so your code doesn't need any Cloider specific configuration:
+
+```bash title="Environment"
+AWS_ACCESS_KEY_ID=CLDRZ8Q4M2X7KD1PLW0B
+AWS_SECRET_ACCESS_KEY=7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+AWS_REGION=eu-central-2
+AWS_ENDPOINT_URL_S3=https://s3.eu-central-2.cloider.com
+AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+S3_BUCKET=acme-assets
+```
+
+| Variable | Read by | Purpose |
+| --- | --- | --- |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | All AWS SDKs and the AWS CLI | The access key |
+| `AWS_REGION` | All AWS SDKs and the AWS CLI | The region requests are signed for |
+| `AWS_ENDPOINT_URL_S3` | Recent AWS SDKs and the AWS CLI | Sends S3 requests to Cloider. `AWS_ENDPOINT_URL` does the same for every AWS service |
+| `AWS_REQUEST_CHECKSUM_CALCULATION`, `AWS_RESPONSE_CHECKSUM_VALIDATION` | AWS SDKs and CLI from 2025 | Keeps uploads compatible, see [Troubleshooting](/object-storage/troubleshooting#checksum-errors) |
+| `S3_BUCKET` | Your code | The bucket name. A convention, not read by SDKs |
+
+Frameworks often use their own names (Laravel's `AWS_BUCKET` and `AWS_ENDPOINT`, for example). See [SDKs](/object-storage/sdks) for framework configurations.
+
+## Create a key for the workload
+
+Give each workload its own key, scoped to the buckets it uses, so you can rotate or revoke it on its own:
+
+```bash
+cloider bucket key create --label api-production --bucket acme-assets
+```
+
+Use a read only key (`--read-only`) for workloads that only read, such as a service that serves images. See [Access keys](/object-storage/access-keys).
+
+## Use a bucket from an App Engine app
+
+An app gets the key as [environment variables](/apps/environment-variables). Store the secret key as a **secret** variable, so it is never listed back. Changing variables restarts the app.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. [Create an access key](/object-storage/access-keys) for the bucket and copy its access key id and secret.
+2. Open **Apps** in the sidebar, click the app, and select the **Environment** tab.
+3. Add the variables from [the list above](#the-environment-variables), with `AWS_SECRET_ACCESS_KEY` as a secret.
+4. Save. The app restarts with the new variables.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+Create a key and import it straight into the app as secret variables. `--print-env` prints `export` lines, which `cloider app env import` reads from standard input:
+
+```bash
+cloider bucket key create --label api-production --bucket acme-assets --print-env \
+  | cloider app env import api - --secret
+```
+
+Then add the plain settings:
+
+```bash
+cloider app env set api \
+  S3_BUCKET=acme-assets \
+  AWS_REQUEST_CHECKSUM_CALCULATION=when_required \
+  AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+```
+
+The imported variables are `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL` and `AWS_REGION`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Cloider provider manages the bucket and the key. Set the app's variables from their outputs with the CLI, for example in the same CI job:
+
+```hcl title="main.tf"
+resource "cloider_bucket" "assets" {
+  name = "acme-assets"
+}
+
+resource "cloider_bucket_key" "api" {
+  label   = "api-production"
+  buckets = [cloider_bucket.assets.id]
+}
+
+output "s3_access_key" {
+  value = cloider_bucket_key.api.access_key
+}
+
+output "s3_secret_key" {
+  value     = cloider_bucket_key.api.secret_key
+  sensitive = true
+}
+```
+
+```bash
+cloider app env set api --secret \
+  AWS_ACCESS_KEY_ID="$(terraform output -raw s3_access_key)" \
+  AWS_SECRET_ACCESS_KEY="$(terraform output -raw s3_secret_key)"
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Create the key with `POST /api/bucket-keys` (see [Access keys](/object-storage/access-keys)), then set the app's variables with the apps API. See [Apps API](/api/endpoints/apps).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Create an access key for the bucket acme-assets and give it to the app api as secret environment variables, with S3_BUCKET set too.
+```
+
+The agent calls `create_bucket_key`, then `set_app_variables`:
+
+```json title="Tool call: set_app_variables"
+{
+  "app": "api",
+  "variables": {
+    "AWS_ACCESS_KEY_ID": "CLDRZ8Q4M2X7KD1PLW0B",
+    "AWS_SECRET_ACCESS_KEY": "7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn"
+  },
+  "secret": true
+}
+```
+
+The secret passes through the conversation this way. For production keys, consider the CLI pipe shown in the CLI tab.
+
+</TabItem>
+</Tabs>
+
+## Use a bucket from a Kubernetes cluster
+
+In a [Kubernetes cluster](/kubernetes/overview), store the key in a Secret and load it into your pods as environment variables. Pods reach the bucket on its public HTTPS endpoint, like any other client.
+
+```yaml title="s3-secret.yaml"
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3
+  namespace: default
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: CLDRZ8Q4M2X7KD1PLW0B
+  AWS_SECRET_ACCESS_KEY: 7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+  AWS_REGION: eu-central-2
+  AWS_ENDPOINT_URL_S3: https://s3.eu-central-2.cloider.com
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+  S3_BUCKET: acme-assets
+```
+
+Or create it without writing the secret to a file:
+
+```bash
+kubectl create secret generic s3 \
+  --from-literal=AWS_ACCESS_KEY_ID=CLDRZ8Q4M2X7KD1PLW0B \
+  --from-literal=AWS_SECRET_ACCESS_KEY="$S3_SECRET_KEY" \
+  --from-literal=AWS_REGION=eu-central-2 \
+  --from-literal=AWS_ENDPOINT_URL_S3=https://s3.eu-central-2.cloider.com \
+  --from-literal=AWS_REQUEST_CHECKSUM_CALCULATION=when_required \
+  --from-literal=AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
+  --from-literal=S3_BUCKET=acme-assets
+```
+
+Load every key of the Secret into a Deployment's containers with `envFrom`:
+
+```yaml title="deployment.yaml"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: registry.cloider.com/acme/api:1.0
+          envFrom:
+            - secretRef:
+                name: s3
+```
+
+```bash
+kubectl apply -f s3-secret.yaml -f deployment.yaml
+```
+
+Check from inside a pod that the bucket is reachable:
+
+```bash
+kubectl run s3-check --rm -it --restart=Never --image=amazon/aws-cli \
+  --overrides='{"spec":{"containers":[{"name":"s3-check","image":"amazon/aws-cli","args":["s3","ls","s3://acme-assets"],"envFrom":[{"secretRef":{"name":"s3"}}]}]}}'
+```
+
+### With Terraform
+
+The [`cloider_bucket_key`](/terraform/resources/bucket-key) outputs can feed a `kubernetes_secret_v1` directly, so the secret never leaves Terraform:
+
+```hcl title="main.tf"
+resource "cloider_bucket" "assets" {
+  name = "acme-assets"
+}
+
+resource "cloider_bucket_key" "api" {
+  label   = "api-production"
+  buckets = [cloider_bucket.assets.id]
+}
+
+resource "kubernetes_secret_v1" "s3" {
+  metadata {
+    name      = "s3"
+    namespace = "default"
+  }
+
+  data = {
+    AWS_ACCESS_KEY_ID                = cloider_bucket_key.api.access_key
+    AWS_SECRET_ACCESS_KEY            = cloider_bucket_key.api.secret_key
+    AWS_REGION                       = cloider_bucket.assets.region
+    AWS_ENDPOINT_URL_S3              = cloider_bucket.assets.endpoint
+    AWS_REQUEST_CHECKSUM_CALCULATION = "when_required"
+    AWS_RESPONSE_CHECKSUM_VALIDATION = "when_required"
+    S3_BUCKET                        = cloider_bucket.assets.name
+  }
+}
+```
+
+Configure the `kubernetes` provider for your cluster as shown in [Kubernetes and Helm with Terraform](/terraform/guides/kubernetes-and-helm).
+
+## Use the bucket from code
+
+With the variables in place, a client created without options talks to Cloider:
+
+<Tabs groupId="language" queryString>
+<TabItem value="javascript" label="JavaScript" default>
+
+```js
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+
+const s3 = new S3Client({}); // reads AWS_* from the environment
+
+await s3.send(new PutObjectCommand({
+  Bucket: process.env.S3_BUCKET,
+  Key: "uploads/hello.txt",
+  Body: "Hello from my app",
+}));
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+import os
+import boto3
+
+s3 = boto3.client("s3")  # reads AWS_* from the environment
+s3.put_object(Bucket=os.environ["S3_BUCKET"], Key="uploads/hello.txt", Body=b"Hello from my app")
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```go
+cfg, err := config.LoadDefaultConfig(ctx) // reads AWS_* from the environment
+if err != nil {
+	log.Fatal(err)
+}
+client := s3.NewFromConfig(cfg)
+_, err = client.PutObject(ctx, &s3.PutObjectInput{
+	Bucket: aws.String(os.Getenv("S3_BUCKET")),
+	Key:    aws.String("uploads/hello.txt"),
+	Body:   strings.NewReader("Hello from my app"),
+})
+```
+
+</TabItem>
+</Tabs>
+
+This relies on SDK versions that read `AWS_ENDPOINT_URL_S3` and the checksum variables. With older versions, set the endpoint in code as shown in [SDKs](/object-storage/sdks).
+
+## Good practices
+
+- **One key per workload and environment.** `api-staging` and `api-production` with their own keys, scoped to their own buckets (for example `acme-assets-staging` and `acme-assets`).
+- **Keep the secret out of images and repositories.** Use secret app variables or Kubernetes Secrets, never a `Dockerfile` `ENV` or a committed `.env` file.
+- **Rotate without downtime.** Create the new key, update the variables or the Secret (apps restart on their own, Deployments need `kubectl rollout restart deployment/api`), then delete the old key. See [Rotate an access key](/object-storage/access-keys#rotate-an-access-key).
+- **Serve public files by URL.** If the app only hands files to browsers, a [public bucket](/object-storage/public-and-private-buckets) or [presigned URLs](/object-storage/sdks#create-a-presigned-url) avoid streaming them through the app.
+
+## Next steps
+
+- [Back up a database to a bucket](/guides/back-up-a-database-to-a-bucket).
+- [Build a full stack app with PostgreSQL](/guides/full-stack-app-with-postgresql).
+- [Deploy a workload to Kubernetes](/kubernetes/deploy-a-workload).
+
+<FAQ items={[
+  {q: 'How do I connect a Cloider app to a bucket?', a: 'Create an access key for the bucket, then set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (as a secret), AWS_REGION=eu-central-2, AWS_ENDPOINT_URL_S3=https://s3.eu-central-2.cloider.com and the two checksum variables as the app\'s environment variables. The AWS SDKs read them on their own.'},
+  {q: 'How do I give a Kubernetes pod access to a Cloider bucket?', a: 'Store the access key, region, endpoint and checksum settings in a Kubernetes Secret and load it into the container with envFrom and secretRef. Pods reach the bucket on its public HTTPS endpoint.'},
+  {q: 'Do apps and clusters get access to buckets automatically?', a: 'No. Every workload needs an access key, which you pass in as environment variables. Give each workload its own key, scoped to the buckets it uses.'},
+]} />

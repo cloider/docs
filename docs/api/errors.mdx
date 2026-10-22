@@ -1,0 +1,342 @@
+---
+title: Cloider API errors and status codes
+sidebar_label: Errors
+sidebar_position: 3
+description: How the Cloider API reports errors, the errors envelope with field messages and the _ key, every HTTP status code it returns, and how to handle each one in code.
+keywords: [cloider api errors, api error format, http status codes, validation errors, 400 bad request, 409 conflict, 502 bad gateway, cloider api 404]
+---
+
+When a Cloider API request fails, the response has a `4xx` or `5xx` status code and, in almost every case, a JSON body with an `errors` object that maps each problem to a human readable message. This page describes that format, lists every status code the API uses with the messages you can expect, and shows how to handle errors in your code.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Error body** | `{"errors": {"<field>": ["message", ...], "_": ["message", ...]}, "data": null}` |
+| **Field errors** | Keyed by the request field that is wrong, for example `cluster_name` |
+| **General errors** | Under the `_` key |
+| **Default status** | `400 Bad Request` for validation and business rule errors |
+| **Not JSON** | A few `403`, `404` and `502` answers are plain text, and rate limit and gateway errors (`429`, `502`, `503`, `504`) can be an HTML page or empty |
+| **Safe to retry** | `429` always; `502`, `503`, `504` for reads, or after you check that a write didn't go through |
+
+## The error envelope
+
+An error the API produces itself looks like this:
+
+```json title="Response (400)"
+{
+  "errors": {
+    "database_name": [
+      "Database name can not be upper case",
+      "Database name must not have special characters except \"-\""
+    ],
+    "database_user": [
+      "Database username is reserved"
+    ]
+  },
+  "data": null
+}
+```
+
+- **`errors`** is an object. Each key is the name of the request field that failed validation, with the same spelling as in the request body (`database_name`, `record_value`, `storage_limit_gi`). Each value is a list of messages, because one field can break several rules at once.
+- **The `_` key** holds general errors that aren't about one field: a plan limit, a resource in the wrong state, a permission problem, an upstream failure.
+- **`data`** is `null` in nearly every error. In a few cases it carries what a partly finished request already did, so you can pick up from there, for example the id of an app that was created even though a later step failed. The endpoint pages say when.
+- There is always at least one message. If an error has no specific message, the API adds a general one such as `404 Not Found`.
+
+A general error looks like this:
+
+```json title="Response (400)"
+{
+  "errors": {
+    "_": ["Free plan users can not create more than one cluster. UPGRADE NOW!"]
+  },
+  "data": null
+}
+```
+
+Validation runs over all fields before the API answers, so one response lists every field that needs fixing. Show the field messages next to their inputs and the `_` messages at the top of a form, which is what the dashboard does.
+
+### Errors that aren't JSON
+
+A few failures are answered with a plain text body instead of the envelope. Check the `Content-Type` header before you parse:
+
+| Situation | Status | Body |
+| --- | --- | --- |
+| A resource id that doesn't exist or belongs to another account, on many endpoints | `404` | `Not Found` |
+| A resource of another account on some database endpoints | `403` | `Forbidden` |
+| A database password, certificate or backup list couldn't be read for the moment | `502` | for example `Failed to fetch database password` |
+| The rate limit, or the API can't be reached for a moment | `429`, `502`, `503`, `504` | An HTML page, or nothing |
+
+A robust client tries to parse the body as JSON, and if that fails or there's no `errors` key, uses the status code and the raw text as a single general message. That is exactly what the CLI does.
+
+## HTTP status codes
+
+### Success codes
+
+| Status | Meaning | Where |
+| --- | --- | --- |
+| `200 OK` | The request worked. The body is the resource, a list, plain text or a stream | Almost every endpoint |
+| `204 No Content` | The request worked and there is nothing to return | `DELETE /api-tokens/current` and the terminal heartbeats |
+| `302 Found` | The answer is somewhere else: follow the `Location` header | `GET /support/attachments/:hashed_id`, which redirects to a presigned URL |
+
+Long running operations (create, pause, resume, restore, delete) answer `200` as soon as the work has started, not when it is finished. Poll the status endpoint to know when it is done, as described in [the overview](/api/overview#long-running-operations).
+
+### Client errors
+
+| Status | Meaning | What to do |
+| --- | --- | --- |
+| `400 Bad Request` | Validation failed, a business rule refused the request, or the resource is in a state that doesn't allow it. This is the default error status | Read the messages, fix the request. Don't retry unchanged |
+| `401 Unauthorized` | No token, an invalid token or a revoked token | Check the `Authorization` header. See [Authentication](/api/authentication#authentication-errors) |
+| `403 Forbidden` | The token is valid but not allowed to do this: a read only token writing, a dashboard only action, a Restricted member, or a resource managed by Cloider | Use a token with the right access, or do it in the dashboard |
+| `404 Not Found` | The resource doesn't exist, was deleted, or belongs to another account. Also used when a nested item (a variable, a build, a version) is gone | Refresh your list of ids. After a delete, `404` means the resource is gone |
+| `409 Conflict` | The resource is busy or not in a state where this can run now, for example a terminal or `exec` on something that is paused or starting, or a bucket that isn't ready | Wait until the resource is `Ready`, then retry |
+| `429 Too Many Requests` | You went over the rate limit | Wait and retry. See [Rate limits](/api/rate-limits) |
+
+Most endpoints answer a resource that belongs to another account exactly like one that doesn't exist, with `404`. The database password, CA certificate and backups endpoints answer another account's database with `403 Forbidden` instead.
+
+### Server and gateway errors
+
+| Status | Meaning | What to do |
+| --- | --- | --- |
+| `500 Internal Server Error` | Something failed inside the API | Retry a read. For a write, read the resource back first. If it persists, [contact support](/api/endpoints/support) |
+| `502 Bad Gateway` | Something the request depends on, such as object storage, the container registry, a git provider or the database itself, failed or didn't answer. Messages say what, for example `Couldn't list the files, try again in a moment!` | Retry after a short wait |
+| `503 Service Unavailable` | A terminal or command couldn't be started yet, a product is unavailable for the moment, or you went over the rate limit | Retry with backoff |
+| `504 Gateway Timeout` | The request took too long to answer | Retry a read. For a write, check whether it went through |
+
+## Common error messages
+
+These are real messages from the API, grouped by cause. They are written for people, so you can show them to your users as they are.
+
+### Validation (`400`, on a field)
+
+Resource names follow DNS rules, and every rule that is broken is reported:
+
+| Field | Example messages |
+| --- | --- |
+| `cluster_name` | `Cluster name must not be empty`, `Cluster name can not be upper case`, `Cluster name can not start with numbers`, `Cluster name must not have special characters except "-"`, `Cluster name must be at least 2 characters` |
+| `database_name` | `Database name must not exceed 64 characters`, `Database name is reserved` |
+| `database_user` | `Database username must not have special characters except "_"`, `Database username is reserved` |
+| `app_name` | `App name must not have spaces`, `App name must not exceed 64 characters` |
+| `bucket_name` | `Bucket name must be at least 3 characters`, `Bucket name can only have lowercase letters, numbers and "-"`, `This bucket name is already taken` |
+| `name` (registry project) | `Project name must have at least one letter`, `This project name is already taken` |
+| `domain_name` | `Invalid domain format`, `Domain name cannot have upper case letters` |
+| `record_value` | `Invalid IPv4 address: 300.1.1.1. Expected format: 192.168.1.1`, `MX record missing priority or hostname: mail.example.com. Expected format: '10 mail.example.com'` |
+| `ttl` | `TTL must be between 60 and 172800 seconds` |
+| `storage_limit_gi` | `Storage limit must be between 1 and ... GB` |
+
+Each endpoint page lists the fields and rules of its own request body.
+
+### Plan limits and account state (`400`, general)
+
+| Message | Cause |
+| --- | --- |
+| `Free plan users can not create more than one cluster. UPGRADE NOW!` | The Free plan allows one cluster. The same limit applies to databases, buckets and registry projects |
+| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | The account is suspended, for example when a trial ended without a payment method |
+| `An account can have up to 50 access keys, delete one you no longer use!` | Bucket key limit reached. Registry tokens have a limit of their own |
+
+See [Limits and quotas](/reference/limits-and-quotas) for every limit.
+
+### Permissions (`403`)
+
+| Message | Cause |
+| --- | --- |
+| `This API token is read only!` | A read only token sent a `POST`, `PUT` or `DELETE` |
+| `This endpoint can't be used with an API token!` | A dashboard only action, such as inviting a member or creating an API token |
+| `Terminals need a Read & Write API token!` | A read only token asked for a web terminal |
+| `You have read-only access to this account, you can not create buckets!` | The member is `Restricted` (variants for every action) |
+
+A `Restricted` member's request is refused by the endpoint itself, with `400` or `403` depending on the endpoint (creating a cluster, database, app or domain answers `400`; object storage, the container registry and most deletes answer `403`). The message starts with `You have read-only access to this account` either way. A read only token never gets that far: it is stopped with `403 This API token is read only!` first.
+
+### State conflicts (`400` or `409`)
+
+| Message | Cause |
+| --- | --- |
+| `Only a running app can be paused!` | Pausing an app that isn't running |
+| `This app is already building, wait for that build to finish!` | Starting a build while one runs |
+| `The database must be running to be upgraded.` | Resizing a paused database |
+| `The bucket isn't ready!` (`409`) | Browsing files in a bucket that is still being created |
+| `Another change to this bucket is in progress, try again in a moment!` | Two changes to the same bucket at once |
+| `This project holds your apps' images and is managed by Cloider, it can't be deleted.` | The registry project that holds app images is managed by Cloider |
+
+### Upstream failures (`502`)
+
+| Message | Cause |
+| --- | --- |
+| `Couldn't list the files, try again in a moment!` | The object storage service didn't answer |
+| `Couldn't reach the registry, try again in a moment!` | The container registry didn't answer |
+| `We could not reach GitHub, try again in a moment.` | A git provider didn't answer |
+
+## Handle errors in code
+
+The pattern is the same in every language: check the status, try to read `errors`, fall back to the raw body, and decide whether to retry.
+
+<Tabs groupId="lang" queryString>
+<TabItem value="curl" label="curl" default>
+
+`curl -f` makes the shell see a failure, but hides the body. To keep both, write the status code separately:
+
+```bash
+status=$(curl -s -o response.json -w "%{http_code}" \
+  -X POST https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_name": "Staging"}')
+
+if [ "$status" -ge 300 ]; then
+  echo "Request failed with $status:"
+  jq -r '.errors | to_entries[] | "\(.key): \(.value | join(", "))"' response.json 2>/dev/null \
+    || cat response.json
+  exit 1
+fi
+```
+
+```text title="Output"
+Request failed with 400:
+cluster_name: Cluster name can not be upper case
+```
+
+</TabItem>
+<TabItem value="javascript" label="JavaScript">
+
+```js title="errors.mjs"
+export class CloiderError extends Error {
+  constructor(status, errors, data) {
+    const lines = Object.entries(errors).flatMap(([field, messages]) =>
+      messages.map((m) => (field === '_' ? m : `${field}: ${m}`)),
+    );
+    super(lines.join('\n') || `HTTP ${status}`);
+    this.status = status;
+    this.errors = errors;
+    this.data = data;
+  }
+}
+
+export async function parseError(res) {
+  const text = await res.text();
+  try {
+    const body = JSON.parse(text);
+    if (body && body.errors) return new CloiderError(res.status, body.errors, body.data);
+  } catch {}
+  // Plain text, an HTML proxy page, or nothing
+  const message = text && !text.startsWith('<') ? text.trim() : `${res.status} ${res.statusText}`;
+  return new CloiderError(res.status, { _: [message] }, null);
+}
+
+// Usage
+const res = await fetch('https://cloider.com/api/clusters', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${process.env.CLOIDER_TOKEN}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ cluster_name: 'Staging' }),
+});
+if (!res.ok) throw await parseError(res);
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python title="errors.py"
+import requests
+
+
+class CloiderError(Exception):
+    def __init__(self, status, errors, data=None):
+        self.status = status
+        self.errors = errors
+        self.data = data
+        lines = [m if f == "_" else f"{f}: {m}" for f, ms in errors.items() for m in ms]
+        super().__init__("\n".join(lines) or f"HTTP {status}")
+
+
+def raise_for_cloider(res: requests.Response):
+    if res.ok:
+        return
+    try:
+        body = res.json()
+        if isinstance(body, dict) and body.get("errors"):
+            raise CloiderError(res.status_code, body["errors"], body.get("data"))
+    except ValueError:
+        pass
+    text = res.text.strip()
+    message = text if text and not text.startswith("<") else f"{res.status_code} {res.reason}"
+    raise CloiderError(res.status_code, {"_": [message]})
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```go title="errors.go"
+package cloider
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sort"
+	"strings"
+)
+
+type Error struct {
+	Status int
+	Fields map[string][]string
+	Data   json.RawMessage
+}
+
+func ParseError(status int, body []byte) *Error {
+	var shaped struct {
+		Errors map[string][]string `json:"errors"`
+		Data   json.RawMessage     `json:"data"`
+	}
+	if json.Unmarshal(body, &shaped) == nil && len(shaped.Errors) > 0 {
+		return &Error{Status: status, Fields: shaped.Errors, Data: shaped.Data}
+	}
+	message := strings.TrimSpace(string(body))
+	if message == "" || strings.HasPrefix(message, "<") {
+		message = fmt.Sprintf("%d %s", status, http.StatusText(status))
+	}
+	return &Error{Status: status, Fields: map[string][]string{"_": {message}}}
+}
+
+func (e *Error) Error() string {
+	lines := append([]string{}, e.Fields["_"]...)
+	var fields []string
+	for f := range e.Fields {
+		if f != "_" {
+			fields = append(fields, f)
+		}
+	}
+	sort.Strings(fields)
+	for _, f := range fields {
+		for _, m := range e.Fields[f] {
+			lines = append(lines, f+": "+m)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+```
+
+</TabItem>
+</Tabs>
+
+### When to retry
+
+| Status | Retry? |
+| --- | --- |
+| `400`, `401`, `403`, `404` | No. The same request gets the same answer. Fix it first |
+| `409` | Yes, after the resource has settled (poll its status) |
+| `429` | Yes, after `Retry-After` seconds or with exponential backoff. The request never reached the API |
+| `500`, `502`, `503`, `504` | Reads, yes, with backoff. Writes, only after you have checked that the first attempt didn't take effect |
+
+[Rate limits](/api/rate-limits) has a complete retry function in each language.
+
+## Frequently asked questions
+
+<FAQ items={[
+  {q: 'What does the _ key mean in a Cloider API error?', a: 'The _ key holds general error messages that are not about one request field, for example a plan limit, a permission problem or a resource in the wrong state. Field specific messages are under the field name, such as cluster_name.'},
+  {q: 'Why does the Cloider API answer 404 for a resource I can see in the dashboard?', a: 'The token belongs to a different account than the one the dashboard shows. API tokens work in the account they were created in, and resources of other accounts answer 404. Call GET /whoami to see which account a token is for.'},
+  {q: 'Why is a 404 body plain text instead of JSON?', a: 'Some endpoints answer an unknown or foreign resource id with the plain text body Not Found. Check the Content-Type header and fall back to the status code when the body is not JSON.'},
+  {q: 'Is it safe to retry a failed POST request?', a: 'Only after a 429, which means the request was turned away before reaching the API, or after you have confirmed the first attempt did not take effect. The API has no idempotency keys, so a repeated create makes a second resource.'},
+  {q: 'What does 409 Conflict mean in the Cloider API?', a: 'The resource is busy or not in a state where the action can run, for example opening a terminal on a paused database, or browsing files in a bucket that is still being created. Wait until it is Ready and try again.'},
+]} />

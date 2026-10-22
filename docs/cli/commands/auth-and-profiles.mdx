@@ -1,0 +1,206 @@
+---
+title: cloider login, logout and profile command reference
+sidebar_label: auth and profiles
+sidebar_position: 14
+description: Reference for cloider login, cloider logout and cloider profile, with every flag, the browser and token login flows, and how profiles switch between accounts.
+keywords: [cloider login, cloider logout, cloider profile, cloider profile use, cli login, api token login, multiple accounts]
+---
+
+`cloider login` gets the CLI an API token, `cloider logout` revokes it, and `cloider profile` switches between several logins, one per account or API. This page is the flag by flag reference; [Authentication](/cli/authentication) explains the concepts, token precedence and CI use.
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| [`cloider login`](#cloider-login) | Log in through the browser, or with an API token |
+| [`cloider logout`](#cloider-logout) | Revoke the CLI's token and forget it |
+| [`cloider profile list`](#cloider-profile-list) | List profiles |
+| [`cloider profile use`](#cloider-profile-use) | Make a profile the one in use |
+| [`cloider profile add`](#cloider-profile-add) | Add or change a profile, for example one whose token is kept in a file of your own |
+| [`cloider profile remove`](#cloider-profile-remove) | Forget a profile, without revoking its token |
+
+`cloider whoami` is on the [account commands](/cli/commands/account#cloider-whoami) page. All commands also take the [global flags](/cli/configuration#global-flags); `--profile`, `--api-url` and `--token-file` matter most here.
+
+## cloider login
+
+Log in through the browser, or with an API token. The token is saved for the profile in use (`default` unless you pass `--profile`), in `~/.cloider/token` or `~/.cloider/tokens/<profile>`.
+
+```text
+cloider login [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--no-browser` | bool | `false` | Print the login link instead of opening it, then paste the token the page shows |
+| `--with-token` | bool | `false` | Read the token from stdin. Can't be combined with `--no-browser` |
+| `--read-only` | bool | `false` | Ask for a token that can only read (preselects **Read only** on the page) |
+
+Global flags that change what `login` does:
+
+| Global flag | Effect on `login` |
+| --- | --- |
+| `--profile <name>` | Save the login as this profile instead of the current one |
+| `--token-file <path>` | Use the token in this file, where it is. The profile remembers the path and reads the file on every command |
+| `--api-url <url>` | Log in to another API. The profile remembers it |
+
+The four ways to log in:
+
+```bash
+cloider login                            # through the browser: pick the account and Read or Read & Write
+cloider login --no-browser               # print the link, paste the token the page shows
+cloider login --with-token < token.txt   # a token generated under Access Control, API Tokens
+cloider login --token-file ~/secret      # use the token in that file, where it is
+```
+
+```text title="Output"
+✓ Logged in as jane@example.com in account jane@example.com (Read & Write)
+```
+
+Log in to a second account as a profile:
+
+```bash
+cloider login --profile acme
+```
+
+```text title="Output"
+✓ Logged in as jane@example.com in account billing@acme.example (Read & Write)
+Saved as profile "acme". Switch to it with `cloider profile use acme`.
+```
+
+What `login` does, in order:
+
+1. Gets a token: from the browser (a local callback on `127.0.0.1`, waiting up to 5 minutes), from the pasted value, from stdin, or from the file.
+2. Checks it by calling the API's `whoami`. A token that doesn't work fails with `that token is not valid, or was revoked` (exit code `3`).
+3. If the profile already had a different token the CLI wrote itself, revokes the old one on Cloider (`Revoked the token this profile used before.`).
+4. Saves the token (or the token file's path), the API URL and the account in `~/.cloider`, and makes the profile current if no profile was current yet.
+5. Warns if `CLOIDER_TOKEN` or `CLOIDER_TOKEN_FILE` is set, since they take precedence over the login.
+
+Without flags, `login` needs a terminal; in a script it fails with ``not running in a terminal: use `cloider login --with-token`, or set CLOIDER_TOKEN`` (exit code `2`). See [Authentication](/cli/authentication) for the browser page step by step. There is no MCP tool for `login`.
+
+## cloider logout
+
+Revoke the profile's token on Cloider and remove it from `~/.cloider`.
+
+```text
+cloider logout [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--all` | bool | `false` | Log out of every profile |
+
+```bash
+cloider logout
+cloider --profile acme logout
+cloider logout --all
+```
+
+```text title="Output"
+✓ Logged out of profile default
+```
+
+- A token file you pointed a profile at with `--token-file` is revoked but left in place: `Left <path> in place, remove it yourself if it should go.`
+- A token passed to this command with `--token-file`, `CLOIDER_TOKEN` or `CLOIDER_TOKEN_FILE` is revoked instead of the profile's, and left where it is: `Revoked the token from CLOIDER_TOKEN` and `It is left in place, remove it yourself.`
+- With nothing to log out of, it prints `Not logged in.` and exits with `0`.
+- A token that was already revoked doesn't make logout fail.
+
+There is no MCP tool for `logout`.
+
+## cloider profile
+
+A profile is an API URL and a token. Log in once per account, or per API, with `cloider login --profile <name>`, then switch with `cloider profile use <name>`. Profile names use letters, digits, `.`, `_` and `-`, up to 64 characters.
+
+**Alias:** `cloider profiles`. The profile a command uses is the first of: `--profile`, `CLOIDER_PROFILE`, the one `cloider profile use` picked, and `default`.
+
+### cloider profile list
+
+```text
+cloider profile list [flags]
+```
+
+```bash
+cloider profile list
+```
+
+```text title="Output"
+NAME      CURRENT   ACCOUNT                API                       TOKEN
+acme      *         billing@acme.example   https://cloider.com/api   /Users/jane/.cloider/tokens/acme
+ci                  -                      https://cloider.com/api   /run/secrets/cloider
+default             jane@example.com       https://cloider.com/api   /Users/jane/.cloider/token
+```
+
+**CURRENT** marks the profile in use; **TOKEN** is the file the token is read from, or `(not logged in)` when that file doesn't exist. `-o json` prints `name`, `current`, `account`, `api_url`, `token_file` and `logged_in` for each profile.
+
+### cloider profile use
+
+Make a profile the one in use from now on. The profile must exist (`default` always does).
+
+```text
+cloider profile use <name> [flags]
+```
+
+```bash
+cloider profile use acme
+```
+
+```text title="Output"
+✓ Using profile acme
+```
+
+An unknown profile fails with exit code `4`: ``no profile "acem", create it with `cloider login --profile acem` ``.
+
+### cloider profile add
+
+Add a profile, or change one, without logging in through the browser: for example one whose token is kept in a file of your own, or one that talks to another API URL.
+
+```text
+cloider profile add <name> [flags]
+```
+
+`add` uses the global flags `--token-file` and `--api-url` as its settings:
+
+```bash
+cloider profile add ci --token-file /run/secrets/cloider
+```
+
+```text title="Output"
+✓ Saved profile ci
+```
+
+```bash
+cloider --profile ci whoami
+```
+
+The token file must exist and contain a token when you add it; the CLI warns if others can read it.
+
+### cloider profile remove
+
+Forget a profile. The token file the CLI wrote for it is deleted, but the token is **not revoked** on Cloider: run `cloider --profile <name> logout` first if it should stop working.
+
+```text
+cloider profile remove <name> [flags]
+```
+
+**Alias:** `cloider profile rm`.
+
+```bash
+cloider --profile ci logout
+cloider profile remove ci
+```
+
+```text title="Output"
+✓ Removed profile ci
+```
+
+## Related
+
+- [Authentication](/cli/authentication)
+- [Configuration](/cli/configuration)
+- [API tokens](/account/api-tokens) and [Switch accounts](/account/switch-accounts)
+
+<FAQ items={[
+  {q: 'How do I log in to the Cloider CLI without a browser?', a: 'Use cloider login --no-browser and paste the token the page shows, or cloider login --with-token < token.txt with a token created under Access Control, API Tokens.'},
+  {q: 'How do I switch between Cloider accounts in the CLI?', a: 'Log in once per account with cloider login --profile <name>, then switch with cloider profile use <name>, per command with --profile, or per shell with CLOIDER_PROFILE.'},
+  {q: 'Does cloider profile remove revoke the token?', a: 'No. It forgets the profile and deletes the token file the CLI wrote, but the token keeps working. Run cloider logout for the profile first to revoke it.'},
+  {q: 'How do I log out of every account?', a: 'Run cloider logout --all. It revokes and removes the token of every profile.'}
+]} />

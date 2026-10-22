@@ -1,0 +1,6 @@
+node_modules
+build
+.docusaurus
+tools
+.github
+k8s

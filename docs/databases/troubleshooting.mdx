@@ -1,0 +1,175 @@
+---
+title: Troubleshoot Cloider database connections and errors
+sidebar_label: Troubleshooting
+sidebar_position: 15
+description: "Fix Cloider database problems: timeouts from untrusted IPs, refused connections, SSL errors, authentication failures, too many connections, full storage."
+keywords: [database connection timeout, connection refused, ssl error, authentication failed, too many connections, wrongpass, cloider database troubleshooting]
+---
+
+This page lists the problems people run into with Cloider databases, the exact errors they see, and how to fix them. Start with the quick checks below: they tell you in a minute whether the problem is the database, the network, TLS or the credentials.
+
+## Quick checks
+
+Run these four commands, replacing `orders-db` with your database:
+
+```bash
+# 1. Is the database running? It must say Ready.
+cloider db status orders-db
+
+# 2. What are the exact host, port, user and SSL setting?
+cloider db get orders-db
+
+# 3. Does the database itself answer? This runs inside Cloider, so the firewall doesn't matter.
+cloider db exec orders-db "SELECT 1;"        # MySQL: "SELECT 1;"  MongoDB: "db.runCommand({ping: 1})"  Redis: PING
+
+# 4. Can your machine reach the port? A timeout here means the firewall drops you.
+nc -vz -w 5 orders-db-p0q9zm.db.cloider.com 20417
+```
+
+| Result | What it means | Go to |
+| --- | --- | --- |
+| Status isn't `Ready` | The database is paused, starting or being changed | [The database isn't Ready](#the-database-isnt-ready) |
+| `exec` works, `nc` times out | Your IP isn't in the trusted sources, or your network blocks the port | [Connection timed out](#connection-timed-out) |
+| `exec` works, `nc` succeeds, your client fails | Credentials, TLS settings or the database name | [Authentication failed](#authentication-failed), [SSL/TLS errors](#ssltls-errors) |
+| `exec` fails too | The database itself has a problem | [Contact support](/account/support) with the output |
+
+## Connection timed out
+
+**Symptoms:** the client hangs for a while, then reports a timeout.
+
+| Client | Message |
+| --- | --- |
+| psql | `connection to server at "orders-db-p0q9zm.db.cloider.com" (...), port 20417 failed: Connection timed out` |
+| mysql | `ERROR 2003 (HY000): Can't connect to MySQL server on 'shop-db-k7x2wd.db.cloider.com:22861' (110)` |
+| mongosh | `MongoServerSelectionError: connection timed out` |
+| redis-cli | `Could not connect to Redis at cache-c5n1qa.db.cloider.com:26742: Connection timed out` |
+| Node.js | `Error: connect ETIMEDOUT` |
+
+**Causes and fixes:**
+
+1. **Your IP isn't in the trusted sources.** Connections from untrusted addresses are dropped without an answer, which looks like a timeout. Add your address:
+
+   ```bash
+   cloider db trusted-sources orders-db --add-my-ip
+   ```
+
+   Behind a VPN, proxy or mobile network, your address can change. Check it with `curl -4 https://api.ipify.org` and see [trusted sources](/databases/trusted-sources).
+
+2. **Your network blocks outbound traffic to the port.** Cloider databases listen on a non-standard port (the one in the connection details), which some corporate and public networks block. Try from another network, or ask for that port to be allowed.
+
+3. **An app or cluster on Cloider uses the public host.** App and cluster trusted sources only match the private host. Use `<name>-<id>.db.cloider.internal` from Cloider.
+
+4. **An empty trusted sources list.** A database with no trusted sources accepts nothing. `cloider db trusted-sources orders-db` shows the list.
+
+## Connection refused or reset
+
+**Symptoms:** the client fails immediately with `Connection refused`, `ECONNREFUSED`, `Connection reset by peer` or `Server closed the connection`.
+
+| Cause | Fix |
+| --- | --- |
+| The database is paused, starting, resizing or being deleted | `cloider db status` must say `Ready`. Resume it or wait |
+| Wrong port, for example the engine's default (5432, 3306, 27017, 6379) | Use the port from `cloider db get` |
+| Redis with SSL on, client without TLS | Use `rediss://` or `redis-cli --tls --cacert ca.crt` |
+| Redis with SSL off, client with TLS | Use `redis://` |
+| A restart is in progress (after a resize or SSL change) | Retry after the status is `Ready`. Make your app retry failed connections |
+
+## Host not found
+
+**Symptoms:** `could not translate host name`, `getaddrinfo ENOTFOUND`, `Unknown MySQL server host`, `Name or service not known`.
+
+- **Typo in the host.** Copy it from the Overview tab or `cloider db get`. The format is `<name>-<id>.db.cloider.com`.
+- **The private host used from outside Cloider.** `*.db.cloider.internal` only resolves inside Cloider apps and clusters. Use the public host from your machine.
+- **`mongodb+srv://` for MongoDB.** Cloider doesn't publish SRV records. Use `mongodb://host:port`.
+
+## Authentication failed
+
+| Engine | Message | Fix |
+| --- | --- | --- |
+| PostgreSQL | `password authentication failed for user "orders_db_user"` | Copy the user and password again. Check that the password wasn't cut off when pasting |
+| PostgreSQL | `database "orders_db" does not exist` | The database name uses hyphens like your Cloider database: `orders-db` |
+| MySQL | `ERROR 1045 (28000): Access denied for user` | Wrong user or password |
+| MySQL | `Authentication plugin 'caching_sha2_password' reported error: Authentication requires secure connection.` | SSL is off: add `--get-server-public-key` (Java: `allowPublicKeyRetrieval=true`), or turn SSL on |
+| MongoDB | `MongoServerError: Authentication failed.` | Wrong password, or the wrong database in the path. The user lives in your database, so the URI must end in `/catalog-db` (or set `authSource=catalog-db`) |
+| Redis | `WRONGPASS invalid username-password pair or user is disabled.` | Send the user name with the password. A password alone logs in as Redis's `default` user, which won't work |
+| Redis | `NOAUTH Authentication required.` | The client didn't authenticate. Put `user:password@` in the URL |
+
+Get the password again with `cloider db password <database>`. It can't be changed, so if it leaked, restrict the [trusted sources](/databases/trusted-sources) and move to a new database.
+
+## SSL/TLS errors
+
+| Message | Cause | Fix |
+| --- | --- | --- |
+| `certificate verify failed`, `unable to get local issuer certificate`, `self-signed certificate in certificate chain` | The client checks the certificate but doesn't trust Cloider's CA | Download it with `cloider db cert <database> -f ca.crt` and pass it to the client |
+| `server does not support SSL, but SSL was required` (PostgreSQL) | SSL is off on the database | Turn SSL on, or remove `sslmode=require` |
+| `SSL connection error` (MySQL) | SSL is off, or the CA isn't trusted with `VERIFY_*` modes | Check the SSL mode, pass `--ssl-ca=ca.crt` |
+| Host name mismatch, `certificate is not valid for` | Connecting by IP address or another DNS name | Connect with the database's public or private host name |
+| `could not read root certificate file` | Wrong path to the CA file | Pass the full path to `ca.crt` |
+
+[SSL/TLS](/databases/ssl-tls) explains each engine's TLS behavior and how to verify the server.
+
+## Too many connections
+
+| Engine | Message |
+| --- | --- |
+| PostgreSQL | `FATAL: sorry, too many clients already`, `remaining connection slots are reserved` |
+| MySQL | `ERROR 1040 (HY000): Too many connections` |
+| MongoDB, Redis | New connections time out or are closed while many are open |
+
+Every process, worker and connection pool holds connections. Check the count against the maximum on the [Insights tab](/databases/insights) or with `cloider db insights <database>`, then:
+
+1. Lower the pool size per process, so that `instances × pool size` stays under the maximum. MySQL allows 20 connections on Hobby up to 200 on Pro.
+2. Close connections in scripts and short-lived jobs.
+3. Find idle connections: `SELECT count(*), state FROM pg_stat_activity GROUP BY state;` (PostgreSQL) or `SHOW PROCESSLIST;` (MySQL), `CLIENT LIST` (Redis).
+4. [Resize](/databases/resize) to a larger plan.
+
+## The database isn't Ready
+
+| Status | What to do |
+| --- | --- |
+| `Paused` | Resume it: `cloider db resume <database> --wait` |
+| `Creating`, `Starting`, `Upgrading`, `Pausing` | Wait. `cloider db status` or `--wait` shows when it is done |
+| `Terminating` | The database is being deleted and can't be stopped |
+
+The terminal and `cloider db exec` report the same states as `This database is paused. Resume it to run a command!`, `This database is not ready yet!` and `This database is being deleted!`. If a database stays in a transitional status for more than 15 minutes, [contact support](/account/support) with its id from `cloider db list -o wide`.
+
+## Storage or memory is full
+
+- **Storage:** writes fail with errors such as `No space left on device` (PostgreSQL) or `The table ... is full` (MySQL). Check **Storage Used** in [Insights](/databases/insights), delete or archive data, and [resize](/databases/resize) to a plan with more storage. Resizing works while the database is `Ready`.
+- **Memory (Redis):** the dataset has to fit in the plan's RAM. Expire keys you don't need and resize before memory runs out.
+- **Memory (other engines):** high memory use is normal caching. Resize when queries slow down and disk reads rise together with it.
+
+## Dashboard and CLI messages
+
+| Message | Meaning |
+| --- | --- |
+| **Could not retrieve password**: "Something went wrong fetching the password. Please try again later." | The password couldn't be read at that moment. Try again, or use `cloider db password` |
+| **Could not download certificate** | The CA certificate couldn't be read. Try again, or use `cloider db cert` |
+| `Failed to fetch database password`, `Failed to fetch database CA certificate`, `Failed to fetch database backups` (API, `502`) | The same, through the API. Retry |
+| `database ... has SSL off, so it has no certificate` | Turn SSL on first: `cloider db ssl <database> on` |
+| `You have read-only access to this account, ...` | Your role or API token is read-only. Ask an owner for write access |
+| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | See [billing](/account/billing) |
+| `The terminal could not be started, try again in a moment!` | The terminal is starting. Retry in a few seconds |
+
+Errors when creating, resizing and restoring are listed on [create a database](/databases/create-a-database#troubleshooting), [resize](/databases/resize#troubleshooting) and [backups and restore](/databases/backups-and-restore#troubleshooting).
+
+## Terraform wants to replace my database
+
+`terraform plan` shows `must be replaced` when you change `name`, `engine`, `version` or `user`, or set a smaller `plan`. Replacing destroys the database, its data and its backups. Revert the change, or for a smaller plan follow [move to a smaller plan](/databases/resize#move-to-a-smaller-plan). Add `lifecycle { prevent_destroy = true }` so Terraform refuses such plans.
+
+## Still stuck?
+
+[Open a support request](/account/support) with the database's id (`cloider db list -o wide`), the client and driver you use, the exact error and the time it happened. Never include the password.
+
+## Next steps
+
+- [Connect to a database](/databases/connect)
+- [Trusted sources](/databases/trusted-sources)
+- [SSL/TLS](/databases/ssl-tls)
+- [General troubleshooting](/reference/troubleshooting)
+
+<FAQ items={[
+  {q: 'Why does my connection to a Cloider database time out?', a: 'Almost always because your IP address is not in the database\'s trusted sources, so the connection is dropped silently. Run cloider db trusted-sources <database> --add-my-ip, or add your network\'s range, and try again.'},
+  {q: 'How can I tell whether the problem is my network or the database?', a: 'Run cloider db exec <database> with a simple query. It runs inside Cloider and ignores trusted sources. If it works but your client doesn\'t, the problem is your network, the trusted sources, TLS or the credentials.'},
+  {q: 'Why does Redis say WRONGPASS with the right password?', a: 'Cloider Redis needs the user name too. Authenticate as your database user, for example with redis://cache_user:PASSWORD@host:port/0. A password alone logs in as the default user, which fails.'},
+  {q: 'What should I do about too many connections?', a: 'Reduce the connection pool size in each app instance so the total stays under the database\'s maximum, close idle connections, or resize to a larger plan. The Insights tab shows open connections and the maximum.'}
+]} />

@@ -1,0 +1,150 @@
+---
+title: Use the Cloider docs with AI coding agents
+sidebar_label: AI coding agents
+sidebar_position: 6
+description: Give AI coding agents the Cloider docs through llms.txt, llms-full.txt and Markdown pages, plus an AGENTS.md and CLAUDE.md snippet that teaches them to deploy with the CLI and MCP.
+keywords: [llms.txt, llms-full.txt, cloider docs markdown, agents.md, claude.md, ai coding agent deploy, cursor rules cloider, copilot instructions, ai friendly docs]
+---
+
+AI coding agents such as Claude Code, Cursor, GitHub Copilot, Codex and Gemini CLI work best when they can read accurate documentation and run real tools. Cloider gives them both: these docs are published in machine readable forms (`llms.txt`, `llms-full.txt` and a Markdown version of every page), and the [MCP server](/mcp/overview) lets them act on your account. This page shows how to point an agent at the docs, gives an `AGENTS.md` / `CLAUDE.md` snippet you can paste into your repositories, and describes agent workflows that work well.
+
+## At a glance
+
+| Resource | URL | Use it for |
+| --- | --- | --- |
+| **llms.txt** | `https://docs.cloider.com/llms.txt` | An index of every page with a one line summary, for an agent to pick what to read |
+| **llms-full.txt** | `https://docs.cloider.com/llms-full.txt` | The whole documentation in one plain text file, for loading everything at once |
+| **Markdown pages** | Any page URL plus `.md`, such as `https://docs.cloider.com/terraform/get-started.md` | One page, without navigation or scripts, ideal to paste or fetch |
+| **Page buttons** | **Copy page**, **View as Markdown**, **Open in Claude**, **Open in ChatGPT** under each page title | Handing a page to an assistant in one click |
+| **MCP server** | `cloider mcp` | Letting the agent act on your account, see [Setup](/mcp/setup) |
+
+## llms.txt and llms-full.txt
+
+[llms.txt](https://llmstxt.org) is a convention for publishing documentation in a form language models can read: a Markdown file at the root of a site that lists its pages with short descriptions and links.
+
+- **`https://docs.cloider.com/llms.txt`** lists every page of these docs, grouped by section, with the page's description and a link to its Markdown version. An agent reads it first, then fetches only the pages it needs.
+- **`https://docs.cloider.com/llms-full.txt`** contains the full text of every page in one file. It is large, so use it with agents and tools that can hold a lot of context, or to build your own index.
+
+Every page of the site also declares both files with `<link rel="alternate" type="text/plain">` tags, so crawlers and agents that look for them find them.
+
+Example prompts that use them:
+
+```text title="Prompt"
+Read https://docs.cloider.com/llms.txt, find the pages about deploying apps from git and custom domains, read them, and tell me how to serve this repo on www.example.com.
+```
+
+```text title="Prompt"
+Using https://docs.cloider.com/terraform/resources/database.md, write a Terraform configuration for a PostgreSQL database that only my staging cluster can reach.
+```
+
+## Every page as Markdown
+
+Add `.md` to the URL of any page to get its Markdown source, without the site's navigation, styling or scripts:
+
+| Page | Markdown |
+| --- | --- |
+| `https://docs.cloider.com/kubernetes/create-a-cluster` | `https://docs.cloider.com/kubernetes/create-a-cluster.md` |
+| `https://docs.cloider.com/mcp/tools` | `https://docs.cloider.com/mcp/tools.md` |
+| `https://docs.cloider.com/api/endpoints/databases` | `https://docs.cloider.com/api/endpoints/databases.md` |
+
+Markdown is much shorter than the rendered HTML, so an agent spends its context on content rather than markup. Fetch it in a script too:
+
+```bash
+curl -s https://docs.cloider.com/databases/connect.md
+```
+
+## Copy page, Open in Claude and Open in ChatGPT
+
+Under the title of every page there are four buttons:
+
+| Button | What it does |
+| --- | --- |
+| **Copy page** | Copies the page's Markdown to your clipboard, to paste into any chat or editor |
+| **View as Markdown** | Opens the page's `.md` version in a new tab |
+| **Open in Claude** | Opens a new chat on claude.ai with the prompt *Read &lt;page&gt;.md and help me with Cloider. I may ask follow up questions about it.* |
+| **Open in ChatGPT** | Opens a new ChatGPT chat with the same prompt |
+
+They are the quickest way to ask an assistant a question about one page, such as "how do I rotate this token" while you read [API tokens](/account/api-tokens).
+
+## Teach your repository's agents to deploy to Cloider
+
+Most coding agents read an instructions file from the repository: `AGENTS.md` (Codex, Cursor, Gemini CLI, GitHub Copilot and others), `CLAUDE.md` (Claude Code), `.github/copilot-instructions.md` or `.cursor/rules`. Paste the snippet below into the file your agents read, and adjust the names in it (here the app `api`, the database `orders-db` and the cluster `staging`).
+
+````markdown title="AGENTS.md (or CLAUDE.md)"
+## Deploying to Cloider
+
+This project runs on Cloider (https://cloider.com). Documentation for agents:
+https://docs.cloider.com/llms.txt (index) and any page as Markdown by adding `.md`
+to its URL, for example https://docs.cloider.com/apps/deploy-from-your-computer.md.
+
+### Tools
+- Prefer the Cloider MCP server (`cloider mcp`) when it is connected: call `whoami`
+  first to confirm the account and whether the token can write.
+- Otherwise use the `cloider` CLI. Add `-o json` to read its output, and never
+  pass `--yes` to a delete without asking me first.
+- Never print, log or commit API tokens, database passwords, bucket secret keys,
+  registry token secrets or kubeconfigs.
+
+### This project
+- App: `api`, deployed from this directory (`.cloider/app.json` links it).
+  - Deploy: `cloider deploy` (or the `deploy_app` MCP tool with this directory's
+    absolute path). It follows the build and prints the URL.
+  - Logs: `cloider app logs api` (`get_app_logs`). Builds: `cloider app builds api`.
+  - Environment: `cloider app env list api`; set with
+    `cloider app env set api KEY=value` (add `--secret` for secrets). Setting
+    variables restarts the app.
+  - Migrations: `cloider app exec api -- npm run migrate` (`app_exec`).
+- Database: `orders-db` (PostgreSQL). Connection details: `cloider db get orders-db`.
+  The app reaches it on the private host. Don't change its trusted sources, plan
+  or SSL without asking.
+- Cluster: `staging`, for preview workloads only. `kubectl` commands can run with
+  `cloider cluster exec staging -- kubectl get pods -A` (`cluster_exec`).
+- Infrastructure (clusters, databases, buckets, DNS) is managed with Terraform in
+  `infra/`. Change it there and open a merge request; don't create or delete
+  these resources directly.
+
+### Rules
+- Ask before anything that deletes data or changes production: deleting
+  resources, `database_exec` writes, restores, resizes, DNS changes, making a
+  bucket public, or pausing anything.
+- Prefer read only tools when investigating.
+- When unsure how Cloider behaves, read the docs page instead of guessing.
+````
+
+Keep the file short and specific to the repository: agents follow concrete commands better than general advice. Commit it, so every developer's agent behaves the same way.
+
+## Recommended agent workflows
+
+### Investigate with read only access
+
+For questions ("why is the blog slow?", "what does this account cost?"), connect the agent with a read only login and `cloider mcp --read-only`. It can read logs, insights, builds, DNS records and usage, and nothing it does can change your account. See [Safety and permissions](/mcp/safety-and-permissions).
+
+### Plan, then act
+
+For changes, ask the agent to write the plan first ("list the tool calls you would make"), review it, then let it run. Your client still asks before each change, guided by the tools' [annotations](/mcp/safety-and-permissions#layer-4-client-approvals-and-tool-annotations).
+
+### Code and deploy in one loop
+
+In a repository with the snippet above, an agent can change the code, run the tests, `deploy_app`, read `get_app_build_logs` if the build fails, fix it, and deploy again, until `get_app_logs` looks clean. This works especially well for preview environments and side projects.
+
+### Infrastructure as code, not ad hoc changes
+
+For long lived infrastructure, have the agent write [Terraform](/terraform/overview) with the Cloider provider instead of calling create tools directly. The result is reviewable, repeatable, and lives in git. Agents can read the provider's pages as Markdown, for example `https://docs.cloider.com/terraform/resources/cluster.md`.
+
+### Agents in CI
+
+Agents that run unattended (scheduled checks, triage bots) have no one to approve tool calls. Give them a dedicated **Read** token through `--token-file` or `CLOIDER_TOKEN`, start the server with `--read-only` and only the toolsets they need, and let them report rather than act.
+
+## Next steps
+
+- [MCP setup](/mcp/setup) for your client
+- [Example prompts](/mcp/example-prompts)
+- [CLI output and scripting](/cli/output-and-scripting): `-o json` and exit codes for agents that use the CLI directly
+- [Manage Cloider with an AI agent](/guides/manage-cloider-with-an-ai-agent)
+
+<FAQ items={[
+  {q: 'Does Cloider have an llms.txt?', a: 'Yes. https://docs.cloider.com/llms.txt lists every documentation page with a summary and a link to its Markdown version, and https://docs.cloider.com/llms-full.txt has the full text of all pages in one file.'},
+  {q: 'How do I get a Cloider docs page as Markdown?', a: 'Add .md to its URL, for example https://docs.cloider.com/terraform/get-started.md, or use the Copy page or View as Markdown button under the page title.'},
+  {q: 'What should I put in AGENTS.md or CLAUDE.md for a Cloider project?', a: 'Where the docs are (llms.txt and .md pages), whether to use the MCP server or the CLI, the project\'s app, database and cluster names with the exact commands to deploy, read logs and set variables, and which actions need your approval first. A ready to paste snippet is on this page.'},
+  {q: 'Can I ask ChatGPT or Claude about a Cloider docs page?', a: 'Yes. Click Open in Claude or Open in ChatGPT under the page title. It starts a chat that reads the page\'s Markdown version and answers questions about it.'},
+]} />

@@ -1,0 +1,293 @@
+---
+title: SSL/TLS for Cloider databases
+sidebar_label: SSL/TLS
+sidebar_position: 9
+description: Turn SSL/TLS on or off for a Cloider database, download the CA certificate, and verify the server certificate from PostgreSQL, MySQL, MongoDB and Redis clients.
+keywords: [database ssl, database tls, sslmode require, verify-full, ca certificate, rediss, mongodb tls, mysql ssl-mode, cloider db ssl, cloider db cert]
+---
+
+SSL mode encrypts the connection between your client and your Cloider database with TLS, so passwords and data can't be read on the way. Each database has an **SSL Mode** switch. When it is on, Cloider issues the database a TLS certificate signed by Cloider's own certificate authority (CA), which you can download to let your client verify the server.
+
+This page explains what SSL mode does for each engine, how to turn it on or off, how to get the CA certificate and how to verify the server certificate.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Engines** | PostgreSQL, MySQL, MongoDB and Redis |
+| **Default** | On for PostgreSQL, MySQL and MongoDB, off for Redis (dashboard, CLI, Terraform, MCP). Off when created through the API without `ssl` |
+| **Certificate** | An ECDSA P-256 certificate for the public and the private host name, valid 90 days and renewed automatically 15 days before it expires |
+| **Signed by** | Cloider's CA, a private CA. Download its certificate to verify the server |
+| **Client certificates** | Not needed. Clients authenticate with the user and password |
+| **Changing it** | Restarts the database. It is briefly unavailable and shows `Starting` |
+| **Port** | Unchanged. TLS and plain connections use the database's usual port |
+
+## What SSL mode does on each engine
+
+| Engine | SSL on | SSL off | Connection string with SSL on |
+| --- | --- | --- | --- |
+| PostgreSQL | The server offers TLS with Cloider's certificate | No TLS | `postgresql://...?sslmode=require` |
+| MySQL | The server offers TLS with Cloider's certificate | TLS is turned off on the server. Clients need `--ssl-mode=DISABLED --get-server-public-key` | `mysql://...`, with the client set to require TLS |
+| MongoDB | The server accepts TLS and plain connections (TLS preferred) | No TLS | `mongodb://...?tls=true` |
+| Redis | The server accepts **only** TLS connections | Only plain connections | `rediss://...` |
+
+What this means in practice:
+
+- **PostgreSQL and MySQL**: with SSL on, make the client require encryption, as the connection strings and commands Cloider shows do (`sslmode=require`, `--ssl-mode=REQUIRED`). These settings encrypt without checking the certificate. Use `verify-full` or `VERIFY_IDENTITY` with the CA certificate to also check it.
+- **MongoDB**: the dashboard describes the switch as "Allow encrypted (SSL/TLS) connections to this database.", because the server still accepts unencrypted connections. Put `tls=true` in your connection string so your client always encrypts. MongoDB clients verify the certificate by default, so they need the CA certificate.
+- **Redis**: turning SSL on makes Redis TLS only, on the same port. Every client has to switch from `redis://` to `rediss://` (or its TLS option) and trust the CA certificate. That is why SSL is off by default for Redis: turning it on breaks clients that don't use TLS.
+
+:::tip[MySQL 9 without SSL]
+MySQL 9 authenticates with `caching_sha2_password`. Over a connection without TLS, the client has to fetch the server's public key to send the password, so the `mysql` client needs `--get-server-public-key`, and Java clients need `allowPublicKeyRetrieval=true`. Keeping SSL on avoids this.
+:::
+
+## Turn SSL on or off
+
+Changing SSL mode restarts the database. It shows `Starting` while the change is applied and is unavailable for a short time, then returns to `Ready`.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the database and go to the **Settings** tab.
+2. In **SSL Mode**, click the switch.
+3. The **Enable SSL Mode** (or **Disable SSL Mode**) dialog says that the database restarts and is briefly unavailable. Click **Restart & apply**.
+
+The dashboard takes you to the Databases list, where the database shows **Starting** until the restart is done.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider db ssl orders-db on --wait
+```
+
+```text title="Output"
+Turn SSL on for orders-db? It restarts the database. [y/N] y
+✓ Turning SSL on for orders-db
+✓ Database orders-db is ready
+```
+
+Use `off` to turn it off. In scripts, which have no terminal to ask in, add `--yes` to skip the question.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="main.tf"
+resource "cloider_database" "cache" {
+  name   = "cache"
+  engine = "redis"
+  ssl    = true
+}
+```
+
+Changing `ssl` updates the database in place, with a restart. `terraform apply` waits until it is `Ready` again (the `update` timeout, 20 minutes by default).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X PUT https://cloider.com/api/databases/p0q9zm/ssl \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ssl": true}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+The status changes to `Starting`. Poll `GET /api/databases/p0q9zm/status` until it is `Ready`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Turn on SSL for the cache database and wait until it is back.
+```
+
+```json title="Tool call: set_database_ssl"
+{"database": "cache", "enabled": true, "wait": true}
+```
+
+</TabItem>
+</Tabs>
+
+## Download the CA certificate
+
+The CA certificate is the public certificate of the authority that signed your database's certificate. Give it to your client so it can check that it is talking to your database. It is a PEM file (it starts with `-----BEGIN CERTIFICATE-----`) and isn't secret. It only exists while SSL is on.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+On the **Overview** tab, in **Connection Details**, click the **SSL** row (**ENABLED**, with the download icon, **Download CA Certificate**). The browser saves `<name>-ca.crt`, for example `orders-db-ca.crt`.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider db cert orders-db -f ca.crt
+```
+
+```text title="Output"
+✓ Wrote the CA certificate of orders-db to ca.crt
+```
+
+Without `-f` (or `--file`), the certificate is printed to stdout.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The PEM is in the sensitive `ca_certificate` attribute:
+
+```hcl title="main.tf"
+resource "local_sensitive_file" "orders_ca" {
+  content  = cloider_database.orders.ca_certificate
+  filename = "${path.module}/orders-ca.crt"
+}
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl "https://cloider.com/api/database/cert?id=p0q9zm" \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -o ca.crt
+```
+
+The response is the PEM as plain text. A database with SSL off answers `404`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Save the CA certificate of the cache database to ca.crt.
+```
+
+```json title="Tool call: get_database_ca_cert"
+{"database": "cache", "file": "ca.crt"}
+```
+
+Without `file`, the tool returns the PEM.
+
+</TabItem>
+</Tabs>
+
+## Verify the server certificate
+
+Encryption alone protects against eavesdropping. Verifying the certificate also protects against someone pretending to be your database. The certificate is valid for both host names of the database, so verification works on the public host and on the private host.
+
+### PostgreSQL: sslmode=verify-full
+
+```bash
+psql "postgresql://orders_db_user@orders-db-p0q9zm.db.cloider.com:20417/orders-db?sslmode=verify-full&sslrootcert=ca.crt"
+```
+
+`verify-full` checks that the certificate is signed by the CA in `ca.crt` and that it was issued for the host name you connect to. `verify-ca` only checks the signature. `require` only encrypts.
+
+### MySQL: --ssl-mode=VERIFY_IDENTITY
+
+```bash
+mysql -h shop-db-k7x2wd.db.cloider.com -P 22861 -u shop_db_user -p shop-db \
+  --ssl-mode=VERIFY_IDENTITY --ssl-ca=ca.crt
+```
+
+`VERIFY_IDENTITY` checks the signature and the host name. `VERIFY_CA` only checks the signature. `REQUIRED` only encrypts.
+
+### MongoDB: tlsCAFile
+
+```bash
+mongosh "mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true" --tlsCAFile ca.crt
+```
+
+MongoDB clients always verify the certificate when TLS is on. Don't use `tlsAllowInvalidCertificates` or `tlsInsecure` to get around a missing CA, pass the CA file instead.
+
+### Redis: --cacert
+
+```bash
+REDISCLI_AUTH='PASSWORD' redis-cli -h cache-c5n1qa.db.cloider.com -p 26742 --user cache_user --tls --cacert ca.crt
+```
+
+`redis-cli` and the Redis client libraries verify the certificate by default when TLS is on.
+
+### Inspect the certificate with openssl
+
+`openssl s_client` shows the certificate the server presents and whether it chains to the CA:
+
+```bash
+# Redis and MongoDB speak TLS from the first byte
+openssl s_client -connect cache-c5n1qa.db.cloider.com:26742 -CAfile ca.crt </dev/null
+
+# PostgreSQL and MySQL start TLS inside their own protocol (OpenSSL 1.1.1 or newer)
+openssl s_client -starttls postgres -connect orders-db-p0q9zm.db.cloider.com:20417 -CAfile ca.crt </dev/null
+openssl s_client -starttls mysql -connect shop-db-k7x2wd.db.cloider.com:22861 -CAfile ca.crt </dev/null
+```
+
+Look for `Verify return code: 0 (ok)` at the end of the output. To see the host names and the expiry date:
+
+```bash
+openssl s_client -connect cache-c5n1qa.db.cloider.com:26742 </dev/null 2>/dev/null \
+  | openssl x509 -noout -subject -ext subjectAltName -enddate
+```
+
+```text title="Output"
+subject=
+X509v3 Subject Alternative Name:
+    DNS:cache-c5n1qa.db.cloider.com, DNS:cache-c5n1qa.db.cloider.internal
+notAfter=Jan 10 09:41:22 2027 GMT
+```
+
+## Certificate renewal
+
+A database certificate is valid for 90 days. Cloider renews it automatically 15 days before it expires, with a new private key each time. You don't have to do anything, as long as your clients trust the **CA certificate**, not the database's own certificate. Never pin the server certificate itself: it changes at every renewal.
+
+Turning SSL off deletes the database's certificate and key. Turning it on again issues a new one.
+
+## TLS in code
+
+Each engine page shows TLS in its driver examples:
+
+- [PostgreSQL](/databases/postgresql): `sslmode` in the URL, `ssl.ca` in node-postgres, `sslrootcert` in psycopg and pgx.
+- [MySQL](/databases/mysql): `ssl.ca` in mysql2, `ssl` in PyMySQL, `tls` in the Go driver, `sslMode` in Connector/J.
+- [MongoDB](/databases/mongodb): `tls=true` and `tlsCAFile` in every official driver.
+- [Redis](/databases/redis): `rediss://` and the CA file in ioredis, node-redis, redis-py and go-redis.
+
+## Troubleshooting
+
+### certificate verify failed, or self-signed certificate in certificate chain
+
+Your client verifies the certificate but doesn't trust Cloider's CA, which isn't in operating system trust stores. Download the CA certificate and pass it to the client (`sslrootcert`, `--ssl-ca`, `tlsCAFile`, `--cacert`).
+
+### Hostname mismatch
+
+The certificate is issued for `<name>-<id>.db.cloider.com` and `<name>-<id>.db.cloider.internal`. Connecting by IP address, or through another DNS name you created, fails host name verification. Connect with one of the two host names.
+
+### Redis: Connection reset by peer, or Error: Protocol error
+
+The database has SSL on, which makes Redis accept only TLS, and the client connected without TLS. Use `rediss://`, or `redis-cli --tls --cacert ca.crt`.
+
+### PostgreSQL: server does not support SSL, but SSL was required
+
+The database has SSL off and the client asks for `sslmode=require`. Turn SSL on, or drop `sslmode` from the connection string.
+
+### MySQL: Authentication requires secure connection
+
+The database has SSL off, and the client didn't fetch the server's public key for `caching_sha2_password`. Add `--get-server-public-key` (or `allowPublicKeyRetrieval=true` for Java), or turn SSL on.
+
+### database has SSL off, so it has no certificate
+
+`cloider db cert` was run on a database with SSL off. Turn SSL on first with `cloider db ssl <database> on`.
+
+## Next steps
+
+- [Trusted sources](/databases/trusted-sources)
+- [Connect to a database](/databases/connect)
+- [Security on Cloider](/concepts/security)
+
+<FAQ items={[
+  {q: 'Are Cloider database connections encrypted?', a: 'They are when SSL mode is on, which is the default for PostgreSQL, MySQL and MongoDB. Redis starts with SSL off, because turning it on makes Redis accept only TLS connections. Connections from Cloider apps and clusters to the private host stay inside Cloider\'s network.'},
+  {q: 'Why does my client say the database certificate is not trusted?', a: 'Cloider database certificates are signed by Cloider\'s own CA, which operating systems don\'t trust by default. Download the CA certificate from the database\'s Overview tab or with cloider db cert <database> -f ca.crt, and pass it to your client.'},
+  {q: 'Does turning SSL on or off restart the database?', a: 'Yes. Changing SSL mode restarts the database, which is unavailable for a short time while its status is Starting. Plan the change for a quiet moment.'},
+  {q: 'Do I need a client certificate to connect?', a: 'No. Cloider databases don\'t use mutual TLS. Clients log in with the database user and password, and only need the CA certificate to verify the server.'},
+  {q: 'How often does the database certificate change?', a: 'The certificate is valid for 90 days and is renewed automatically 15 days before it expires. Trust the CA certificate rather than the server certificate, so renewals don\'t affect your clients.'}
+]} />

@@ -1,0 +1,187 @@
+---
+title: Cloider billing model, pay as you go explained
+sidebar_label: Billing model
+sidebar_position: 4
+description: "How Cloider bills: what is metered per product, compute units, prorating, the free trial, what paused and deleted resources cost, and invoices."
+keywords: [cloider billing, pay as you go, cloider pricing model, compute unit, paused cluster cost, cloider invoice, free trial credit]
+---
+
+Cloider is **pay as you go**: there are no plans to commit to, no upfront fees and no charge for idle machines. Cloider measures what each resource uses, prices it at monthly rates prorated to the second, and sends one invoice per month for everything the account used. This page explains exactly what is measured and how.
+
+Current prices are on [cloider.com/#pricing](https://cloider.com/#pricing), from `cloider pricing`, and from the public `GET https://cloider.com/api/pricing` endpoint. The [Pricing reference](/reference/pricing) lists every price and unit.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Model** | Pay as you go, metered continuously, invoiced monthly |
+| **Price unit** | Every price is per month. A billing month is 30 days (720 hours), and usage is prorated by the second |
+| **Compute** | Apps and clusters pay for **compute units**: CPU or memory, whichever is larger at the current ratio |
+| **Storage** | Cluster volumes, buckets and registry projects pay per GiB per month |
+| **Databases** | A flat monthly price per plan, prorated; only storage while paused |
+| **Free** | Domains, DNS, bucket requests and traffic, registry pushes and pulls |
+| **Trial** | 14 days with $25 of free credit, one cluster, database, bucket and registry project at a time |
+| **Invoices** | One per month for the month before, visible to the account Owner only |
+
+## What is metered, product by product
+
+| Product | Metered | How it is measured | Price kind |
+| --- | --- | --- | --- |
+| **Kubernetes cluster**: compute | CPU and memory of the cluster's running containers, including its Kubernetes control plane | Sampled every few seconds. Each container counts the larger of what it **requests** and what it **uses** | Cluster compute unit per month |
+| **Kubernetes cluster**: volumes | Persistent volumes the cluster's PersistentVolumeClaims are bound to | Provisioned capacity in GiB, sampled every few seconds | Cluster volume, per GiB per month |
+| **Kubernetes cluster**: load balancers | Services of type `LoadBalancer` that have a public IP | Time each one is active | Cluster load balancer, per month each |
+| **App** | CPU and memory of the app's containers | Sampled every minute | App compute unit per month |
+| **Database** | The database's plan | Time the database is **Ready**, at the plan's monthly price | Database plan price per month, per engine |
+| **Database while paused** | The storage the plan provisioned | Time the database is **Paused** | Cluster volume rate, per GiB per month |
+| **Bucket** | Data stored | GiB stored, sampled every few minutes and averaged over time | Bucket storage, per GiB per month |
+| **Registry project** | Image data stored | GiB stored, sampled every few minutes and averaged over time | Registry storage, per GiB per month |
+| **Domains, DNS records, targets** | Nothing | | Free |
+
+### Compute units
+
+Apps and clusters are billed in **compute units**. One compute unit is one vCPU, or the amount of memory the **CPU to memory ratio** pairs with one vCPU. A workload counts as whichever is larger:
+
+```text
+compute units = max(vCPU, memory / memory per vCPU)
+```
+
+For example, if the ratio is 1 vCPU to 3 GiB:
+
+| Workload uses | vCPU | Memory / 3 GiB | Compute units billed |
+| --- | --- | --- | --- |
+| 0.5 vCPU, 1 GiB | 0.5 | 0.33 | 0.5 |
+| 0.25 vCPU, 3 GiB | 0.25 | 1.0 | 1.0 |
+| 2 vCPU, 6 GiB | 2 | 2.0 | 2.0 |
+
+So a CPU heavy workload pays for its CPU and a memory heavy workload pays for its memory, never both. The current ratio and compute unit prices for clusters and apps are listed by `cloider pricing` (shown as `cpu to memory ratio`) and in the [Pricing reference](/reference/pricing). Clusters and apps have separate prices that can differ.
+
+### Requests count, not only usage
+
+For each running container, Cloider bills the **larger of its resource request and its actual use**, for CPU and for memory separately. A container that requests `500m` CPU and uses `100m` is billed for `500m`; one that requests `100m` and uses `300m` is billed for `300m`.
+
+This makes requests a budget lever: set small requests for workloads that idle, and your bill follows what they actually use. In Kubernetes, requests are set per container under `resources.requests`.
+
+### How a month is prorated
+
+Every price is a monthly price, and a billing month counts as 30 days (720 hours). Usage is accumulated to the second, so:
+
+- a resource that exists for half a month costs half its monthly price,
+- an invoice shows hourly rates, which are the monthly price divided by 720,
+- a database on a plan priced at a monthly amount costs that amount for 720 hours of being Ready.
+
+### When prices change
+
+Prices have effective dates. Each day's usage is priced at the rates in effect that day, so a price change applies from its date onward and never retroactively. If prices change during a month, the invoice splits that resource's lines into one line per price period.
+
+## The free trial and credit
+
+A new account starts on the trial: 14 days, with $25 of free credit as advertised on [cloider.com](https://cloider.com). During the trial:
+
+- usage is metered exactly as it is on the paid plan, so the usage page shows real costs,
+- the account can have one Kubernetes cluster, one database, one bucket and one registry project at a time,
+- the Owner receives reminder emails before the end.
+
+If the Owner doesn't upgrade, the account is suspended the day after the trial ends and its resources are deleted. See [Create an account](/get-started/create-an-account#the-free-trial).
+
+## What does a paused resource cost?
+
+Pausing stops compute but keeps data, so a paused resource costs only its storage, if it has any.
+
+| Resource | While paused you pay for | You stop paying for |
+| --- | --- | --- |
+| **Kubernetes cluster** | Its persistent volumes (provisioned GiB) | Compute: the control plane and workloads stop running |
+| **App** | Nothing | Compute: the app's containers stop |
+| **Database** | The storage of its plan, at the cluster volume rate (`paused_price` in the pricing endpoint) | The plan price |
+| **Bucket, registry project** | Can't be paused: data stored is billed until you delete it | |
+
+While a resource is moving between states (**Creating**, **Pausing**, **Starting**...), a database accrues nothing; clusters and apps pay for whatever compute is actually running.
+
+## What does a deleted resource cost?
+
+Nothing from the moment it is deleted. Usage up to that moment stays on the month's invoice. Deleted resources stay visible on the **Usage** page, marked as terminated, for 60 days after their last usage, so you can see what they cost.
+
+## Forecasts
+
+The **Usage** page and `cloider usage` show, for each resource and for the account:
+
+- **Cost to date (this month)**: what has accrued since the first of the month.
+- **Forecast this month**: cost to date plus the rest of the month at the current rate.
+- **Forecast next month**: a whole month at the current rate.
+
+Forecasts assume that current usage, statuses and prices stay as they are. A database that is starting is forecast at its plan price, and one that is pausing at its storage price. See [Usage](/account/usage).
+
+## Invoices
+
+Cloider issues one invoice per account per month, for the month that just ended. The invoice is created early in the new month, once the last day's usage has been finalized.
+
+- An invoice is only created when the month's total is above zero.
+- It has one **item per resource** (for example `Cluster: "production"`, `Database: "orders-db"`, `App: "blog"`, `Bucket: "acme-assets"`, `Registry project: "acme"`), each with lines that show the service, usage, unit, rate and cost.
+- Units on the invoice: **Compute-Hour** for compute, **GB-Hour** for volumes and storage, **Hour** for load balancers and database plans.
+- A **✓ Paid** tag appears once the payment is recorded.
+
+Only the account **Owner** can see invoices, in **Billing** in the dashboard, with `cloider billing`, or through `GET /api/billing` with the Owner's Read & Write API token. See [Billing](/account/billing).
+
+```json title="One invoice from GET /api/billing (trimmed)"
+{
+  "month": "September 2026",
+  "amount": 45.63,
+  "paid": false,
+  "created_at": "2026-10-01T02:10:00Z",
+  "items": [
+    {
+      "service_type": "Kubernetes",
+      "description": "Cluster: \"production\"",
+      "amount": 30.63,
+      "subitems": [
+        {
+          "service": "Compute",
+          "description": "Avg. CPU usage: 0.84 cores\nAvg. memory usage: 1.9 GB\nUsage time: 491.07 Hours",
+          "qty": 412.5,
+          "unit": "Compute-Hour",
+          "price": 0.069444,
+          "amount": 28.63
+        },
+        {
+          "service": "Persistent Volumes",
+          "description": "Avg usage: 20 GB",
+          "qty": 14400,
+          "unit": "GB-Hour",
+          "price": 0.000139,
+          "amount": 2.00
+        }
+      ]
+    }
+  ]
+}
+```
+
+The amounts in this example are illustrative, not current prices.
+
+## Who pays
+
+The account **Owner** is billed for every resource in the account, whoever created it. Members (Admins and Restricted) are never billed for resources in accounts they don't own. See [Accounts and roles](/concepts/accounts-and-roles).
+
+## Keep costs low
+
+- **Pause what you don't use.** A paused cluster, app or database stops its compute. See [Resource lifecycle](/concepts/resource-lifecycle).
+- **Right size requests.** Since requests count, small requests on idle workloads save money.
+- **Delete load balancers you don't need.** Each active `LoadBalancer` Service is billed for the time it runs. Route domains with [targets](/domains/targets) instead.
+- **Clean up storage.** Delete unused volumes, use [lifecycle rules](/object-storage/lifecycle-rules) on buckets and [retention policies](/container-registry/retention-policies) in the registry.
+- **Watch the forecast.** Check [Usage](/account/usage) regularly, or script `cloider usage -o json`.
+
+## Next steps
+
+- [Pricing reference](/reference/pricing)
+- [Usage](/account/usage) and [Billing](/account/billing)
+- [Resource lifecycle](/concepts/resource-lifecycle)
+
+<FAQ items={[
+  {q: 'How does Cloider pricing work?', a: 'Cloider is pay as you go. It measures what each resource uses (compute, storage, load balancers, database plan time), prices it at monthly rates prorated to the second, and invoices the account once a month for the month before.'},
+  {q: 'What is a compute unit?', a: 'One vCPU, or the memory the CPU to memory ratio pairs with one vCPU, whichever a workload uses more of. Apps and Kubernetes clusters are billed per compute unit per month.'},
+  {q: 'Does Cloider bill for requested or used CPU?', a: 'Both count: each running container is billed for the larger of its resource request and its actual use, for CPU and memory separately.'},
+  {q: 'How much does a paused Kubernetes cluster cost?', a: 'A paused cluster is not billed for compute. Its persistent volumes stay and are still billed per GiB.'},
+  {q: 'How much does a paused database cost?', a: 'A paused database is billed only for the storage its plan provisioned, at the cluster volume rate. GET /api/pricing lists this as paused_price for every plan.'},
+  {q: 'Is data transfer free on Cloider?', a: 'Bucket requests and traffic are free, and so are registry pushes and pulls. Buckets and registry projects are billed only for the data they store.'},
+  {q: 'When do I get an invoice?', a: 'Early each month, for the month before, once the last day of usage is finalized. No invoice is created for a month that cost nothing.'},
+  {q: 'Who can see invoices?', a: 'Only the account Owner, in Billing in the dashboard, with cloider billing, or with GET /api/billing and the Owner\'s Read & Write API token.'}
+]} />

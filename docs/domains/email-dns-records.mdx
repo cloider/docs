@@ -1,0 +1,437 @@
+---
+title: Email DNS records for MX, SPF, DKIM and DMARC
+sidebar_label: Email DNS records
+sidebar_position: 7
+description: Set up MX, SPF, DKIM and DMARC records on Cloider DNS for Google Workspace, Microsoft 365 or any mail provider, with example values and dig checks.
+keywords: [mx record, spf record, dkim record, dmarc record, email dns, google workspace dns, microsoft 365 dns, email authentication, cloider email records]
+---
+
+Email for a custom domain such as `you@example.com` depends on four kinds of DNS records: **MX** says where incoming
+mail is delivered, **SPF** says which servers may send mail for the domain, **DKIM** publishes the key that signs your
+outgoing mail, and **DMARC** tells receivers what to do with mail that fails those checks. Cloider doesn't host email,
+but when your domain uses [Cloider's nameservers](/domains/nameservers) these records live in Cloider. This page
+explains each record and gives complete setups for Google Workspace and Microsoft 365.
+
+## At a glance
+
+| Record | Type | Name | What it does | Example value |
+| --- | --- | --- | --- | --- |
+| **MX** | `MX` | blank (`@`) | Where mail for `@example.com` is delivered | `1 smtp.google.com.` |
+| **SPF** | `TXT` | blank (`@`) | Which servers may send as `@example.com` | `v=spf1 include:_spf.google.com ~all` |
+| **DKIM** | `TXT` or `CNAME` | `<selector>._domainkey` | The public key receivers check signatures with | `v=DKIM1; k=rsa; p=MIIBIjANBg...` |
+| **DMARC** | `TXT` | `_dmarc` | The policy for mail that fails SPF and DKIM, and where reports go | `v=DMARC1; p=none; rua=mailto:dmarc@example.com` |
+| **Verification** | `TXT` | usually blank | Proves to the provider that you control the domain | `google-site-verification=...` |
+
+:::info[Example values]
+The provider values on this page are examples taken from Google's and Microsoft's own setup documentation, current at
+the time of writing. Your provider's admin console shows the exact values for your domain, and those always win: copy
+them from there, especially DKIM keys and verification tokens, which are unique to you.
+:::
+
+## Before you begin
+
+- A [custom domain](/domains/add-a-custom-domain) in Cloider. Free `cloider.app` subdomains can't have email records.
+- The domain uses [Cloider's nameservers](/domains/nameservers), or will soon. Add the records first, then switch the
+  nameservers, so mail keeps flowing.
+- An account with a mail provider such as Google Workspace, Microsoft 365, Fastmail, Proton Mail or Zoho Mail, and its
+  admin console open.
+
+## How to enter email records in Cloider
+
+A few Cloider rules matter for email records:
+
+- **Record name**: blank for the domain itself, `_dmarc` for DMARC, `google._domainkey` for a DKIM key. Never the full
+  name. See [What do I type as the record name?](/domains/dns-records#what-do-i-type-as-the-record-name)
+- **One record per type and name**: several MX servers go in one `MX` record, one per line. An SPF policy and
+  verification tokens at the apex go in one `TXT` record, one per line.
+- **No quotes** around TXT values. Type `v=spf1 include:_spf.google.com ~all`, not
+  `"v=spf1 include:_spf.google.com ~all"`.
+- **Long DKIM keys** go in as one value. Cloider splits values over 255 characters into DNS strings for you.
+- **TTL**: `3600` is a good value for email records, which rarely change.
+
+## MX records: receive mail
+
+An MX record lists the servers that accept mail for the domain, each with a priority. Senders try the lowest number
+first and fall back to higher ones.
+
+```text title="Value of the MX record (name blank)"
+10 mx1.mail.example.net.
+20 mx2.mail.example.net.
+```
+
+Without an MX record, mail to `you@example.com` bounces. With MX records for two providers, mail is split between them
+unpredictably, so keep only your current provider's servers.
+
+## SPF: who may send mail for the domain
+
+SPF (Sender Policy Framework) is a TXT record at the apex that lists the servers allowed to send mail as
+`@example.com`. It starts with `v=spf1`, lists the senders, and ends with what to do with everyone else:
+
+```text
+v=spf1 include:_spf.google.com include:mail.example.net ~all
+```
+
+| Part | Meaning |
+| --- | --- |
+| `v=spf1` | This is an SPF policy. Must come first |
+| `include:_spf.google.com` | Also allow the servers in Google's SPF policy |
+| `ip4:203.0.113.25` | Also allow this address, for example your own mail server |
+| `~all` | Mark all other senders as suspicious (softfail) |
+| `-all` | Reject all other senders (fail) |
+
+:::warning[Exactly one SPF policy per domain]
+A domain may have only one SPF policy. When you use several senders, such as Google Workspace and a newsletter
+service, merge them into one policy with several `include:` parts. Two separate `v=spf1` values at the same name make
+SPF fail for all your mail. Publish SPF as `TXT`, not with the retired `SPF` record type: Cloider returns both to
+`TXT` queries, which would count as two policies.
+:::
+
+## DKIM: sign outgoing mail
+
+DKIM (DomainKeys Identified Mail) lets receivers check that a message really came from your domain and wasn't changed.
+Your provider signs outgoing mail with a private key and gives you the public key to publish at
+`<selector>._domainkey.example.com`. The selector is chosen by the provider, for example `google` or `selector1`.
+
+Providers publish DKIM keys in one of two ways:
+
+- **A TXT record** with the key, such as Google Workspace: name `google._domainkey`, value
+  `v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...`.
+- **CNAME records** that point at keys the provider hosts and rotates, such as Microsoft 365: name
+  `selector1._domainkey`, value `selector1-example-com._domainkey.acmeinc.onmicrosoft.com.`.
+
+Enable DKIM signing in the provider's console after the record is published, since the provider checks the record
+first.
+
+## DMARC: the policy and reports
+
+DMARC (Domain-based Message Authentication, Reporting and Conformance) is a TXT record at `_dmarc` that tells receivers
+what to do with mail that fails both SPF and DKIM alignment, and where to send reports.
+
+```text title="Value of the TXT record named _dmarc"
+v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com
+```
+
+| Tag | Meaning |
+| --- | --- |
+| `v=DMARC1` | This is a DMARC policy. Must come first |
+| `p=none` | Only report. Start here |
+| `p=quarantine` | Put failing mail in spam |
+| `p=reject` | Reject failing mail |
+| `rua=mailto:...` | Where daily aggregate reports go |
+| `pct=25` | Apply the policy to 25 percent of failing mail, for a gradual rollout |
+
+Start with `p=none`, read the reports for a few weeks to find every service that sends as your domain, fix their SPF
+and DKIM, then move to `p=quarantine` and finally `p=reject`. Large mailbox providers expect bulk senders to publish at
+least `p=none`.
+
+## Set up Google Workspace
+
+These are the records Google documents for Google Workspace. In the Google Admin console, the exact values for your
+domain are under the domain setup and the Gmail authentication settings.
+
+| Purpose | Type | Name | Value (example) |
+| --- | --- | --- | --- |
+| Verify the domain | `TXT` | blank | `google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ` |
+| Receive mail | `MX` | blank | `1 smtp.google.com.` |
+| SPF | `TXT` | blank | `v=spf1 include:_spf.google.com ~all` |
+| DKIM | `TXT` | `google._domainkey` | `v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...` (from the Admin console) |
+| DMARC | `TXT` | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com` |
+
+The verification token and the SPF policy share the blank name, so they go in **one** TXT record with two lines.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+Open the domain under **Domains**, and for each row below click **Add DNS record**, fill the dialog and click **Save**:
+
+1. **Record type** `MX`, **Record name** blank, **TTL (seconds)** `3600`, **Mail Server** `1 smtp.google.com.`
+2. **Record type** `TXT`, **Record name** blank, **TTL (seconds)** `3600`, **Text Value** with two lines:
+   `google-site-verification=...` and `v=spf1 include:_spf.google.com ~all`
+3. **Record type** `TXT`, **Record name** `google._domainkey`, **Text Value** the key from the Admin console
+4. **Record type** `TXT`, **Record name** `_dmarc`, **Text Value** `v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com`
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash title="google-workspace.sh"
+DOMAIN=example.com
+
+cloider dns create "$DOMAIN" --type MX --ttl 3600 --value "1 smtp.google.com."
+
+cloider dns create "$DOMAIN" --type TXT --ttl 3600 \
+  --value $'google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ\nv=spf1 include:_spf.google.com ~all'
+
+# Paste the key from Admin console > Apps > Google Workspace > Gmail > Authenticate email
+cloider dns create "$DOMAIN" --type TXT --name google._domainkey --ttl 3600 \
+  --value "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA..."
+
+cloider dns create "$DOMAIN" --type TXT --name _dmarc --ttl 3600 \
+  --value "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"
+```
+
+```text title="Output"
+✓ Added MX record @ -> 1 smtp.google.com.
+✓ Added TXT record @ -> google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ
+v=spf1 include:_spf.google.com ~all
+✓ Added TXT record google._domainkey -> v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
+✓ Added TXT record _dmarc -> v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="email.tf"
+resource "cloider_dns_record" "mx" {
+  domain = "example.com"
+  type   = "MX"
+  values = ["1 smtp.google.com."]
+  ttl    = 3600
+}
+
+# The verification token and the SPF policy share the apex, so one resource holds both
+resource "cloider_dns_record" "apex_txt" {
+  domain = "example.com"
+  type   = "TXT"
+  values = [
+    "google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ",
+    "v=spf1 include:_spf.google.com ~all",
+  ]
+  ttl = 3600
+}
+
+resource "cloider_dns_record" "dkim" {
+  domain = "example.com"
+  type   = "TXT"
+  name   = "google._domainkey"
+  values = [var.google_dkim_key] # from the Admin console
+  ttl    = 3600
+}
+
+resource "cloider_dns_record" "dmarc" {
+  domain = "example.com"
+  type   = "TXT"
+  name   = "_dmarc"
+  values = ["v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"]
+  ttl    = 3600
+}
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+One request per record. The MX record:
+
+```bash
+curl -X POST https://cloider.com/api/domains/example.com/dns-records \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"record_type": "MX", "record_name": "", "record_value": "1 smtp.google.com.", "ttl": 3600}'
+```
+
+The apex TXT record, with both values separated by `\n`:
+
+```bash
+curl -X POST https://cloider.com/api/domains/example.com/dns-records \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"record_type": "TXT", "record_name": "", "record_value": "google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ\nv=spf1 include:_spf.google.com ~all", "ttl": 3600}'
+```
+
+The DKIM and DMARC records are the same request with `record_name` set to `google._domainkey` and `_dmarc`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Set up Google Workspace email on example.com: MX 1 smtp.google.com, SPF include:_spf.google.com ~all
+together with the verification token google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ,
+and a DMARC record p=none reporting to dmarc-reports@example.com. TTL one hour.
+```
+
+The agent calls `create_dns_record` once per record, for example:
+
+```json title="Tool call: create_dns_record"
+{"domain": "example.com", "type": "MX", "value": "1 smtp.google.com.", "ttl": 3600}
+```
+
+```json title="Tool call: create_dns_record"
+{"domain": "example.com", "type": "TXT", "value": "google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ\nv=spf1 include:_spf.google.com ~all", "ttl": 3600}
+```
+
+</TabItem>
+</Tabs>
+
+Older Google Workspace setups use five MX servers (`1 aspmx.l.google.com.`, `5 alt1.aspmx.l.google.com.`,
+`5 alt2.aspmx.l.google.com.`, `10 alt3.aspmx.l.google.com.`, `10 alt4.aspmx.l.google.com.`). Google documents both; use
+the values your Admin console shows, all in one MX record.
+
+## Set up Microsoft 365
+
+These are the records Microsoft documents for Microsoft 365 with Exchange Online. The Microsoft 365 admin center shows
+the exact values for your domain under **Settings**, **Domains**, and the DKIM values are in the Microsoft Defender
+portal. In the examples, the domain is `example.com` and the tenant's initial domain is `acmeinc.onmicrosoft.com`.
+
+| Purpose | Type | Name | Value (example) |
+| --- | --- | --- | --- |
+| Verify the domain | `TXT` | blank | `MS=ms12345678` |
+| Receive mail | `MX` | blank | `0 example-com.mail.protection.outlook.com.` |
+| SPF | `TXT` | blank | `v=spf1 include:spf.protection.outlook.com -all` |
+| Outlook autodiscover | `CNAME` | `autodiscover` | `autodiscover.outlook.com.` |
+| DKIM key 1 | `CNAME` | `selector1._domainkey` | `selector1-example-com._domainkey.acmeinc.onmicrosoft.com.` |
+| DKIM key 2 | `CNAME` | `selector2._domainkey` | `selector2-example-com._domainkey.acmeinc.onmicrosoft.com.` |
+| DMARC | `TXT` | `_dmarc` | `v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com` |
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+Open the domain under **Domains** and add each row of the table with **Add DNS record**. Put the verification token and
+the SPF policy in one `TXT` record with a blank name, on two lines. The three `CNAME` records each take one value.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash title="microsoft-365.sh"
+DOMAIN=example.com
+
+cloider dns create "$DOMAIN" --type TXT --ttl 3600 \
+  --value $'MS=ms12345678\nv=spf1 include:spf.protection.outlook.com -all'
+
+cloider dns create "$DOMAIN" --type MX --ttl 3600 \
+  --value "0 example-com.mail.protection.outlook.com."
+
+cloider dns create "$DOMAIN" --type CNAME --name autodiscover --ttl 3600 \
+  --value autodiscover.outlook.com.
+
+cloider dns create "$DOMAIN" --type CNAME --name selector1._domainkey --ttl 3600 \
+  --value selector1-example-com._domainkey.acmeinc.onmicrosoft.com.
+
+cloider dns create "$DOMAIN" --type CNAME --name selector2._domainkey --ttl 3600 \
+  --value selector2-example-com._domainkey.acmeinc.onmicrosoft.com.
+
+cloider dns create "$DOMAIN" --type TXT --name _dmarc --ttl 3600 \
+  --value "v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="email.tf"
+locals {
+  m365 = {
+    "apex/TXT"        = { name = "", type = "TXT", values = ["MS=ms12345678", "v=spf1 include:spf.protection.outlook.com -all"] }
+    "apex/MX"         = { name = "", type = "MX", values = ["0 example-com.mail.protection.outlook.com."] }
+    "autodiscover"    = { name = "autodiscover", type = "CNAME", values = ["autodiscover.outlook.com."] }
+    "dkim1"           = { name = "selector1._domainkey", type = "CNAME", values = ["selector1-example-com._domainkey.acmeinc.onmicrosoft.com."] }
+    "dkim2"           = { name = "selector2._domainkey", type = "CNAME", values = ["selector2-example-com._domainkey.acmeinc.onmicrosoft.com."] }
+    "dmarc"           = { name = "_dmarc", type = "TXT", values = ["v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"] }
+  }
+}
+
+resource "cloider_dns_record" "m365" {
+  for_each = local.m365
+
+  domain = "example.com"
+  name   = each.value.name
+  type   = each.value.type
+  values = each.value.values
+  ttl    = 3600
+}
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+One `POST https://cloider.com/api/domains/example.com/dns-records` per row of the table, for example the autodiscover
+CNAME:
+
+```bash
+curl -X POST https://cloider.com/api/domains/example.com/dns-records \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"record_type": "CNAME", "record_name": "autodiscover", "record_value": "autodiscover.outlook.com.", "ttl": 3600}'
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Add the Microsoft 365 records for example.com from this table: (paste the table from the admin center)
+```
+
+The agent calls `create_dns_record` once per record, for example:
+
+```json title="Tool call: create_dns_record"
+{"domain": "example.com", "type": "CNAME", "name": "autodiscover", "value": "autodiscover.outlook.com.", "ttl": 3600}
+```
+
+</TabItem>
+</Tabs>
+
+Microsoft is changing the format of MX and DKIM values for some tenants. If the admin center shows different host names
+than the examples above, use the admin center's.
+
+## Other mail and sending services
+
+Transactional and marketing services, such as the ones that send your app's password reset mail or newsletters, ask
+for the same kinds of records:
+
+- **An `include:` for your SPF policy.** Add it to your existing SPF value instead of creating a second policy:
+  `v=spf1 include:_spf.google.com include:sendgrid.net ~all`.
+- **DKIM records**, as `TXT` or `CNAME`, at the selectors they name.
+- **A return path or bounce domain**, often a `CNAME` such as `bounce` or `em123`.
+- **A verification `TXT`**, which goes on its own line of the TXT record at that name.
+
+A `CNAME` can't share its name with another record. If a service asks for a `CNAME` at a name where you already have a
+record, such as `mail`, choose another name in the service or remove the old record.
+
+## Verify
+
+Check what Cloider's nameservers answer:
+
+```bash
+dig @ns1.cloider.com example.com MX +short
+dig @ns1.cloider.com example.com TXT +short
+dig @ns1.cloider.com google._domainkey.example.com TXT +short
+dig @ns1.cloider.com _dmarc.example.com TXT +short
+```
+
+```text title="Output"
+1 smtp.google.com.
+"google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ"
+"v=spf1 include:_spf.google.com ~all"
+"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA..." "...rest of the key..."
+"v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com"
+```
+
+`dig` prints TXT values in quotes, and a long DKIM key as several quoted strings: that is how DNS stores them, and mail
+servers join them back together. Then use your provider's own check, such as the domain status in the Google Admin
+console or the Microsoft 365 admin center, and send a test message to an address at another provider and look at its
+authentication results (in Gmail, **Show original** shows `SPF: PASS`, `DKIM: PASS` and `DMARC: PASS`).
+
+## Troubleshooting
+
+| Problem | Cause and fix |
+| --- | --- |
+| `TXT record already exists for '@ (root)'. ...` | Add the new value as another line of the existing apex TXT record |
+| `MX record already exists for '@ (root)'. ...` | Edit the MX record and put every mail server in it, one per line |
+| `SPF record must start with 'v=spf1'` | You chose the `SPF` type. Use `TXT`, and start the value with `v=spf1` |
+| `TXT record appears to be very long without spaces. ...` | Paste the whole DKIM value, including `v=DKIM1; k=rsa; p=` |
+| `CNAME record cannot coexist with other record types for the same name: ...` | Another record uses that name. Remove it or pick another name |
+| Mail fails SPF with `permerror` | The name has two SPF policies. Merge them into one `TXT` value |
+| The provider says the record isn't found | Check the record name (`_dmarc`, not `_dmarc.example.com`), that the domain uses Cloider's nameservers, and wait for the TTL |
+| `dig` shows quotes inside the value | The value was saved with quotes. Edit the record and remove them |
+
+## Next steps
+
+- [DNS records](/domains/dns-records): every record type and its rules.
+- [Nameservers](/domains/nameservers): switch the domain to Cloider without losing mail.
+- [Troubleshooting](/domains/troubleshooting): more `dig` checks.
+
+<FAQ items={[
+  {q: 'Does Cloider host email?', a: 'No. Cloider hosts the DNS records that email needs, such as MX, SPF, DKIM and DMARC. The mailboxes come from a mail provider such as Google Workspace or Microsoft 365.'},
+  {q: 'How do I add several MX servers on Cloider?', a: 'Put them all in one MX record, one per line, each as a priority and a host, for example 10 mx1.mail.example.net. and 20 mx2.mail.example.net.'},
+  {q: 'Can I have two SPF records?', a: 'No. A domain must have exactly one SPF policy. Merge your senders into one TXT value with several include: parts.'},
+  {q: 'Where do I put the DMARC record?', a: 'In a TXT record named _dmarc, with a value that starts with v=DMARC1, such as v=DMARC1; p=none; rua=mailto:dmarc-reports@example.com.'},
+  {q: 'My DKIM key is longer than 255 characters. Is that a problem?', a: 'No. Paste it as one value. Cloider sends values over 255 characters as several DNS strings of one record, which mail servers join back together.'},
+  {q: 'Should TXT values be wrapped in quotes?', a: 'No. Enter the text without surrounding quotes. dig shows quotes around TXT values in its output, but they aren\'t part of the value.'},
+]} />

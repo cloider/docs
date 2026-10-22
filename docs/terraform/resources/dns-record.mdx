@@ -1,0 +1,253 @@
+---
+title: cloider_dns_record resource (Terraform)
+sidebar_label: cloider_dns_record
+sidebar_position: 8
+description: Manage DNS records on a Cloider custom domain with the cloider_dns_record Terraform resource, A, AAAA, CNAME, ALIAS, MX, TXT, SRV, CAA and more, with examples and import.
+keywords: [cloider_dns_record, terraform dns record, terraform mx record, terraform txt record, terraform cname, spf dkim dmarc terraform, cloider dns terraform, dns record import terraform]
+---
+
+The `cloider_dns_record` resource manages a DNS record set on a custom [`cloider_domain`](/terraform/resources/domain): **every value of one type at one name**, such as both MX servers of `example.com`, or every TXT value at `example.com`. Cloider's nameservers answer with exactly these records, so this is how a custom domain's website, mail and verification records are served.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `domain`, `type`, `values`, `ttl` |
+| **Changes in place** | `type`, `name`, `values`, `ttl` |
+| **Changes that replace the record** | `domain` |
+| **Record types** | `A`, `AAAA`, `CNAME`, `ALIAS`, `MX`, `TXT`, `NS`, `CAA`, `HTTPS`, `SPF`, `SRV`, `PTR` |
+| **TTL** | 60 to 172800 seconds |
+| **Import ID** | The record's numeric id, such as `48213` |
+| **API** | [`/api/domains/<domain>/dns-records`, `/api/dns-records/<id>`](/api/endpoints/dns-records) |
+| **CLI equivalent** | [`cloider dns`](/cli/commands/dns) |
+
+:::info[One resource per type and name]
+Cloider keeps one record per type and name, holding all of its values. Put every value of, say, the TXT records at the apex into one resource's `values`. Two resources with the same `domain`, `type` and `name` would overwrite each other.
+:::
+
+## Example usage
+
+### A record at the apex and a CNAME for www
+
+```hcl title="main.tf"
+resource "cloider_domain" "example" {
+  name = "example.com"
+}
+
+# The apex: name defaults to "", the domain itself. It takes over the A record
+# the domain was added with
+resource "cloider_dns_record" "apex" {
+  domain = cloider_domain.example.name
+  type   = "A"
+  values = ["203.0.113.80"]
+  ttl    = 300
+}
+
+resource "cloider_dns_record" "www" {
+  domain = cloider_domain.example.name
+  type   = "CNAME"
+  name   = "www"
+  values = ["acme-web.cloider.app."]
+  ttl    = 3600
+}
+```
+
+A CNAME takes exactly one value, and can't be used at the apex. To serve a host name from Cloider, point it at a free subdomain you hold with a CNAME. The apex already points at Cloider through the `A` record the domain came with, so add an apex `A` record (as above) or `ALIAS` record only when the apex is served somewhere else. See [Add a custom domain](/domains/add-a-custom-domain).
+
+### Mail: MX, SPF, DKIM and DMARC
+
+```hcl title="mail.tf"
+resource "cloider_dns_record" "mx" {
+  domain = "example.com"
+  type   = "MX"
+  values = ["10 mx1.mail.example.net.", "20 mx2.mail.example.net."]
+  ttl    = 3600
+}
+
+# Each TXT value is a TXT record of its own, so the SPF policy and a
+# verification token at the apex go in one resource
+resource "cloider_dns_record" "apex_txt" {
+  domain = "example.com"
+  type   = "TXT"
+  values = [
+    "v=spf1 include:mail.example.net ~all",
+    "google-site-verification=rXOxyZounnZasA8Z7oaD3c14JdjS9aKSWvsR1EbUSIQ",
+  ]
+  ttl = 3600
+}
+
+# A value over 255 characters, such as a DKIM key, is fine as one value
+resource "cloider_dns_record" "dkim" {
+  domain = "example.com"
+  type   = "TXT"
+  name   = "mail._domainkey"
+  values = ["v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu5..."]
+  ttl    = 3600
+}
+
+resource "cloider_dns_record" "dmarc" {
+  domain = "example.com"
+  type   = "TXT"
+  name   = "_dmarc"
+  values = ["v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"]
+  ttl    = 3600
+}
+```
+
+Use your mail provider's exact values. See [Email DNS records](/domains/email-dns-records).
+
+### SRV record
+
+```hcl title="main.tf"
+# Each value is: priority weight port target
+resource "cloider_dns_record" "sip" {
+  domain = "example.com"
+  type   = "SRV"
+  name   = "_sip._tcp"
+  values = ["10 60 5060 sip1.example.com.", "20 40 5060 sip2.example.com."]
+  ttl    = 3600
+}
+```
+
+### CAA record
+
+```hcl title="main.tf"
+# Which certificate authorities may issue certificates for the domain.
+# Cloider's HTTPS certificates come from Let's Encrypt, so keep it allowed.
+resource "cloider_dns_record" "caa" {
+  domain = "example.com"
+  type   = "CAA"
+  values = [
+    "0 issue \"letsencrypt.org\"",
+    "0 iodef \"mailto:security@example.com\"",
+  ]
+  ttl = 3600
+}
+```
+
+### Wildcard
+
+```hcl title="main.tf"
+# Answers for any name under example.com that has no record of its own
+resource "cloider_dns_record" "wildcard" {
+  domain = "example.com"
+  type   = "A"
+  name   = "*"
+  values = ["203.0.113.10"]
+  ttl    = 300
+}
+```
+
+### Many records from a map with for_each
+
+```hcl title="dns.tf"
+locals {
+  records = {
+    "www CNAME"  = { type = "CNAME", name = "www", values = ["acme-web.cloider.app."] }
+    "shop CNAME" = { type = "CNAME", name = "shop", values = ["acme-shop.cloider.app."] }
+    "@ MX"       = { type = "MX", name = "", values = ["10 mx1.mail.example.net."] }
+  }
+}
+
+resource "cloider_dns_record" "this" {
+  for_each = local.records
+
+  domain = cloider_domain.example.name
+  type   = each.value.type
+  name   = each.value.name
+  values = each.value.values
+  ttl    = 3600
+}
+```
+
+Key the map by name and type, so each key is one record set.
+
+## Argument reference
+
+| Argument | Type | Required | Default | Changing it | Description |
+| --- | --- | --- | --- | --- | --- |
+| `domain` | String | Yes | | **Replaces** the record | The custom domain the record belongs to, such as `example.com`. Free subdomains under Cloider's roots don't take records |
+| `type` | String | Yes | | In place | `A`, `AAAA`, `CNAME`, `ALIAS`, `MX`, `TXT`, `NS`, `CAA`, `HTTPS`, `SPF`, `SRV` or `PTR` (upper case) |
+| `name` | String | No | `""` (the domain itself) | In place | The name under the domain, such as `www`, `_dmarc` or `*`. Write it relative to the domain: `www`, not `www.example.com`. Leave it out for the domain itself: `@` is refused |
+| `values` | List of String | Yes | | In place | The record's values, at least one. Each value is one line, without leading or trailing spaces. Each `TXT` value is a TXT record of its own. A `CNAME` or `ALIAS` takes one |
+| `ttl` | Number | Yes | | In place | Seconds resolvers may cache the record, `60` to `172800` |
+
+### Value formats
+
+| Type | Value format | Example |
+| --- | --- | --- |
+| `A` | IPv4 address | `203.0.113.80` |
+| `AAAA` | IPv6 address | `2001:db8::80` |
+| `CNAME` | Host name, ending in a dot | `acme-web.cloider.app.` |
+| `ALIAS` | Host name, also allowed at the apex | `myapp.herokuapp.com` |
+| `MX` | Priority and mail server | `10 mx1.mail.example.net.` |
+| `TXT` | Text, without surrounding quotes | `v=spf1 include:mail.example.net ~all` |
+| `SRV` | Priority, weight, port and target | `10 60 5060 sip1.example.com.` |
+| `CAA` | Flags, tag and value | `0 issue "letsencrypt.org"` |
+
+See [DNS records](/domains/dns-records) for every type, including `NS`, `HTTPS`, `SPF` and `PTR`.
+
+## Attribute reference
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `id` | String | The record's numeric id, as a string, such as `"48213"` |
+
+## Behavior notes
+
+- **Values are compared as written.** Cloider trims each value and drops empty ones, so the provider refuses values with leading or trailing spaces or line breaks at plan time (`must be one line, without leading or trailing spaces`). Otherwise every plan would show a change.
+- **Changing `type` or `name`** updates the same record in place, rather than creating a new one.
+- **The apex A record.** A custom domain comes with an A record for the domain itself that points at Cloider. While it still does, a record of type `A` or `ALIAS` without a `name` takes it over instead of failing as a second record.
+- **Deleting the domain** deletes its records too.
+- **Deleted outside Terraform.** The next refresh removes the record from state and the plan offers to create it again.
+
+## Import
+
+Import a record by its numeric id. `cloider dns list <domain> -o wide` shows the ids:
+
+```bash
+cloider dns list example.com -o wide
+```
+
+```text title="Output"
+ID      TYPE    NAME    VALUE                    TTL
+48213   A       @       203.0.113.80             300
+48214   CNAME   www     acme-web.cloider.app.    3600
+48215   MX      @       10 mx1.mail.example.net. 3600
+```
+
+With an `import` block:
+
+```hcl title="imports.tf"
+import {
+  to = cloider_dns_record.apex
+  id = "48213"
+}
+
+import {
+  to = cloider_dns_record.www
+  id = "48214"
+}
+```
+
+With the `terraform import` command:
+
+```bash
+terraform import cloider_dns_record.apex 48213
+```
+
+An id that isn't a number fails with `Invalid DNS record id: A DNS record's id is a number, see 'cloider dns list <domain>'.` A record with several values (several MX servers, say) is one record with one id. Import the domain itself too, with [`cloider_domain`](/terraform/resources/domain#import).
+
+## Related
+
+- [`cloider_domain`](/terraform/resources/domain)
+- [`cloider_target`](/terraform/resources/target): route a host name once its record points at Cloider
+- [DNS records](/domains/dns-records), [Email DNS records](/domains/email-dns-records), [Nameservers](/domains/nameservers)
+
+<FAQ items={[
+  {q: 'How do I add a DNS record to a Cloider domain with Terraform?', a: 'Add a cloider_dns_record with domain, type, values and ttl, and name for anything other than the domain itself. The domain must be a custom domain added with cloider_domain or imported.'},
+  {q: 'How do I add several TXT records at the same name?', a: 'List them all in one cloider_dns_record\'s values. Each TXT value is served as a TXT record of its own. Two resources with the same domain, type and name would overwrite each other.'},
+  {q: 'Can I add DNS records to a free cloider.app subdomain?', a: 'No. Free subdomains are answered by Cloider and don\'t take records. DNS records are for custom domains only.'},
+  {q: 'What TTL can a Cloider DNS record have?', a: 'From 60 to 172800 seconds. ttl is required in Terraform. 300 is a good value for records you may change soon, 3600 for stable ones.'},
+  {q: 'What is the import ID of a cloider_dns_record?', a: 'The record\'s numeric id, shown in the ID column of cloider dns list <domain> -o wide. For example terraform import cloider_dns_record.apex 48213.'},
+]} />

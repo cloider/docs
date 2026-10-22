@@ -1,0 +1,243 @@
+---
+title: Cloider API rate limits and retries
+sidebar_label: Rate limits
+sidebar_position: 4
+description: The Cloider API allows 10 requests a second and 100 a minute per client. Learn what 429 and 503 mean, how to use Retry-After and how to back off in code.
+keywords: [cloider api rate limit, 429 too many requests, 503 service unavailable, retry-after, exponential backoff, api throttling]
+---
+
+The Cloider API limits how fast a single client can send requests, so that one runaway script can't slow the platform down for everyone. The limit is **10 requests a second and 100 requests a minute per client**. A request over the limit is refused with `429 Too Many Requests` or `503 Service Unavailable` before it reaches the API, so it isn't carried out. This page explains the limits, how to stay under them and how to retry when you hit them.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Burst limit** | 10 requests a second |
+| **Sustained limit** | 100 requests a minute |
+| **Counted** | Per client, across every endpoint and token |
+| **Over the limit** | `429 Too Many Requests` or `503 Service Unavailable`, with an HTML or empty body rather than JSON |
+| **Is a rejected request run?** | No. It was refused before reaching the API, so retrying it is safe |
+| **Retry-After** | Honor it when present; otherwise back off exponentially |
+| **Streams** | An open log or `exec` stream is one request, however long it stays open |
+
+## How the limits work
+
+Both limits apply at the same time. A short burst above either rate is tolerated, but a client that keeps sending faster than 10 requests a second, or more than 100 requests a minute, starts getting refused. In practice:
+
+- A script that sends one request every second (60 a minute) never hits a limit.
+- A loop that fires requests as fast as it can is refused within its first second or two.
+- A job that keeps sending 5 requests a second (300 a minute) stays under the per second limit, but goes over the per minute limit once its burst allowance is used up.
+
+The limits count requests from one client, not per token or per endpoint. Several scripts that run from the same machine or network share the same budget, and switching to another token doesn't give you more.
+
+The dashboard, the CLI and the Terraform provider are subject to the same limits, and the CLI and the Terraform provider retry for you when they hit them.
+
+## What a rate limited response looks like
+
+A rate limited request is refused before it reaches the API. You get one of:
+
+- `429 Too Many Requests`
+- `503 Service Unavailable`
+
+The body is not the API's [JSON error envelope](/api/errors): it is a short HTML page or empty. Rely on the status code, not the body.
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```text title="Output when rate limited"
+429
+```
+
+### Telling a rate limit from a real 503
+
+`503` is also used by the API itself, for example when a terminal or `exec` command couldn't be started yet. The API's own `503` has the JSON body `{"errors": {"_": ["..."]}}`; a rate limit `503` doesn't. Either way, waiting and retrying is the right reaction, but only a read, or a write you know didn't go through, should be retried after a `503`.
+
+## Retry-After
+
+When a rate limited response includes a `Retry-After` header with a number of seconds, wait that long before you retry. When it doesn't, use exponential backoff: wait 1 second, then 2, then 4, and give up after a few attempts.
+
+The CLI does exactly this: it retries up to 4 attempts in total, waits for `Retry-After` when it is between 1 and 60 seconds, and otherwise waits 1, 2 and 4 seconds.
+
+## Which requests are safe to retry?
+
+| Response | `GET` | `POST`, `PUT`, `DELETE` |
+| --- | --- | --- |
+| `429` | Retry | Retry. The request never reached the API |
+| `502`, `503`, `504` | Retry | Don't retry blindly. Read the resource back to see whether the first attempt took effect |
+| Network error or timeout | Retry | Same as above |
+
+This is the rule the CLI applies. A write that timed out or got a `502`, `503` or `504` may already have been carried out, and the API has no idempotency keys: a second `POST /clusters` creates a second cluster. See [Retries and idempotency](/api/overview#retries-and-idempotency).
+
+## Retry with backoff in code
+
+<Tabs groupId="lang" queryString>
+<TabItem value="curl" label="curl" default>
+
+curl can retry by itself. `--retry` covers `429`, `503` and `504`, as well as timeouts, and honors `Retry-After`:
+
+```bash
+curl --retry 3 --retry-max-time 60 \
+  https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+Use `--retry` only on reads. curl doesn't know whether a `POST` went through before a `503`.
+
+</TabItem>
+<TabItem value="javascript" label="JavaScript">
+
+```js title="retry.mjs"
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export async function cloiderFetch(path, { method = 'GET', body } = {}, attempts = 4) {
+  const idempotent = method === 'GET' || method === 'HEAD';
+
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(`https://cloider.com/api${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${process.env.CLOIDER_TOKEN}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const retryable =
+      res.status === 429 || (idempotent && [502, 503, 504].includes(res.status));
+
+    if (!retryable || attempt >= attempts) return res;
+
+    const retryAfter = Number(res.headers.get('retry-after'));
+    const wait =
+      retryAfter > 0 && retryAfter <= 60 ? retryAfter * 1000 : 1000 * 2 ** (attempt - 1);
+    await res.body?.cancel();
+    await sleep(wait);
+  }
+}
+
+// Usage
+const res = await cloiderFetch('/databases');
+console.log(res.status, await res.json());
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python title="retry.py"
+import os
+import time
+import requests
+
+session = requests.Session()
+session.headers["Authorization"] = f"Bearer {os.environ['CLOIDER_TOKEN']}"
+
+
+def cloider_request(method, path, json=None, attempts=4):
+    idempotent = method in ("GET", "HEAD")
+
+    for attempt in range(1, attempts + 1):
+        res = session.request(method, f"https://cloider.com/api{path}", json=json, timeout=60)
+
+        retryable = res.status_code == 429 or (
+            idempotent and res.status_code in (502, 503, 504)
+        )
+        if not retryable or attempt == attempts:
+            return res
+
+        try:
+            retry_after = int(res.headers.get("Retry-After", ""))
+        except ValueError:
+            retry_after = 0
+        wait = retry_after if 0 < retry_after <= 60 else 2 ** (attempt - 1)
+        time.sleep(wait)
+
+
+res = cloider_request("GET", "/databases")
+print(res.status_code, res.json())
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```go title="retry.go"
+package cloider
+
+import (
+	"bytes"
+	"io"
+	"net/http"
+	"strconv"
+	"time"
+)
+
+// Do sends a request and retries what the rate limit turned away. Reads are
+// also retried on 502, 503 and 504; writes are not, they may have gone through.
+func Do(client *http.Client, token, method, path string, body []byte) (*http.Response, error) {
+	idempotent := method == http.MethodGet || method == http.MethodHead
+	const maxAttempts = 4
+
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequest(method, "https://cloider.com/api"+path, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		res, err := client.Do(req)
+		if err != nil {
+			if idempotent && attempt < maxAttempts {
+				time.Sleep(backoff(attempt, ""))
+				continue
+			}
+			return nil, err
+		}
+
+		retryable := res.StatusCode == http.StatusTooManyRequests ||
+			(idempotent && (res.StatusCode == http.StatusBadGateway ||
+				res.StatusCode == http.StatusServiceUnavailable ||
+				res.StatusCode == http.StatusGatewayTimeout))
+		if !retryable || attempt >= maxAttempts {
+			return res, nil
+		}
+
+		wait := backoff(attempt, res.Header.Get("Retry-After"))
+		io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+		time.Sleep(wait)
+	}
+}
+
+func backoff(attempt int, retryAfter string) time.Duration {
+	if s, err := strconv.Atoi(retryAfter); err == nil && s > 0 && s <= 60 {
+		return time.Duration(s) * time.Second
+	}
+	return time.Duration(1<<(attempt-1)) * time.Second
+}
+```
+
+</TabItem>
+</Tabs>
+
+## How to stay under the limits
+
+- **Poll slowly.** When you wait for a cluster or database to become `Ready`, poll its status every 5 seconds or so, not in a tight loop. A provisioning resource doesn't change faster than that.
+- **Use lists instead of one request per item.** `GET /clusters` returns every cluster with its status in one request; don't call `/status` for each one when the list has what you need.
+- **Stream instead of polling logs.** `GET /apps/:hashed_id/logs/stream` and the build log stream push new lines as they come, and the whole stream counts as one request.
+- **Space out bulk jobs.** When you create or delete many resources, pace the requests to stay under 100 a minute, for example one every 600 milliseconds.
+- **Run jobs in sequence.** Parallel CI jobs that run from the same runner share one budget.
+- **Cache what rarely changes.** `GET /options`, `GET /buckets/regions` and `GET /registry/projects/options` change rarely; read them once per run.
+
+## Frequently asked questions
+
+<FAQ items={[
+  {q: 'What is the rate limit of the Cloider API?', a: 'Each client can send up to 10 requests a second and 100 requests a minute. Requests over the limit are refused with 429 Too Many Requests or 503 Service Unavailable before they reach the API.'},
+  {q: 'Is the rate limit per API token?', a: 'No. It is counted per client, across all tokens and endpoints. Scripts running from the same machine or network share the same budget, and using another token does not raise it.'},
+  {q: 'Is a request that got 429 executed?', a: 'No. A rate limited request is refused before it reaches the API, so it is safe to retry, including POST, PUT and DELETE requests.'},
+  {q: 'Do the CLI and Terraform provider handle rate limits?', a: 'Yes. They retry rate limited requests with backoff, honoring Retry-After when the response includes it, and retry reads on 502, 503 and 504.'},
+  {q: 'Does a log stream count against the rate limit?', a: 'An open log or exec stream is one request for as long as it stays open. Streaming logs uses far fewer requests than polling for them.'},
+]} />

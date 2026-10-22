@@ -1,0 +1,232 @@
+---
+title: cloider_bucket resource (Terraform)
+sidebar_label: cloider_bucket
+sidebar_position: 3
+description: Create S3 compatible object storage buckets on Cloider with the cloider_bucket Terraform resource, choose the region, public access and versioning, and import existing buckets.
+keywords: [cloider_bucket, terraform s3 bucket, terraform object storage, s3 compatible terraform, bucket versioning terraform, public bucket terraform, cloider object storage terraform]
+---
+
+The `cloider_bucket` resource creates and manages a Cloider [object storage](/object-storage/overview) bucket: an S3 compatible container for files that any S3 client, SDK or tool can read and write. You choose its name, its region, whether anyone may read its files without a key, and whether it keeps earlier versions of files. To read and write the bucket, create a [`cloider_bucket_key`](/terraform/resources/bucket-key).
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `name` |
+| **Changes in place** | `public`, `versioning` |
+| **Changes that replace the bucket** | `name`, `region` |
+| **Sensitive attributes** | None |
+| **Timeouts** | `create`, `delete`, 20 minutes each by default |
+| **Import ID** | The bucket id, such as `b7r2xw` |
+| **API** | [`/api/buckets`](/api/endpoints/buckets) |
+| **CLI equivalent** | [`cloider bucket`](/cli/commands/bucket) |
+
+## Example usage
+
+### Basic private bucket
+
+```hcl title="main.tf"
+resource "cloider_bucket" "assets" {
+  name = "acme-assets"
+}
+```
+
+The bucket is created in the default region (the first one [`cloider_bucket_regions`](/terraform/data-sources/bucket-regions) lists), is private, and has versioning off.
+
+### Public bucket for website assets
+
+A public bucket lets anyone read its files over HTTPS without a key. Writing always needs a key.
+
+```hcl title="main.tf"
+resource "cloider_bucket" "assets" {
+  name   = "acme-assets"
+  public = true
+}
+
+output "assets_url" {
+  description = "Files are readable at <url>/<key>"
+  value       = cloider_bucket.assets.url
+}
+```
+
+```text title="Output"
+assets_url = "https://acme-assets.s3.eu-central-2.cloider.com"
+```
+
+See [Public and private buckets](/object-storage/public-and-private-buckets).
+
+### Versioned bucket for backups
+
+```hcl title="main.tf"
+resource "cloider_bucket" "backups" {
+  name       = "acme-backups"
+  versioning = true
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+```
+
+With versioning on, overwriting or deleting a file keeps the earlier version. See [Versioning](/object-storage/versioning).
+
+### Choose the region
+
+```hcl title="main.tf"
+data "cloider_bucket_regions" "all" {}
+
+resource "cloider_bucket" "assets" {
+  name   = "acme-assets"
+  region = data.cloider_bucket_regions.all.regions[0].code
+}
+```
+
+Or write the code directly, such as `region = "eu-central-2"`.
+
+### A bucket with its own key
+
+```hcl title="main.tf"
+resource "cloider_bucket" "uploads" {
+  name = "acme-uploads"
+}
+
+resource "cloider_bucket_key" "uploads" {
+  label   = "web uploads"
+  buckets = [cloider_bucket.uploads.id]
+}
+
+output "s3_endpoint" {
+  value = cloider_bucket.uploads.endpoint
+}
+
+output "s3_access_key" {
+  value = cloider_bucket_key.uploads.access_key
+}
+
+output "s3_secret_key" {
+  value     = cloider_bucket_key.uploads.secret_key
+  sensitive = true
+}
+```
+
+### Several buckets with for_each
+
+```hcl title="main.tf"
+variable "buckets" {
+  type = map(object({
+    public     = bool
+    versioning = bool
+  }))
+  default = {
+    "acme-assets"  = { public = true, versioning = false }
+    "acme-backups" = { public = false, versioning = true }
+  }
+}
+
+resource "cloider_bucket" "this" {
+  for_each = var.buckets
+
+  name       = each.key
+  public     = each.value.public
+  versioning = each.value.versioning
+}
+```
+
+## Argument reference
+
+| Argument | Type | Required | Default | Changing it | Description |
+| --- | --- | --- | --- | --- | --- |
+| `name` | String | Yes | | **Replaces** the bucket | 3 to 63 lower case letters, digits and `-`, starting and ending with a letter or digit, no dots. Bucket names are shared by every Cloider account, so it must be one nobody else has. See [Names](/reference/limits-and-quotas) |
+| `region` | String | No | The first region `cloider_bucket_regions` lists | **Replaces** the bucket | The region code, such as `eu-central-2` |
+| `public` | Bool | No | `false` | In place | Whether anyone may read the bucket's files without a key |
+| `versioning` | Bool | No | `false` | In place | Whether the bucket keeps earlier versions of its files. Once on, versioning can only be suspended: `false` after `true` stops keeping new versions but keeps those already kept |
+| `timeouts` | Object | No | 20 minutes each | | `create` and `delete` durations |
+
+## Attribute reference
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `id` | String | The bucket's id |
+| `status` | String | `Ready`, `Failed` or `Terminating`. See [Status values](/reference/status-values) |
+| `endpoint` | String | The S3 endpoint of the bucket's region, such as `https://s3.eu-central-2.cloider.com`. Give this to S3 clients as the endpoint URL |
+| `url` | String | The bucket's own URL, such as `https://acme-assets.s3.eu-central-2.cloider.com`, where a public bucket's files are read |
+| `created_at` | String | When the bucket was created, in RFC 3339 |
+| `region` | String | The region in use, also when you didn't set it |
+
+## What replaces a bucket?
+
+Changing `name` or `region` deletes the bucket, **with every file and every version in it**, and creates a new, empty one. Terraform shows `# forces replacement` next to the attribute in the plan. A bucket's name can't be changed, and a bucket can't move between regions. To rename or move one, create the new bucket, copy the files with an S3 tool such as `rclone`, then remove the old one from the configuration.
+
+`public` and `versioning` change in place, without touching the files.
+
+## Create and delete behavior
+
+- **Create** is fast: a bucket is `Ready` as soon as the API answers. If the create request times out (a `502` or `504`), the provider doesn't assume failure: it looks for a bucket with the same name in your account for up to 4 minutes and adopts it once it is `Ready`. Bucket names are unique across Cloider, so the bucket it finds is the one it created.
+- **Name taken.** If another account already has the name, the create fails with the API's message. Choose another name.
+- **Delete** removes the bucket with all its contents, then waits until it is gone (`Terminated`). You don't need to empty it first. See [Delete a bucket](/object-storage/delete-a-bucket).
+- **Deleted outside Terraform.** The next refresh removes the bucket from state and the plan offers to create it again.
+
+## What the provider doesn't manage on a bucket
+
+Files, bucket policies, lifecycle rules and data protection aren't part of `cloider_bucket`. Manage them in the dashboard, with [`cloider bucket`](/cli/commands/bucket), or with an S3 tool. To upload files from Terraform, use the `aws` provider's `aws_s3_object` against the bucket's `endpoint`, see [Object storage with the AWS provider](/terraform/guides/object-storage).
+
+## Timeouts
+
+| Operation | Default | What it waits for |
+| --- | --- | --- |
+| `create` | 20 minutes | Covers the create call and, after a timed out create, the search for the new bucket |
+| `delete` | 20 minutes | The bucket and its contents to be gone |
+
+There is no `update` timeout: changing `public` or `versioning` takes effect immediately.
+
+## Import
+
+Import an existing bucket by its id. `cloider bucket list -o wide` shows the ids:
+
+```bash
+cloider bucket list -o wide
+```
+
+```text title="Output"
+NAME           ID       REGION         STATUS   ACCESS    SIZE     CREATED
+acme-assets    b7r2xw   eu-central-2   Ready    public    1.2 GiB  2026-08-11 10:02
+acme-backups   m4t9cs   eu-central-2   Ready    private   38.0 GiB 2026-08-11 10:05
+```
+
+With an `import` block (Terraform 1.5 or later):
+
+```hcl title="imports.tf"
+import {
+  to = cloider_bucket.assets
+  id = "b7r2xw"
+}
+
+resource "cloider_bucket" "assets" {
+  name   = "acme-assets"
+  public = true
+}
+```
+
+With the `terraform import` command:
+
+```bash
+terraform import cloider_bucket.assets b7r2xw
+```
+
+After the import, set `public` and `versioning` in the configuration to what the bucket has, or the next apply changes them back to the defaults (`false`).
+
+## Related
+
+- [`cloider_bucket_key`](/terraform/resources/bucket-key): S3 credentials for the bucket
+- [`cloider_bucket_regions`](/terraform/data-sources/bucket-regions): region codes and endpoints
+- [Object storage with the AWS provider](/terraform/guides/object-storage): upload files and use S3 tools
+- [Store Terraform state in a bucket](/terraform/guides/state-backend)
+- [Create a bucket](/object-storage/create-a-bucket) with the dashboard, CLI or API
+
+<FAQ items={[
+  {q: 'How do I create an S3 bucket on Cloider with Terraform?', a: 'Add a cloider_bucket resource with a name nobody else on Cloider uses, and run terraform apply. Then create a cloider_bucket_key with buckets = [cloider_bucket.<name>.id] to get an access key and secret key for S3 clients.'},
+  {q: 'Can I rename a bucket or change its region with Terraform?', a: 'No. Changing name or region replaces the bucket, which deletes it with all its files and creates a new empty one. Copy the files to a new bucket with an S3 tool instead.'},
+  {q: 'Can I turn versioning off with Terraform?', a: 'You can set versioning = false after true, which suspends versioning: new versions stop being kept, but versions already kept stay until you delete them.'},
+  {q: 'Does destroying a cloider_bucket delete its files?', a: 'Yes. Deleting a bucket deletes every file and every version in it, and its name becomes free for anyone to take. Use lifecycle { prevent_destroy = true } on buckets that hold data you need.'},
+  {q: 'Can Terraform upload files to a Cloider bucket?', a: 'Not with the Cloider provider. Use the aws provider\'s aws_s3_object resource pointed at the bucket\'s endpoint, with a cloider_bucket_key\'s access key and secret key.'},
+]} />

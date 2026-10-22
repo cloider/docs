@@ -1,0 +1,354 @@
+---
+title: Install Helm charts on Cloider Kubernetes
+sidebar_label: Helm
+sidebar_position: 6
+description: Use Helm on Cloider Kubernetes from the browser terminal, your computer, Terraform or an AI agent, with chart examples, values files and upgrades.
+keywords: [helm, helm install, helm chart, kubernetes helm, helm_release terraform, helm upgrade, cloider helm]
+---
+
+Helm is the package manager for Kubernetes: a **chart** bundles all the manifests an application needs, and `helm install` deploys it with your settings in one command. Helm works on Cloider clusters exactly as on any Kubernetes cluster, and it is already installed in every cluster's [browser terminal and `cloider cluster exec`](/kubernetes/web-terminal-and-exec). This page shows how to install, configure, upgrade and remove charts, and what to adjust in charts so their services are reachable on Cloider.
+
+## Before you begin
+
+- A cluster in the `Ready` status. See [Create a cluster](/kubernetes/create-a-cluster).
+- Helm, in one of these places:
+  - the cluster's **browser terminal** or `cloider cluster exec`, where `helm` is preinstalled and connected to the cluster,
+  - your computer, with [Helm 3 installed](https://helm.sh/docs/intro/install/) and the cluster's kubeconfig set up as in [Connect with kubectl](/kubernetes/connect-with-kubectl),
+  - Terraform's `helm` provider.
+
+Install Helm locally if you want it:
+
+<Tabs groupId="os">
+<TabItem value="macos" label="macOS" default>
+
+```bash
+brew install helm
+```
+
+</TabItem>
+<TabItem value="linux" label="Linux">
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+```powershell
+winget install Helm.Helm
+```
+
+</TabItem>
+</Tabs>
+
+## Helm in two minutes
+
+| Term | Meaning |
+| --- | --- |
+| **Chart** | A package of Kubernetes manifest templates, for example `grafana/grafana` |
+| **Repository** | A place charts are downloaded from, added with `helm repo add`. Charts can also come from OCI registries (`oci://...`) |
+| **Values** | The settings of a chart, given with `--set key=value` or a `values.yaml` file (`-f values.yaml`) |
+| **Release** | One installed copy of a chart in a namespace, with a name you choose. You can install the same chart several times under different names |
+
+The commands you use most:
+
+```bash
+helm repo add <name> <url>        # add a chart repository
+helm search repo <keyword>        # find charts
+helm show values <chart>          # see every setting a chart accepts
+helm upgrade --install <release> <chart> -n <namespace> --create-namespace -f values.yaml
+helm list -A                      # installed releases
+helm history <release> -n <namespace>
+helm rollback <release> <revision> -n <namespace>
+helm uninstall <release> -n <namespace>
+```
+
+`helm upgrade --install` installs a release if it doesn't exist and upgrades it if it does, so the same command works for the first deploy and every update.
+
+## Install your first chart
+
+This installs [podinfo](https://github.com/stefanprodan/podinfo), a small demo web app, into the `demo` namespace.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Kubernetes** in the sidebar and click the cluster's name to open its terminal.
+2. Run:
+
+```bash
+helm repo add podinfo https://stefanprodan.github.io/podinfo
+helm upgrade --install podinfo podinfo/podinfo -n demo --create-namespace --set replicaCount=2
+```
+
+```text title="Output"
+"podinfo" has been added to your repositories
+Release "podinfo" does not exist. Installing it now.
+NAME: podinfo
+LAST DEPLOYED: Mon Oct 19 10:12:31 2026
+NAMESPACE: demo
+STATUS: deployed
+REVISION: 1
+```
+
+The terminal's files, including Helm's repository list, are temporary. After the terminal restarts, run `helm repo add` again before installing from that repository.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+With Helm installed locally and the cluster's context selected:
+
+```bash
+helm repo add podinfo https://stefanprodan.github.io/podinfo
+helm repo update
+helm upgrade --install podinfo podinfo/podinfo -n demo --create-namespace --set replicaCount=2
+```
+
+Or without a local Helm, through the cluster's terminal:
+
+```bash
+cloider cluster exec staging "helm repo add podinfo https://stefanprodan.github.io/podinfo && helm upgrade --install podinfo podinfo/podinfo -n demo --create-namespace --set replicaCount=2"
+```
+
+To pass a values file through `exec`, send it on stdin and read it with `-f -`:
+
+```bash
+cloider cluster exec -i staging -- sh -c 'helm repo add podinfo https://stefanprodan.github.io/podinfo >/dev/null && helm upgrade --install podinfo podinfo/podinfo -n demo --create-namespace -f -' < values.yaml
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Use the `helm` provider with the cluster's `kube_config`. The `helm` provider 3.x takes `kubernetes` as an attribute:
+
+```hcl title="main.tf"
+terraform {
+  required_providers {
+    cloider = { source = "cloider/cloider" }
+    helm    = { source = "hashicorp/helm" }
+  }
+}
+
+data "cloider_cluster" "staging" {
+  name = "staging"
+}
+
+provider "helm" {
+  kubernetes = {
+    host                   = data.cloider_cluster.staging.kube_config.host
+    cluster_ca_certificate = data.cloider_cluster.staging.kube_config.cluster_ca_certificate
+    client_certificate     = data.cloider_cluster.staging.kube_config.client_certificate
+    client_key             = data.cloider_cluster.staging.kube_config.client_key
+  }
+}
+
+resource "helm_release" "podinfo" {
+  name             = "podinfo"
+  repository       = "https://stefanprodan.github.io/podinfo"
+  chart            = "podinfo"
+  namespace        = "demo"
+  create_namespace = true
+
+  set = [
+    { name = "replicaCount", value = "2" },
+  ]
+}
+```
+
+See [Kubernetes and Helm with Terraform](/terraform/guides/kubernetes-and-helm) for creating the cluster and the release in one configuration.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+The API has no Helm endpoint of its own. Run Helm through the cluster's exec endpoint, which streams the output back as server-sent events:
+
+```bash
+curl -N -X POST https://cloider.com/api/clusters/x8f2kq/exec \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"command": ["sh", "-c", "helm repo add podinfo https://stefanprodan.github.io/podinfo && helm upgrade --install podinfo podinfo/podinfo -n demo --create-namespace"], "timeout": 600}'
+```
+
+See [Web terminal and exec](/kubernetes/web-terminal-and-exec) for the event format.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Install the podinfo Helm chart from https://stefanprodan.github.io/podinfo into the demo namespace of the staging cluster, with 2 replicas.
+```
+
+It calls `cluster_exec`:
+
+```json title="Tool call: cluster_exec"
+{"cluster": "staging", "command": "helm repo add podinfo https://stefanprodan.github.io/podinfo && helm upgrade --install podinfo podinfo/podinfo -n demo --create-namespace --set replicaCount=2"}
+```
+
+</TabItem>
+</Tabs>
+
+Check the release and its pods:
+
+```bash
+helm list -n demo
+kubectl get pods -n demo
+```
+
+```text title="Output"
+NAME     NAMESPACE  REVISION  UPDATED                                 STATUS    CHART           APP VERSION
+podinfo  demo       1         2026-10-19 10:12:31.511 +0000 UTC       deployed  podinfo-6.7.0   6.7.0
+
+NAME                       READY   STATUS    RESTARTS   AGE
+podinfo-7f9c6b8d9b-k2l8m   1/1     Running   0          30s
+podinfo-7f9c6b8d9b-x4w9q   1/1     Running   0          30s
+```
+
+## Configure a chart with a values file
+
+Most charts take dozens of settings. List them with `helm show values`, copy what you want to change into your own file, and keep that file in git:
+
+```bash
+helm show values podinfo/podinfo > podinfo-defaults.yaml
+```
+
+```yaml title="values.yaml"
+replicaCount: 2
+
+ui:
+  message: "Hello from Cloider"
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+# Cloider doesn't serve Ingress objects; route a domain to the Service with a target instead
+ingress:
+  enabled: false
+```
+
+```bash
+helm upgrade --install podinfo podinfo/podinfo -n demo --create-namespace -f values.yaml
+```
+
+Three settings deserve a look in every chart you install on Cloider:
+
+1. **Resources.** Each running container is billed on the larger of its request and its use. Charts often ship with no requests (billed on use) or with generous ones (billed on the request). Set `resources` to what the app really needs. See [How is a cluster billed?](/kubernetes/overview#how-is-a-cluster-billed).
+2. **Ingress.** Ingress objects inside a Cloider cluster aren't served. Leave the chart's ingress disabled and publish the chart's Service with a [target](/kubernetes/expose-services), which also gives you HTTPS.
+3. **Service type and persistence.** A chart that sets `service.type: LoadBalancer` gets a public IP that is billed per load balancer ([Load balancers](/kubernetes/load-balancers)). A chart with `persistence.enabled: true` creates PersistentVolumeClaims that are billed per GiB of their size ([Persistent volumes](/kubernetes/persistent-volumes)).
+
+## Example: Grafana with persistent storage, on your domain
+
+[Grafana](https://grafana.com/) dashboards, with its data on a 5 GiB volume and served at `https://grafana.example.com`.
+
+```yaml title="grafana-values.yaml"
+persistence:
+  enabled: true
+  size: 5Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+```
+
+```bash
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+helm upgrade --install grafana grafana/grafana -n monitoring --create-namespace -f grafana-values.yaml
+kubectl rollout status deployment/grafana -n monitoring
+```
+
+Get the generated admin password:
+
+```bash
+kubectl get secret grafana -n monitoring -o jsonpath='{.data.admin-password}' | base64 -d; echo
+```
+
+Route your domain to the `grafana` Service (the domain must already be in your account, see [Add a custom domain](/domains/add-a-custom-domain)):
+
+```bash
+cloider target create grafana.example.com --cluster staging --service monitoring/grafana
+```
+
+Grafana now answers at `https://grafana.example.com`. Log in as `admin` with the password above. The chart's 5 GiB claim is billed as 5 GiB of volume for as long as it exists, including after `helm uninstall` if the chart leaves it behind (see below).
+
+## Upgrade, roll back and uninstall
+
+```bash
+# Change a value and upgrade
+helm upgrade podinfo podinfo/podinfo -n demo -f values.yaml --set replicaCount=3
+
+# Upgrade to a newer chart version
+helm repo update
+helm upgrade podinfo podinfo/podinfo -n demo -f values.yaml --version 6.7.1
+
+# See what changed between revisions and go back
+helm history podinfo -n demo
+helm rollback podinfo 1 -n demo
+
+# Remove the release
+helm uninstall podinfo -n demo
+```
+
+`helm uninstall` removes what the chart created, except objects the chart marks to keep. Many charts keep PersistentVolumeClaims so your data survives a reinstall; those claims keep being billed until you delete them:
+
+```bash
+kubectl get pvc -n monitoring
+kubectl delete pvc <claim-name> -n monitoring
+```
+
+Deleting the namespace removes everything left in it:
+
+```bash
+kubectl delete namespace demo
+```
+
+## Charts with CRDs and operators
+
+Some charts install CustomResourceDefinitions (CRDs) and an operator that manages them, such as database or certificate operators. You install them with Helm the usual way; your kubeconfig is cluster admin, so Helm can create cluster-wide objects. Keep in mind that:
+
+- the operator's own pods run in your cluster and are billed like any other pods,
+- an operator that creates `Ingress` objects won't make anything public, since Ingress isn't served; use a [target](/kubernetes/expose-services) for HTTP,
+- charts built to manage nodes or cluster networking (for example node provisioners or CNI plugins) are meant for self-managed clusters. On Cloider the nodes and the network are managed for you. See [Limits and compatibility](/kubernetes/limits-and-compatibility).
+
+## Troubleshooting
+
+**`Error: INSTALLATION FAILED: cannot re-use a name that is still in use`**: a release of that name already exists in the namespace. Use `helm upgrade --install` instead of `helm install`, or pick another release name.
+
+**`Error: INSTALLATION FAILED: ... context deadline exceeded`** with `--wait`: the chart's pods didn't become ready in time. Run `kubectl get pods -n <namespace>` and `kubectl describe pod` to see why, typically an image pull error, a pending PersistentVolumeClaim or a failing probe.
+
+**`Error: repo ... not found`** in the browser terminal: the terminal restarted and forgot its repositories. Run `helm repo add` again.
+
+**The chart's Ingress doesn't work**: Ingress isn't served on Cloider. Disable it in the values and create a [target](/kubernetes/expose-services) for the chart's Service.
+
+**The chart's LoadBalancer Service stays `<pending>`**: see [Load balancers](/kubernetes/load-balancers#troubleshooting).
+
+More cases are in [Kubernetes troubleshooting](/kubernetes/troubleshooting).
+
+## Next steps
+
+- [Expose services on a domain](/kubernetes/expose-services) for the charts you install.
+- [Persistent volumes](/kubernetes/persistent-volumes) for charts with persistence.
+- [WordPress on Kubernetes](/guides/wordpress-on-kubernetes), a complete guide.
+- [Kubernetes and Helm with Terraform](/terraform/guides/kubernetes-and-helm).
+
+<FAQ items={[
+  {q: 'Does Helm work on Cloider Kubernetes?', a: 'Yes. Helm 3 works on Cloider clusters like on any Kubernetes cluster. It is preinstalled in each cluster\'s browser terminal and in cloider cluster exec, and you can also run it locally with the cluster\'s kubeconfig or through Terraform\'s helm provider.'},
+  {q: 'Why does the Ingress of my Helm chart not work on Cloider?', a: 'Ingress objects inside a Cloider cluster are not served. Disable the chart\'s ingress in its values and route a domain to the chart\'s Service with a target, which also provides HTTPS.'},
+  {q: 'Are PersistentVolumeClaims deleted when I uninstall a Helm chart?', a: 'Not always. Many charts keep their PersistentVolumeClaims after helm uninstall so data survives a reinstall. They keep being billed per GiB until you delete them with kubectl delete pvc.'},
+  {q: 'Can I install operators and CRDs with Helm on Cloider?', a: 'Yes. The kubeconfig is cluster admin, so Helm can install CustomResourceDefinitions and operators. The operator pods are billed like any other pods.'},
+]} />

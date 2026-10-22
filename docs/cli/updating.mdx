@@ -1,0 +1,212 @@
+---
+title: Update the Cloider CLI and control automatic updates
+sidebar_label: Updating
+sidebar_position: 6
+description: How the cloider CLI updates itself once a day, how to update right away, check the status, turn automatic updates off, and update an install that needs sudo.
+keywords: [cloider update, cloider auto update, CLOIDER_AUTO_UPDATE, cloider update disable, cloider version, upgrade cloider cli]
+---
+
+The `cloider` CLI keeps itself up to date. Once a day, before a command runs, it checks for a new release and, if there is one, installs it and runs your command in the new version. You can update by hand at any time with `cloider update`, see what the updater did with `cloider update status`, and turn automatic updates off for good or per environment.
+
+## At a glance
+
+| You want to | Run |
+| --- | --- |
+| See the installed version | `cloider version` |
+| Update now | `cloider update` |
+| See the latest version and whether auto-update is on | `cloider update status` |
+| Stop automatic updates | `cloider update disable`, or `CLOIDER_AUTO_UPDATE=0` |
+| Turn them on again | `cloider update enable`, or `CLOIDER_AUTO_UPDATE=1` |
+| Update an install in a root owned directory | `sudo cloider update` |
+
+## How do automatic updates work?
+
+Before a command runs, the CLI checks whether its last update check was at least 24 hours ago. If it was:
+
+1. It reads the newest stable version number from the release server, giving up after 3 seconds so your command isn't held up.
+2. If that version is newer than the installed one, it downloads the archive for your system, checks its SHA-256 against the release's `checksums.txt`, and runs the new binary once (`cloider version`) to make sure it starts on your machine.
+3. It replaces the binary by renaming the new one into place, never by writing over the running file.
+4. It runs your command again in the new version, with the same arguments.
+
+On a terminal you see a short notice before your command's output:
+
+```text title="Output"
+✓ Updated cloider 0.5.0 → 0.6.0
+NAME         VERSION   STATUS   CREATED
+staging      1.34      Ready    2026-10-14 09:12
+```
+
+Rules that keep updates out of your way:
+
+- **Nothing ever fails because of an update.** If the check takes longer than 3 seconds, the download fails, or the checksum doesn't match, the command runs in the installed version. The error is kept and shown by `cloider update status`.
+- **Output stays clean.** Progress and the notice are only printed when stderr is a terminal, so piped output and `-o json` are unaffected. If an update happened off a terminal, the next command run in a terminal tells you once: `cloider was updated to 0.6.0 (from 0.5.0)`.
+- **No downgrades.** The CLI only ever installs a higher version. Prereleases (like `1.2.0-rc1`) are never installed automatically.
+- **One at a time.** A lock file in `~/.cloider` keeps two `cloider` processes from updating at once.
+- **Shell completion and the update commands** never trigger the automatic check, so pressing Tab stays instant.
+
+On Windows, a running `.exe` can't be replaced, so the updater moves the old binary aside as `cloider.exe.old` and puts the new one in its place. The `.old` file is removed by the next update.
+
+## Update right away
+
+`cloider update` looks for a new version now and installs it, showing a progress bar on a terminal:
+
+```bash
+cloider update
+```
+
+```text title="Output"
+✓ Updated cloider 0.5.0 → 0.6.0
+```
+
+If you already have the latest version:
+
+```text title="Output"
+✓ cloider 0.6.0 is the latest version
+```
+
+`cloider update` works even when automatic updates are turned off.
+
+Running the [install script](/cli/install) again also installs the latest version.
+
+## Check the update status
+
+`cloider update status` shows the installed version, the latest version the last check found, and whether automatic updates are on, with the reason:
+
+```bash
+cloider update status
+```
+
+```text title="Output"
+Version:      0.6.0
+Latest:       0.6.0 (checked 3h ago)
+Auto-update:  on
+```
+
+When automatic updates are off, it says why:
+
+```text title="Output"
+Version:      0.6.0
+Latest:       0.6.0 (checked 2d ago)
+Auto-update:  off (turned off with `cloider update disable`)
+```
+
+If the last check or install failed, a **Last error** line explains it. For scripts:
+
+```bash
+cloider update status -o json
+```
+
+```json title="Output"
+{
+  "version": "0.6.0",
+  "latest": "0.6.0",
+  "last_check": "2026-10-20T08:02:11.512+02:00",
+  "auto_update": true
+}
+```
+
+The JSON also has `reason` when something decided whether auto-update is on, and `error` after a failed check.
+
+## Turn automatic updates off or on
+
+To stop automatic updates on this machine, saved in `~/.cloider/config.json`:
+
+```bash
+cloider update disable
+```
+
+```text title="Output"
+✓ Auto-update is off, run `cloider update` to update by hand
+```
+
+To turn them back on:
+
+```bash
+cloider update enable
+```
+
+```text title="Output"
+✓ Auto-update is on
+```
+
+To decide per environment instead, set `CLOIDER_AUTO_UPDATE`. It wins over the saved setting:
+
+| Value | Effect |
+| --- | --- |
+| `CLOIDER_AUTO_UPDATE=0` or `false` | Automatic updates off |
+| `CLOIDER_AUTO_UPDATE=1` or `true` | Automatic updates on, also in CI |
+| Anything else | Ignored, with the warning `CLOIDER_AUTO_UPDATE=<value> is ignored, set it to 0 or 1` |
+
+```bash
+CLOIDER_AUTO_UPDATE=0 cloider cluster list
+```
+
+If the environment overrides what you just saved, `disable` and `enable` warn you, for example `It stays on while CLOIDER_AUTO_UPDATE=1 is set`.
+
+### Which rule wins?
+
+The CLI checks these in order and the first that applies decides:
+
+1. `CLOIDER_AUTO_UPDATE` set to `0`/`false` or `1`/`true`.
+2. `cloider update disable` saved in `config.json`.
+3. The `CI` environment variable is set: off.
+4. Otherwise: on.
+
+## Updates in CI
+
+Automatic updates are **off by default in CI**: when the `CI` environment variable is set (GitHub Actions, GitLab CI, CircleCI, Buildkite and most others set it), the CLI doesn't update itself in the middle of a job. A pipeline installs a fresh CLI each run anyway; pin it with `CLOIDER_VERSION` for repeatable builds. See [Install in CI and Docker](/cli/install#install-in-ci-and-docker).
+
+To allow updates in CI anyway, set `CLOIDER_AUTO_UPDATE=1`.
+
+## Updating an install that needs sudo
+
+If the CLI's directory isn't writable by you, for example `/usr/local/bin` after installing with `sudo`, the CLI can't replace itself. It then tells you once per version that a new one is out:
+
+```text
+! cloider 0.6.0 is out, but /usr/local/bin isn't writable by you. Update with: sudo cloider update
+```
+
+Run the command it suggests:
+
+```bash
+sudo cloider update
+```
+
+To avoid this, install into a directory you own, such as `~/.local/bin`. See [Install](/cli/install#install-script-options).
+
+## Stay on a specific version
+
+To keep an older version, install it and turn automatic updates off:
+
+```bash
+curl -fsSL https://cloider.com/install.sh | CLOIDER_VERSION=0.5.0 sh
+cloider update disable
+```
+
+Since the CLI never downgrades, a problem in a new release is fixed by a newer release, which reaches every installed CLI within about a day.
+
+## Troubleshooting
+
+| Message | Cause and fix |
+| --- | --- |
+| `another cloider is updating already, try again in a minute` | Another `cloider` process is installing an update. Wait and retry. A lock older than 10 minutes is treated as stale and removed. |
+| `checksum mismatch for cloider_..., not installed` | The download was corrupted or altered. Nothing changed; try `cloider update` again. |
+| `the downloaded cloider X doesn't run, not installed` | The new binary didn't start on this machine, so it wasn't installed. Report it to [support](/account/support). |
+| `/usr/local/bin isn't writable by you, update with: sudo cloider update` | See [Updating an install that needs sudo](#updating-an-install-that-needs-sudo). |
+| `can't find the latest version: ...` | The release server couldn't be reached. Check your network or proxy. |
+| `Couldn't update to cloider X: ...` | An automatic update failed and your command ran in the installed version. `cloider update status` shows the error. |
+
+## Next steps
+
+- [Install](/cli/install): install script options and manual installs.
+- [Configuration](/cli/configuration): `config.json`, `update.json` and environment variables.
+- [Tooling commands](/cli/commands/tooling): `version`, `update` and `completion` reference.
+
+<FAQ items={[
+  {q: 'Does the Cloider CLI update itself?', a: 'Yes. Once a day, before a command runs, it checks for a new release. If there is one, it downloads it, verifies its SHA-256 checksum, checks that it starts, replaces the binary and runs your command in the new version.'},
+  {q: 'How do I update the Cloider CLI manually?', a: 'Run cloider update. It installs the latest version right away, even when automatic updates are turned off. Running the install script again also works.'},
+  {q: 'How do I turn off automatic updates?', a: 'Run cloider update disable, which is saved in ~/.cloider/config.json, or set CLOIDER_AUTO_UPDATE=0 in the environment. cloider update enable or CLOIDER_AUTO_UPDATE=1 turns them back on.'},
+  {q: 'Does the CLI update itself in CI?', a: 'No, not by default. When the CI environment variable is set, automatic updates are off. Set CLOIDER_AUTO_UPDATE=1 to allow them.'},
+  {q: 'Can an update break my command or my JSON output?', a: 'No. If the update check or install fails, the command runs in the installed version. Update notices are only printed to a terminal on stderr, never into piped output or -o json.'},
+  {q: 'Will the CLI ever downgrade?', a: 'No. It only installs versions newer than the installed one, and never installs prereleases automatically.'}
+]} />

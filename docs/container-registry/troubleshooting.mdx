@@ -1,0 +1,234 @@
+---
+title: Troubleshoot the Cloider container registry
+sidebar_label: Troubleshooting
+sidebar_position: 12
+description: "Fix common Cloider registry errors: unauthorized and denied on login or push, manifest unknown, immutable tags, quota, ImagePullBackOff and buildx."
+keywords: [docker login unauthorized, denied requested access to the resource is denied, manifest unknown, tag immutable push, imagepullbackoff private registry, registry quota exceeded, buildx attestation]
+---
+
+This page lists the errors people hit most with the [Cloider Container Registry](/container-registry/overview), what causes each one, and how to fix it. Errors are grouped by where you see them: logging in, pushing, pulling, Kubernetes, the dashboard and API, and the CLI.
+
+## Quick checks
+
+Most registry problems come down to one of these. Check them first:
+
+1. **Host**: the registry is `registry.cloider.com`, and image names are `registry.cloider.com/<project>/<repository>:<tag>`, all lowercase.
+2. **Username**: your account's **registry username** (shown on a project's **Overview** tab and with every token), not your email address.
+3. **Password**: a **registry token's secret**, not your Cloider password and not an API token (`cldr_...`).
+4. **Token scope**: the token covers the project in the image name (**All projects** or the project by name).
+5. **Token permission**: pushing needs **Pull & push**. **Pull only** tokens can't push or delete.
+6. **Token expiry**: the token isn't **Expired** and wasn't deleted.
+7. **One login per host**: docker keeps one login for `registry.cloider.com`. Logging in with another token replaces the first, so the last login wins.
+
+```bash
+# Which login does docker use for the registry?
+grep -A3 '"registry.cloider.com"' ~/.docker/config.json
+
+# Does the project exist, and is it Ready?
+cloider registry get acme
+
+# Which tokens exist, with their projects, permission and expiry?
+cloider registry token list
+```
+
+## Login errors
+
+### `unauthorized: authentication required` or `incorrect username or password` on `docker login`
+
+`docker login` fails when the username and secret don't match a valid token:
+
+- The **username** isn't your registry username. Copy it from the project's **Overview** tab (**Quick Start**) or from `cloider registry token list`.
+- The **secret** was mistyped or truncated. Secrets are long; paste them with `--password-stdin` rather than typing them.
+- The token was **deleted** or has **expired**. Create a new one.
+- You used an **API token** (`cldr_...`) or your account password. The registry only takes registry token secrets.
+
+The fastest fix on your own machine:
+
+```bash
+cloider registry login
+```
+
+### Username with `$` gets mangled
+
+Some older tokens log in with a username that contains `$`. In double quotes or unquoted, your shell expands `$...` as a variable. Copy the username from the token list and put it in single quotes:
+
+```bash
+docker login registry.cloider.com -u '<username>'
+```
+
+### `Error saving credentials: error storing credentials`
+
+Docker's credential helper (`credsStore` in `~/.docker/config.json`, such as `osxkeychain`, `desktop` or `pass`) failed. Unlock the keychain, fix the helper, or remove the `credsStore` line to store the login in the file.
+
+### `cloider registry login` errors
+
+| Error | Fix |
+| --- | --- |
+| `docker isn't on the PATH, log in with the command above` | The token was created and its `docker login` command printed. Run it by hand, or with `podman login` |
+| `docker login exited with code N` | Docker refused the login. The new token was deleted and your previous login is unchanged. Check that the Docker daemon is running |
+| `--expires-days is 0 for never, or 1 to 3650` | Use a value in that range |
+| `You have read-only access to this account, you can not create registry tokens!` | The CLI's API token is read-only or your role is **Restricted**. Log in with a token that can write, or ask an Owner or Admin for a registry token |
+| `Choose a project that is ready, or create one first` | The account has no project yet. Run `cloider registry create <name> --wait` |
+
+## Push errors
+
+### `denied: requested access to the resource is denied`
+
+The login works but the token may not push here:
+
+- The token is **Pull only**. Use a **Pull & push** token, or change the token's permission in the dashboard or with `cloider registry token update <token> --read-only=false`.
+- The token doesn't cover the project named in the image. Check the image name's second segment and the token's **Projects**.
+- The image name has a typo in the project, for example `registry.cloider.com/acem/api`. Pushing never creates a project; create projects first.
+
+### `unauthorized: unauthorized to access repository` on push or pull
+
+The client isn't logged in for this host, or the login is for a token that expired, was deleted, or doesn't cover the project. Run `docker login registry.cloider.com` again with a current token.
+
+### Push of an existing tag is refused as immutable
+
+The tag already exists and is protected by the project's **Immutable tags** setting or an immutability rule. Immutable tags can't be pushed over:
+
+- Push a new, unique tag (a version or commit SHA).
+- Or narrow the rule so moving tags like `latest`, `main` or `buildcache` stay mutable.
+
+See [Immutable tags](/container-registry/immutable-tags).
+
+### Push refused because of the storage quota
+
+A push that would take the project past its storage limit is refused, and `docker push` fails with a quota error. Check the project's storage:
+
+```bash
+cloider registry get acme
+```
+
+```text title="Output"
+Storage:       4.9 GiB of 5 GiB
+```
+
+Then delete images you don't need, set up a [retention policy](/container-registry/retention-policies), or raise the limit (up to 20 GB) in the project's **Settings** tab or with `cloider registry set acme --storage-limit 10`.
+
+### `name unknown` or `repository name must be lowercase`
+
+Repository names are lowercase, with `.`, `_`, `__`, `-` and `/` as separators. `registry.cloider.com/acme/MyApp` is invalid; use `registry.cloider.com/acme/my-app`.
+
+### Push hangs or retries on large layers
+
+Very large layers (several GB) are slow over poor connections. Use smaller images (multi-stage builds, slim bases) and push from CI close to a good network. Docker retries failed layer uploads automatically.
+
+## Pull errors
+
+### `manifest unknown` or `not found`
+
+The tag or digest doesn't exist in that repository:
+
+- Check the exact names: `cloider registry images acme api`.
+- The tag may have been removed, moved, or deleted by a retention run. Check the project's **Retention Runs**.
+- An untagged image may have been removed by the nightly cleanup.
+- For a multi-platform image, check that it was pushed (`docker buildx build --push`), not only built locally.
+
+### `no matching manifest for linux/amd64 in the manifest list entries`
+
+The image was built for another platform, often `linux/arm64` on an Apple silicon Mac. Rebuild with `--platform linux/amd64`, or build a multi-platform image with buildx. See [Build multi-platform images](/container-registry/push-and-pull-images#build-multi-platform-images-with-buildx).
+
+### `exec format error` when the container starts
+
+Same cause: the image's CPU architecture doesn't match the machine. Rebuild for the right platform.
+
+### Pulls from a public project ask for a login
+
+The project's **Public pulls** setting is off, or the image is in another, private project. Check **Access** on the project's **Overview** tab. If a stale or wrong login is stored for `registry.cloider.com`, it is used even for public pulls; run `docker logout registry.cloider.com`.
+
+## Kubernetes errors
+
+### `ImagePullBackOff` or `ErrImagePull`
+
+Read the events of the pod:
+
+```bash
+kubectl describe pod <pod> -n <namespace> | grep -A10 Events
+```
+
+| Event message | Fix |
+| --- | --- |
+| `unauthorized` or `authentication required` | The pull Secret is missing, is in another namespace, isn't listed in `imagePullSecrets`, or holds an expired or deleted token. Recreate it with `-n <namespace>` |
+| `denied` | The token in the Secret doesn't cover the project |
+| `manifest unknown` / `not found` | Wrong image name or tag |
+| `no match for platform in manifest` | Build the image for the nodes' platform |
+
+The pull secret command from the dashboard and the CLI has no namespace, so it creates the Secret in `default`. Add `-n <namespace>`. See [Use with Kubernetes](/container-registry/use-with-kubernetes) and [Pull private images](/kubernetes/pull-private-images).
+
+### Running pods are fine, new pods fail
+
+Pods that already pulled an image keep running, but new pods (scaling, a new node, a restart) pull again. If the token was deleted or expired since, new pulls fail. Create a new token and replace the Secret.
+
+## Dashboard and API errors
+
+| Message | Cause and fix |
+| --- | --- |
+| `This project name is already taken` | Project names are shared by every account. Choose another |
+| `Free plan users can not create more than one project. UPGRADE NOW!` | Upgrade on [Billing](/account/billing) |
+| `The project must be ready to browse its images.` | Wait until the project is **Ready**. A **Failed** project should be deleted and created again |
+| `Couldn't reach the registry, try again in a moment!` | A temporary problem. Retry |
+| `Couldn't read the project, try again in a moment!` | The live storage summary couldn't be read. Retry |
+| `A tag immutability rule protects this tag. Disable the rule in the Policy tab to delete it.` | See [Immutable tags](/container-registry/immutable-tags) |
+| `This image is in use by another image in the repository, delete that one first.` | The image belongs to a multi-platform index. Delete the index instead |
+| `It doesn't exist any more, reload and try again!` | It was deleted meanwhile. Reload |
+| `Another change to this project is in progress, try again in a moment!` | Two changes ran at once. Retry |
+| `This project holds your apps' images and is managed by Cloider...` | The apps project's images, policies and the project itself are managed by Cloider |
+| `This project's policies were changed outside the dashboard, contact support to edit them.` | Contact [support](/account/support) |
+| `You have read-only access to this account, ...` | Your role is **Restricted** or your API token is read-only |
+| `The container registry isn't available at the moment!` | Creating projects is temporarily unavailable. Try later or contact support |
+
+API errors come as JSON with HTTP status `400` (or `403`, `404`):
+
+```json
+{"errors": {"name": ["This project name is already taken"]}, "data": null}
+```
+
+Messages that aren't about one field are under `"_"`. See [API errors](/api/errors).
+
+## CLI exit codes
+
+| Exit code | Meaning |
+| --- | --- |
+| `1` | Error |
+| `2` | Usage error, for example a missing `--yes` without a terminal |
+| `3` | Not logged in, or the API token was revoked. Run `cloider login` |
+| `4` | Not found, for example a project, token, image or rule that doesn't exist |
+| `5` | Forbidden, a read-only API token |
+
+`cloider --debug ...` logs every API request to stderr (never the token). See [Output and scripting](/cli/output-and-scripting).
+
+## buildx and multi-platform images
+
+### Extra `unknown/unknown` entries
+
+buildx adds provenance attestations to multi-platform images as manifests with the platform `unknown/unknown`. They aren't runnable images, so the dashboard and the CLI leave them out of the **Platforms** column. Build with `--provenance=false` if you don't want them.
+
+### A platform image can't be deleted
+
+The images that make up a multi-platform index can't be deleted while the index points to them: `This image is in use by another image in the repository, delete that one first.` Delete the index entry, which lists all platforms.
+
+### Builds are slow on CI
+
+Building arm64 on an amd64 runner uses QEMU emulation, which is slow. Build only the platforms you run, use native runners per platform, or cache layers in the registry with `--cache-to type=registry,...,mode=max`.
+
+## Rate limits
+
+Pushing base images you use often (for example `node`, `python` or `nginx`) into your own project means your builds and clusters pull them from `registry.cloider.com` instead of Docker Hub, and so aren't subject to Docker Hub's pull rate limits:
+
+```bash
+skopeo copy --all docker://docker.io/library/node:22-alpine docker://registry.cloider.com/acme/node:22-alpine
+```
+
+Calls to the Cloider API from the dashboard, CLI, Terraform and MCP have their own limits; see [API rate limits](/api/rate-limits).
+
+## Still stuck?
+
+Open a [support request](/account/support) with the project name, the full image name, the exact command and its output. Never include a token's secret.
+
+## Next steps
+
+- [Push and pull images](/container-registry/push-and-pull-images).
+- [Registry tokens](/container-registry/tokens).
+- [Troubleshooting across Cloider](/reference/troubleshooting).

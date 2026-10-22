@@ -1,0 +1,418 @@
+---
+title: Authenticate to the Cloider API
+sidebar_label: Authentication
+sidebar_position: 2
+description: Authenticate Cloider API requests with a Bearer API token, choose Read or Read & Write access, see which endpoints are dashboard only, and revoke a token.
+keywords: [cloider api token, bearer token, cldr_, api authentication, read only token, revoke api token, cloider authorization header]
+---
+
+Every Cloider API request, except the public price list, is authenticated with an **API token** sent as a Bearer token in the `Authorization` header. A token acts as the member who created it, inside one account, with either Read or Read & Write access. This page explains how tokens work, what each access level can call, which endpoints are reserved for the dashboard, and how to use and revoke a token from curl, JavaScript, Python and Go.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Header** | `Authorization: Bearer cldr_...` |
+| **Format** | `cldr_` followed by 40 letters and digits |
+| **Where tokens are created** | The dashboard only: **Access Control**, **API Tokens** tab, or `cloider login` in the browser |
+| **Access levels** | **Read** (only `GET` requests) or **Read & Write** |
+| **Scope** | One account. Use one token per account you work in |
+| **Expiry** | None. A token works until it is deleted, or until its creator loses access to the account |
+| **Limit** | Up to 50 API tokens per account |
+| **Revoke from code** | `DELETE /api-tokens/current` revokes the token that sends it |
+
+## How API tokens work
+
+An API token is a long random secret that stands for a member of an account. A request made with a token is handled exactly as if the member who created it had done the same thing in the dashboard, in the account the token was created in. The same permission checks apply.
+
+Four things follow from that:
+
+- **A token is tied to one account.** If you belong to several accounts (your own and your company's, for example), create a token in each one. A token can't switch accounts.
+- **A token never has more access than its creator.** The creator's role is looked up on every request. If the creator is removed from the account or deactivated, the token stops working at once. If they are made `Restricted`, the token becomes read only.
+- **A token is shown only once.** You see it when it is created, and Cloider can't show it to you again. If you lose it, create a new one and delete the old one.
+- **The token's `last_used_at` is updated as you use it**, to the minute, so you can spot tokens nobody uses any more.
+
+The token format, `cldr_` and 40 random letters and digits, has a fixed prefix so that secret scanners (such as GitHub secret scanning or a pre-commit hook) can recognise a leaked Cloider token.
+
+## Create a token
+
+API tokens are created in the dashboard, never through the API, so that a token that leaks can't be used to create more tokens.
+
+1. Open **Access Control** in the dashboard sidebar.
+2. Go to the **API Tokens** tab and create a token.
+3. Give it a description that says where it is used, for example `GitHub Actions deploy`. The description is required and can be up to 100 characters.
+4. Choose **Read** or **Read & Write**.
+5. Copy the token. It is shown only this once.
+
+[API tokens](/account/api-tokens) shows each step with screenshots. Running `cloider login` also creates a token for you: the CLI opens a page where you pick the account and the access level, and saves the token on your machine. See [CLI authentication](/cli/authentication).
+
+## Send the token
+
+Put the token in the `Authorization` header with the `Bearer` scheme on every request. Keep it in an environment variable or a secret store, never in source code.
+
+```bash
+export CLOIDER_TOKEN=cldr_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+<Tabs groupId="lang" queryString>
+<TabItem value="curl" label="curl" default>
+
+```bash
+curl https://cloider.com/api/databases \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+A write request also sends a JSON body:
+
+```bash
+curl -X POST https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cluster_name": "staging"}'
+```
+
+</TabItem>
+<TabItem value="javascript" label="JavaScript">
+
+A small wrapper keeps the header and error handling in one place. This works in Node.js 18 and later, Deno and Bun, which all have `fetch` built in.
+
+```js title="cloider.mjs"
+const BASE = 'https://cloider.com/api';
+const TOKEN = process.env.CLOIDER_TOKEN;
+
+export async function cloider(method, path, body) {
+  const res = await fetch(BASE + path, {
+    method,
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await res.text();
+  const type = res.headers.get('content-type') || '';
+  const data = type.includes('application/json') && text ? JSON.parse(text) : text;
+
+  if (!res.ok) {
+    const err = new Error(`${method} ${path} failed with ${res.status}`);
+    err.status = res.status;
+    err.errors = data?.errors ?? { _: [String(data)] };
+    throw err;
+  }
+  return data;
+}
+
+// Usage
+const databases = await cloider('GET', '/databases');
+console.log(databases.map((d) => `${d.database_label} ${d.status}`));
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+A `requests.Session` sends the header with every request.
+
+```python title="cloider.py"
+import os
+import requests
+
+session = requests.Session()
+session.headers["Authorization"] = f"Bearer {os.environ['CLOIDER_TOKEN']}"
+
+BASE = "https://cloider.com/api"
+
+
+def cloider(method, path, json=None):
+    res = session.request(method, BASE + path, json=json, timeout=60)
+    if not res.ok:
+        try:
+            errors = res.json()["errors"]
+        except (ValueError, KeyError):
+            errors = {"_": [res.text or res.reason]}
+        raise RuntimeError(f"{method} {path} failed with {res.status_code}: {errors}")
+    if res.headers.get("Content-Type", "").startswith("application/json"):
+        return res.json()
+    return res.text
+
+
+# Usage
+for db in cloider("GET", "/databases"):
+    print(db["database_label"], db["status"])
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```go title="cloider.go"
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"time"
+)
+
+type Client struct {
+	BaseURL string
+	Token   string
+	HTTP    *http.Client
+}
+
+// APIError is the API's error body: messages per field, general ones under "_".
+type APIError struct {
+	Status int
+	Errors map[string][]string `json:"errors"`
+}
+
+func (e *APIError) Error() string { return fmt.Sprintf("%d: %v", e.Status, e.Errors) }
+
+func (c *Client) Do(method, path string, body, out any) error {
+	var reader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequest(method, c.BaseURL+path, reader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	data, _ := io.ReadAll(res.Body)
+
+	if res.StatusCode >= 300 {
+		apiErr := &APIError{Status: res.StatusCode}
+		if json.Unmarshal(data, apiErr) != nil || len(apiErr.Errors) == 0 {
+			apiErr.Errors = map[string][]string{"_": {string(data)}}
+		}
+		return apiErr
+	}
+	if out == nil || len(data) == 0 {
+		return nil
+	}
+	return json.Unmarshal(data, out)
+}
+
+func main() {
+	c := &Client{
+		BaseURL: "https://cloider.com/api",
+		Token:   os.Getenv("CLOIDER_TOKEN"),
+		HTTP:    &http.Client{Timeout: time.Minute},
+	}
+
+	var databases []struct {
+		Label  string `json:"database_label"`
+		Status string `json:"status"`
+	}
+	if err := c.Do("GET", "/databases", nil, &databases); err != nil {
+		log.Fatal(err)
+	}
+	for _, d := range databases {
+		fmt.Println(d.Label, d.Status)
+	}
+}
+```
+
+</TabItem>
+</Tabs>
+
+The scheme is case sensitive: send `Bearer` with a capital B followed by one space. A request without that prefix isn't read as a token request.
+
+## Check who a token acts as
+
+`GET /whoami` answers with the token's creator (`user`), the account it works in (`account`), the role it has there (`role`) and the token itself (`token`, without the secret). Use it in scripts to fail early with a clear message when the wrong token is configured.
+
+```bash
+curl -s https://cloider.com/api/whoami \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" | jq '{account: .account.email, role, read_only: .token.read_only}'
+```
+
+```json title="Output"
+{
+  "account": "ops@example.com",
+  "role": "Admin",
+  "read_only": false
+}
+```
+
+A read only token reports the role `Restricted`, whatever the creator's own role is. [Account endpoints](/api/endpoints/account#get-who-the-token-acts-as) documents the full response.
+
+## Read and Read & Write tokens
+
+Every token has one of two access levels, chosen when it is created and changeable later in the dashboard.
+
+| Access level | `read_only` | Can call |
+| --- | --- | --- |
+| **Read** | `true` | Every `GET` endpoint a token may use, except the terminals. Plus `DELETE /api-tokens/current` to revoke itself |
+| **Read & Write** | `false` | Everything a token may use, within the creator's role |
+
+### What a read only token can't do
+
+Cloider refuses every request from a read only token whose method isn't `GET` or `HEAD`, before the request reaches the endpoint, with `403 Forbidden`:
+
+```json title="Response (403)"
+{"errors": {"_": ["This API token is read only!"]}, "data": null}
+```
+
+That covers creating, changing, pausing, resuming, restoring and deleting anything, uploading files, starting builds and running `exec` commands, since all of those are `POST`, `PUT` or `DELETE`. The web terminal endpoints are `GET` requests but open an interactive shell, so they also refuse a read only token:
+
+```json title="Response (403)"
+{"errors": {"_": ["Terminals need a Read & Write API token!"]}, "data": null}
+```
+
+### Read tokens can still read secrets
+
+A read only token can't change anything, but it can read everything a `GET` endpoint returns, and some of those are credentials:
+
+- `GET /clusters/:hashed_id/kubeconfig`, the cluster's admin kubeconfig.
+- `GET /database/password?id=...`, a database's password.
+- `GET /apps/:hashed_id/env/value` and the build equivalents, the value of a secret variable.
+- `GET /apps/:hashed_id/logs/stream`, whatever the app prints, which can include secrets.
+
+Treat a read only token as a secret just like a Read & Write one. "Read only" protects your resources from being changed, not your data from being seen.
+
+### Which role can create which token?
+
+| Creator's role | Read token | Read & Write token |
+| --- | --- | --- |
+| Owner | Yes | Yes |
+| Admin | Yes | Yes |
+| Restricted | Yes | No |
+
+A Restricted member who tries to create or switch a token to Read & Write gets a `400` with the message `Read & Write needs write access to this account, Restricted members can only have Read tokens` on the `read_only` field. Owners and admins see and manage every token of the account; other members see only their own. [Accounts and roles](/concepts/accounts-and-roles) explains the roles.
+
+## Which endpoints are dashboard only?
+
+A few things can only be done by a person signed in to the dashboard. The API refuses them for every token, Read & Write included, with `403 Forbidden`:
+
+```json title="Response (403)"
+{"errors": {"_": ["This endpoint can't be used with an API token!"]}, "data": null}
+```
+
+| Dashboard only | Why |
+| --- | --- |
+| Inviting and removing members, changing a member's role, activating or deactivating a member | Who has access to the account is decided by a person, so a leaked token can't add members or promote anyone |
+| Creating, changing and deleting API tokens | A token can't create, upgrade or delete tokens, so a leaked token can't mint more |
+| Connecting GitHub, GitLab or Bitbucket | Connecting a git provider is an authorization that only a person in a browser can finish |
+
+Listing is still allowed: a token can call `GET /members` and `GET /api-tokens`, and it can [revoke itself](#revoke-a-token). Every endpoint in this reference works with a token.
+
+## Revoke a token
+
+There are two ways to revoke a token.
+
+**From the dashboard.** Open **Access Control**, **API Tokens**, and delete the token. This is the way to revoke a token you no longer have, or one that has leaked.
+
+**From the token itself.** `DELETE /api-tokens/current` deletes the token that sends the request. It works for read only tokens too, and it is how `cloider logout` signs out. It answers `204 No Content` with an empty body.
+
+<Tabs groupId="lang" queryString>
+<TabItem value="curl" label="curl" default>
+
+```bash
+curl -X DELETE https://cloider.com/api/api-tokens/current \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -w "%{http_code}\n"
+```
+
+```text title="Output"
+204
+```
+
+</TabItem>
+<TabItem value="javascript" label="JavaScript">
+
+```js
+const res = await fetch('https://cloider.com/api/api-tokens/current', {
+  method: 'DELETE',
+  headers: { Authorization: `Bearer ${process.env.CLOIDER_TOKEN}` },
+});
+console.log(res.status); // 204
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python
+import os
+import requests
+
+res = requests.delete(
+    "https://cloider.com/api/api-tokens/current",
+    headers={"Authorization": f"Bearer {os.environ['CLOIDER_TOKEN']}"},
+    timeout=30,
+)
+print(res.status_code)  # 204
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```go
+req, _ := http.NewRequest("DELETE", "https://cloider.com/api/api-tokens/current", nil)
+req.Header.Set("Authorization", "Bearer "+os.Getenv("CLOIDER_TOKEN"))
+
+res, err := http.DefaultClient.Do(req)
+if err != nil {
+	log.Fatal(err)
+}
+res.Body.Close()
+fmt.Println(res.StatusCode) // 204
+```
+
+</TabItem>
+</Tabs>
+
+After that, the same token gets `401` with `Invalid or revoked API token!`. Revoking a temporary token at the end of a CI job is a good habit when the job created it for that run only.
+
+Revocation takes effect on the next request. A request already in progress, such as an open log stream, isn't cut off.
+
+## Authentication errors
+
+| Status | Message (`errors._`) | Cause | Fix |
+| --- | --- | --- | --- |
+| `401` | `Login required!` | No `Authorization: Bearer ...` header | Send the header on every request |
+| `401` | `Invalid or revoked API token!` | The token is mistyped, deleted, or its creator lost access to the account | Check the value, or create a new token |
+| `403` | `This API token is read only!` | A read only token sent a `POST`, `PUT` or `DELETE` | Use a Read & Write token |
+| `403` | `Terminals need a Read & Write API token!` | A read only token asked for a terminal | Use a Read & Write token |
+| `403` | `This endpoint can't be used with an API token!` | The action is dashboard only | Do it in the dashboard |
+| `400` | `Read & Write needs write access to this account, ...` | A Restricted member asked for a Read & Write token | Ask an owner or admin for a role with write access |
+
+A token that was valid can start failing with `401` for reasons outside the token: its creator was removed from the account or deactivated. Members who leave a team should hand their automation over to tokens that other members create. See [Errors](/api/errors) for every other status code.
+
+## Keep tokens safe
+
+- **One token per use.** Give each script, CI pipeline and machine its own token with a description that names it. Revoking one then doesn't break the others, and `last_used_at` tells you which ones are still in use.
+- **Read when you can.** Monitoring, dashboards and reporting only need a Read token.
+- **Store tokens as secrets**: GitHub Actions secrets, GitLab CI variables marked masked, a vault, or a file with `chmod 600`. Never commit them.
+- **Don't put tokens in URLs.** Tokens belong in the `Authorization` header, which proxies and servers don't log the way they log URLs.
+- **Rotate after people leave.** Tokens act as their creator, so a removed member's tokens stop working. Create replacements before you remove someone whose tokens run production jobs.
+- **If a token leaks**, delete it in the dashboard right away, then check the resources it could reach.
+
+## Frequently asked questions
+
+<FAQ items={[
+  {q: 'How do I get a Cloider API token?', a: 'Open Access Control in the dashboard, go to the API Tokens tab and create a token with a description and an access level, Read or Read & Write. Copy it right away, it is shown only once. cloider login creates one for the CLI through the browser.'},
+  {q: 'Do Cloider API tokens expire?', a: 'No. A token works until you delete it, or until the member who created it is removed from the account or deactivated. If the creator becomes Restricted, the token becomes read only.'},
+  {q: 'Can I create API tokens with the API?', a: 'No. Creating, changing and deleting API tokens is dashboard only, so a leaked token cannot create more tokens. A token can list tokens and revoke itself with DELETE /api-tokens/current.'},
+  {q: 'Can one token manage several accounts?', a: 'No. A token belongs to the account it was created in. Create one token in each account you want to automate, and pick the right one per request.'},
+  {q: 'What can a read only token do?', a: 'It can call every GET endpoint except the web terminals, and revoke itself. Every POST, PUT and DELETE answers 403 This API token is read only!. Note that GET endpoints include secrets such as kubeconfigs, database passwords and secret variable values.'},
+  {q: 'Why do I get 401 Invalid or revoked API token?', a: 'The token is mistyped, was deleted, or its creator no longer has access to the account. Make sure the header is exactly Authorization: Bearer followed by the full cldr_ token, and create a new token if it was revoked.'},
+]} />

@@ -1,0 +1,630 @@
+---
+title: cloider app command reference
+sidebar_label: app
+sidebar_position: 6
+description: Reference for cloider app, to create, inspect, pause, update and delete apps, stream logs, manage environment variables, build args and builds, and run commands inside an app.
+keywords: [cloider app, cloider app logs, cloider app env, cloider app exec, cloider app create, app engine cli, environment variables cli, build logs]
+---
+
+`cloider app` manages your [App Engine apps](/apps/overview): it lists and shows apps, creates them from a git repository, opens them in the browser, pauses, resumes, updates and deletes them, streams their logs, reads and changes their environment variables, build arguments and build variables, follows and retries builds, changes git settings, and opens a shell or runs commands inside the running container.
+
+```text
+cloider app <command> [flags]
+```
+
+**Alias:** `cloider apps`. Apps are named by their name (label) or id. To deploy a directory from your computer, use [`cloider deploy`](/cli/commands/deploy), which is also available as `cloider app deploy`.
+
+## Subcommands
+
+| Command | Description |
+| --- | --- |
+| [`cloider app list`](#cloider-app-list) | List apps |
+| [`cloider app get`](#cloider-app-get) | Show an app |
+| [`cloider app create`](#cloider-app-create) | Create an app from a git repository (use `cloider deploy` for a directory) |
+| [`cloider app deploy`](/cli/commands/deploy) | Deploy a directory as an app, creating the app the first time (same as `cloider deploy`) |
+| [`cloider app open`](#cloider-app-open) | Open the app's URL in the browser |
+| [`cloider app status`](#cloider-app-status) | Print the app's status |
+| [`cloider app usage`](#cloider-app-usage) | Show the app's usage and cost this month |
+| [`cloider app pause`](#cloider-app-pause) | Stop the app serving, keeping its environment and image |
+| [`cloider app resume`](#cloider-app-resume) | Start a paused app again |
+| [`cloider app delete`](#cloider-app-delete) | Delete an app |
+| [`cloider app update`](#cloider-app-update) | Change the app's port or start command |
+| [`cloider app link`](#cloider-app-link) | Link a directory to an app, so `cloider deploy` there deploys to it |
+| [`cloider app logs`](#cloider-app-logs) | Print the app's logs, `-f` to follow them |
+| [`cloider app env`](#cloider-app-env) | Read and change the app's environment variables |
+| [`cloider app build-args`](#cloider-app-build-args) | Read and change the build args the app's Dockerfile is built with |
+| [`cloider app build-env`](#cloider-app-build-env) | Read and change the variables a buildpack build runs with |
+| [`cloider app builds`](#cloider-app-builds) | List the app's builds, newest first |
+| [`cloider app build logs`](#cloider-app-build-logs) | Print a build's output, following it while it runs |
+| [`cloider app build retry`](#cloider-app-build-retry) | Run a failed build again |
+| [`cloider app git`](#cloider-app-git) | Change the branch a git app deploys from, or its auto deploy |
+| [`cloider app shell`](#cloider-app-shell) | Open a shell inside the app's container |
+| [`cloider app exec`](#cloider-app-exec) | Run a command in the app's container, for scripts and AI agents |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## cloider app list
+
+List the account's apps with their status, the version they serve and their URL.
+
+```text
+cloider app list [flags]
+```
+
+**Alias:** `cloider app ls`.
+
+```bash
+cloider app list
+```
+
+```text title="Output"
+NAME   STATUS   VERSION   URL                             CREATED
+blog   Ready    7         https://blog-k3m9.cloider.app   2026-09-14 10:02
+api    Ready    23        https://api-x2p7.cloider.app    2026-08-30 16:45
+web    Paused   4         https://web-q1r8.cloider.app    2026-10-03 12:20
+```
+
+**VERSION** is the build the app serves, and **URL** is empty (`-`) until the app has deployed its first version. `-o wide` adds the **ID** column and `-q` prints ids. MCP tool: `list_apps`.
+
+## cloider app get
+
+Show one app: status, URL, version, what was detected, port, start command, domains and source.
+
+```text
+cloider app get <app> [flags]
+```
+
+**Alias:** `cloider app show`.
+
+```bash
+cloider app get api
+```
+
+```text title="Output"
+Name:           api
+Status:         Ready
+URL:            https://api-x2p7.cloider.app
+Version:        23
+Detected:       Go
+Port:           8080
+Start command:  -
+Domains:        api-x2p7.cloider.app, api.example.com
+Source:         acme/api@main (github)
+Auto deploy:    yes
+Created:        2026-08-30 16:45
+```
+
+**Source** is `<owner/repo>@<branch> (<provider>)` for a git app, or the uploaded archive and its size for an app deployed from your computer. **Auto deploy** only appears for git apps. `-o json` prints the app object (`hashed_id`, `app_name`, `app_label`, `port`, `start_command`, `status`, `language`, `framework`, `version`, `url`, `domains`, `repo_full_name`, `repo_branch`, `git_provider`, `auto_deploy` and more). MCP tool: `get_app`.
+
+## cloider app create
+
+Create an app that deploys from a git repository. The repository must be reachable through a connected GitHub, GitLab or Bitbucket account, see [`cloider git connect`](/cli/commands/git#cloider-git-connect). Like the first `cloider deploy`, it detects the language, framework and port, claims a free subdomain, creates the app and follows its first build until the app is up.
+
+```text
+cloider app create --git <provider> --repo <owner/repo> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--git` | string | (required) | Git provider: `github`, `gitlab` or `bitbucket` |
+| `--repo` | string | (required) | Repository, for example `acme/api` |
+| `--branch` | string | the repository's default | Branch to deploy |
+| `--installation` | string | the only one | Connected account to import through, by id or account name, when several are connected |
+| `--name` | string | detected, else the repository name | App name |
+| `--port` | int | detected, else `8080` | Port the app listens on |
+| `--start-command` | string | detected | Command to start the app with |
+| `--subdomain` | string | `<name>-<random>` | Free subdomain to serve the app on, a label (`api`) or a full name (`api.cloider.app`) |
+| `--no-subdomain` | bool | `false` | Don't claim a free subdomain. Can't be combined with `--subdomain` |
+| `-e, --env` | string, repeatable | | Environment variable `KEY=VALUE` |
+| `--secret-env` | string, repeatable | | Secret environment variable `KEY=VALUE` |
+| `--env-file` | string | | Read environment variables from a `.env` file |
+| `--build-arg` | string, repeatable | | Dockerfile build arg `KEY=VALUE` |
+| `--secret-build-arg` | string, repeatable | | Dockerfile build secret `KEY=VALUE`, for `RUN --mount=type=secret,id=KEY` |
+| `--build-arg-file` | string | | Read Dockerfile build args from a `.env` file |
+| `--build-env` | string, repeatable | | Buildpack build variable `KEY=VALUE` |
+| `--secret-build-env` | string, repeatable | | Secret buildpack build variable `KEY=VALUE` |
+| `--build-env-file` | string | | Read buildpack build variables from a `.env` file |
+| `-d, --detach` | bool | `false` | Don't wait for the build |
+
+```bash
+cloider app create --git github --repo acme/api
+```
+
+```text title="Output"
+Detected Go
+✓ Created app api on port 8080
+...build output...
+✓ Deployed version 1 of api
+https://api-x2p7.cloider.app
+```
+
+```bash
+cloider app create --git gitlab --repo acme/web --branch main --name web --port 3000 \
+  --env NODE_ENV=production --secret-env DATABASE_URL="postgresql://..."
+```
+
+The variable flags work exactly as for [`cloider deploy`](/cli/commands/deploy#environment-variables-build-args-and-build-variables). Build output goes to stderr and the app's URL to stdout. If the repository isn't found, the error says so, and notes when the provider lists only some repositories. See [Deploy from git](/apps/deploy-from-git). MCP tool: `create_app_from_git`.
+
+## cloider app open
+
+Print the app's URL and open it in your browser.
+
+```text
+cloider app open <app> [flags]
+```
+
+```bash
+cloider app open blog
+```
+
+```text title="Output"
+https://blog-k3m9.cloider.app
+```
+
+It warns when the app isn't `Ready`, and fails with `the app has no URL yet, it hasn't deployed a version` before the first deploy.
+
+## cloider app status
+
+Print the app's status and nothing else.
+
+```text
+cloider app status <app> [flags]
+```
+
+```bash
+cloider app status blog
+```
+
+```text title="Output"
+Ready
+```
+
+See [Status values](/reference/status-values).
+
+## cloider app usage
+
+Show what the app has cost this month and the forecasts. `-o json` adds the daily usage.
+
+```text
+cloider app usage <app> [flags]
+```
+
+```bash
+cloider app usage api
+```
+
+```text title="Output"
+Month:                2026-10
+So far:               $4.12
+Forecast this month:  $6.48
+Forecast next month:  $6.40
+Daily usage is in -o json.
+```
+
+## cloider app pause
+
+Stop the app serving, keeping its environment and image, so it can be resumed as it was.
+
+```text
+cloider app pause <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the app is `Paused` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider app pause web
+```
+
+```text title="Output"
+✓ App web is pausing
+```
+
+With `--wait`: `✓ App web is paused`. See [Pause, resume and delete](/apps/pause-resume-and-delete). MCP tool: `pause_app`.
+
+## cloider app resume
+
+Start a paused app again.
+
+```text
+cloider app resume <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the app is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider app resume web --wait
+```
+
+```text title="Output"
+✓ App web is ready
+```
+
+MCP tool: `resume_app`.
+
+## cloider app delete
+
+Delete an app. Its free subdomains are released with it unless you pass `--keep-domains`. A custom domain is never deleted; it only loses its route to the app.
+
+```text
+cloider app delete <app> [flags]
+```
+
+**Alias:** `cloider app rm`.
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--keep-domains` | bool | `false` | Keep the app's free subdomains claimed |
+| `-w, --wait` | bool | `false` | Wait until the app is gone |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The command asks you to type the app's name; pass `--yes` to skip it.
+
+```bash
+cloider app delete web
+```
+
+```text title="Output"
+This permanently deletes app web.
+Type web to confirm: web
+✓ Deleted app web
+```
+
+```bash
+cloider app delete web --keep-domains --yes --wait
+```
+
+MCP tool: `delete_app`.
+
+## cloider app update
+
+Change the port the app listens on or the command it starts with. A new port redeploys the running version; a new start command builds the app again.
+
+```text
+cloider app update <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--port` | int | | Port the app listens on |
+| `--start-command` | string | | Command the app is started with. Empty (`--start-command ""`) for the detected one |
+| `-w, --wait` | bool | `false` | Wait until the app is `Ready` again |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider app update api --port 9000 --wait
+```
+
+```text title="Output"
+✓ Saved, redeploying api
+```
+
+```bash
+cloider app update blog --start-command "node server.js"
+```
+
+```text title="Output"
+✓ Saved, building blog again
+```
+
+When the app hasn't deployed yet, the change is saved for the next deploy (`Saved, the next deploy uses it`). See [Settings](/apps/settings). MCP tool: `update_app_settings`.
+
+## cloider app link
+
+Link a directory to an existing app, so that `cloider deploy` in that directory deploys to it. The link is written to `.cloider/app.json` in the directory.
+
+```text
+cloider app link <app> [dir] [flags]
+```
+
+```bash
+cd ~/code/blog
+cloider app link blog
+```
+
+```text title="Output"
+✓ Linked . to app blog
+```
+
+Use it after cloning a project on a new machine, or to point a directory at a different app. See [`cloider deploy`](/cli/commands/deploy#how-does-deploy-know-which-app-to-update).
+
+## cloider app logs
+
+Print the app's recent logs, or follow them as they come with `-f`.
+
+```text
+cloider app logs <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --follow` | bool | `false` | Keep printing new lines as they come |
+| `-n, --lines` | int | `200` | Lines of history: `100`, `200`, `500` or `1000` |
+
+```bash
+cloider app logs api -n 100
+cloider app logs api -f
+cloider app logs api -f | grep -i error
+```
+
+```text title="Output"
+2026-10-20T09:41:07Z listening on :8080
+2026-10-20T09:41:12Z GET /healthz 200 0.4ms
+2026-10-20T09:41:15Z GET /orders 200 12.8ms
+```
+
+Logs go to stdout. When a followed stream drops and reconnects, the CLI prints `--- reconnected, the last lines may repeat ---` to stderr. Stop following with Ctrl-C. See [Logs](/apps/logs). MCP tool: `get_app_logs`.
+
+## cloider app env
+
+Read and change the app's runtime environment variables. Changing them restarts the app. Secret values are never listed; read one with `cloider app env get`.
+
+| Command | Description |
+| --- | --- |
+| `cloider app env list <app>` | List the app's variables. Alias: `ls` |
+| `cloider app env get <app> <key>` | Print one variable's value, secrets included |
+| `cloider app env set <app> <KEY=VALUE>...` | Set variables, keeping the others |
+| `cloider app env unset <app> <KEY>...` | Remove variables |
+| `cloider app env import <app> <file>` | Set variables from a `.env` file (`-` for stdin) |
+
+| Flag | On | Description |
+| --- | --- | --- |
+| `--secret` | `set`, `import` | Store the values as secrets, never listed back |
+| `--replace` | `import` | Remove the variables the file doesn't have |
+
+```bash
+cloider app env list api
+```
+
+```text title="Output"
+KEY            VALUE
+NODE_ENV       production
+LOG_LEVEL      info
+DATABASE_URL   (secret)
+```
+
+```bash
+cloider app env set api NODE_ENV=production LOG_LEVEL=debug
+cloider app env set api --secret DATABASE_URL="postgresql://orders_db_user:...@orders-db-p0q9zm.db.cloider.internal:20417/orders-db"
+```
+
+```text title="Output"
+✓ Saved, api restarts with 3 variable(s)
+```
+
+```bash
+cloider app env get api DATABASE_URL
+cloider app env unset api LOG_LEVEL
+cloider app env import api .env.production
+cloider app env import api .env.production --replace
+cat secrets.env | cloider app env import api - --secret
+```
+
+Variable names use letters, digits and `_`, don't start with a digit, and are at most 128 characters. In a `.env` file, empty lines and `#` comments are skipped, a leading `export ` is allowed, values may be in double quotes (with escapes like `\n`) or single quotes (taken literally), and an unquoted value ends at ` #`. `unset` fails with exit code `4` for a variable the app doesn't have. See [Environment variables](/apps/environment-variables). MCP tools: `list_app_variables`, `get_app_variable`, `set_app_variables`, `unset_app_variables` (with `kind` set to `env`).
+
+## cloider app build-args
+
+Read and change the app's **build arguments**, which a Dockerfile build is passed and the running app never sees. A plain one is a build arg (`ARG NAME` in the Dockerfile); a secret one is a build secret (`RUN --mount=type=secret,id=NAME,env=NAME`). An empty value isn't passed, so the Dockerfile's default applies. Changing them builds the app again.
+
+The subcommands and flags are the same as for [`app env`](#cloider-app-env):
+
+| Command | Description |
+| --- | --- |
+| `cloider app build-args list <app>` | List the app's variables (secret values hidden). Alias: `ls` |
+| `cloider app build-args get <app> <key>` | Print one variable's value, secrets included |
+| `cloider app build-args set <app> <KEY=VALUE>...` | Set variables, keeping the others. `--secret` stores them as secrets |
+| `cloider app build-args unset <app> <KEY>...` | Remove variables |
+| `cloider app build-args import <app> <file>` | Set variables from a `.env` file (`-` for stdin). `--secret`, `--replace` |
+
+```bash
+cloider app build-args set web NEXT_PUBLIC_API_URL=https://api.example.com
+cloider app build-args set web --secret NPM_TOKEN=npm_xxxxxxxxxxxxxxxx
+```
+
+```text title="Output"
+✓ Saved 2 argument(s), building web again
+```
+
+When the app hasn't built yet: `Saved 2 argument(s), the next build uses them`. See [Build configuration](/apps/build-configuration). MCP tools: the variable tools with `kind` set to `build-args`.
+
+## cloider app build-env
+
+Read and change the app's **build variables**, the environment buildpacks build an app without a Dockerfile in (for example `BP_NODE_RUN_SCRIPTS`). The running app never sees them. Changing them builds the app again.
+
+The subcommands and flags are the same as for [`app env`](#cloider-app-env):
+
+| Command | Description |
+| --- | --- |
+| `cloider app build-env list <app>` | List the app's variables (secret values hidden). Alias: `ls` |
+| `cloider app build-env get <app> <key>` | Print one variable's value, secrets included |
+| `cloider app build-env set <app> <KEY=VALUE>...` | Set variables, keeping the others. `--secret` stores them as secrets |
+| `cloider app build-env unset <app> <KEY>...` | Remove variables |
+| `cloider app build-env import <app> <file>` | Set variables from a `.env` file (`-` for stdin). `--secret`, `--replace` |
+
+```bash
+cloider app build-env set blog BP_NODE_RUN_SCRIPTS=build
+```
+
+```text title="Output"
+✓ Saved 1 variable(s), building blog again
+```
+
+See [Build configuration](/apps/build-configuration). MCP tools: the variable tools with `kind` set to `build-env`.
+
+## cloider app builds
+
+List the app's builds, newest first.
+
+```text
+cloider app builds <app> [flags]
+```
+
+```bash
+cloider app builds api
+```
+
+```text title="Output"
+VERSION   STATUS       SOURCE                              CREATED            MESSAGE
+23        Ready        9f3c2e1 Add order export endpoint   2026-10-20 08:10   -
+22        Superseded   4b7a0d9 Fix pagination              2026-10-19 17:42   -
+21        Failed       e1d5c3a Bump dependencies           2026-10-19 15:03   -
+```
+
+**SOURCE** is the short commit and the first line of its message for a git build, or the uploaded archive's name. **MESSAGE** explains a failed build when Cloider knows why. A build's status is `Pending`, `Queued`, `Building`, `Deploying`, `Starting`, `Ready`, `Superseded` (an older build a newer one replaced), `Failed` or `Canceled`. `-o wide` adds the build **ID**. See [Builds and deployments](/apps/builds-and-deployments). MCP tool: `list_app_builds`.
+
+## cloider app build logs
+
+Print a build's output. A finished build's log is printed at once; a running build is followed until it ends.
+
+```text
+cloider app build logs <app> [build] [flags]
+```
+
+| Argument | Description |
+| --- | --- |
+| `<app>` | Name or id of the app |
+| `[build]` | The build's version (`23` or `v23`) or id. Default: the latest build |
+
+```bash
+cloider app build logs api
+cloider app build logs api 21
+cloider app build logs api 21 > build-21.log
+```
+
+MCP tool: `get_app_build_logs`.
+
+## cloider app build retry
+
+Run a failed build again, as a new version.
+
+```text
+cloider app build retry <app> <build> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --follow` | bool | `false` | Follow the build until the app is up |
+
+```bash
+cloider app build retry api 21 -f
+```
+
+```text title="Output"
+✓ Retrying version 24
+...build output...
+✓ Deployed version 24 of api
+https://api-x2p7.cloider.app
+```
+
+MCP tool: `retry_app_build`.
+
+## cloider app git
+
+Change the branch a git app deploys from, or whether a push deploys it. Neither builds anything by itself: the next push, or `cloider deploy --git`, picks the change up.
+
+```text
+cloider app git <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--branch` | string | | Branch to deploy from |
+| `--auto-deploy` | bool | | Deploy on every push to the branch. `--auto-deploy=false` turns it off |
+
+```bash
+cloider app git api --branch staging
+cloider app git api --auto-deploy=false
+```
+
+```text title="Output"
+✓ Saved, api deploys from staging (auto deploy yes)
+✓ Saved, api deploys from staging (auto deploy no)
+```
+
+For an app deployed from uploads it fails with `this app is deployed from uploads, not from git`. See [Deploy from git](/apps/deploy-from-git). MCP tool: `update_app_git`.
+
+## cloider app shell
+
+Open an interactive shell inside the app's running container, like the **Terminal** tab in the dashboard. The CLI shows `Starting the terminal…` while it gets ready, and keeps the session open while you use it.
+
+```text
+cloider app shell <app> [flags]
+```
+
+```bash
+cloider app shell api
+```
+
+```text title="Output"
+Connected, exit the shell to end the session.
+/app $ ls
+go.mod  go.sum  main.go  server
+```
+
+A shell needs a terminal on both ends; in scripts use [`app exec`](#cloider-app-exec). See [Terminal and exec](/apps/terminal-and-exec).
+
+## cloider app exec
+
+Run one command inside the app's container and exit with its exit code. stdout and stderr stay separate and nothing is a terminal, so the output is exactly what the command printed. This is the scriptable counterpart of `shell`, for scripts, CI and AI agents.
+
+```text
+cloider app exec [flags] <app> [--] <command> [args...]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-i, --stdin` | bool | `false` | Send stdin to the command, up to 2 MiB |
+| `--timeout` | duration | `10m0s` | Stop the command after this long, from `1s` up to `1h` |
+
+Several arguments run as they are, without a shell, which also works in images that have none. A single argument containing spaces is a command line, run with `sh -c`, so pipes, `&&` and `$VARS` work. **Flags for exec go before the app**; everything after the app belongs to the command, and `--` may separate the two.
+
+```bash
+# one command, no shell
+cloider app exec api uptime
+cloider app exec api ls -la /app
+
+# one quoted argument runs with sh -c
+cloider app exec api "ps aux | grep server"
+cloider app exec blog "cd /app && cat package.json"
+
+# flags before the app, the command's own flags after it
+cloider app exec --timeout 30m blog -- npm run migrate
+
+# send a local file or script in
+cloider app exec -i blog -- sh -c 'cat > /tmp/seed.json' < seed.json
+cloider app exec -i blog sh < setup.sh
+
+# one JSON object for scripts and agents, exit code still set
+cloider app exec -o json blog -- node -e 'console.log(process.version)'
+```
+
+```json title="Output of the last command"
+{
+  "exit_code": 0,
+  "stdout": "v22.11.0\n",
+  "stderr": "",
+  "timed_out": false
+}
+```
+
+The exit code is the command's own, `127` when it doesn't exist, `126` when it can't run, and `124` when `--timeout` stopped it. See [exit codes of exec commands](/cli/output-and-scripting#exit-codes-of-exec-commands) and [Terminal and exec](/apps/terminal-and-exec). MCP tool: `app_exec`.
+
+## Related
+
+- [Apps overview](/apps/overview)
+- [`cloider deploy`](/cli/commands/deploy) and [`cloider git`](/cli/commands/git)
+- [Environment variables](/apps/environment-variables), [Logs](/apps/logs), [Builds and deployments](/apps/builds-and-deployments)
+
+<FAQ items={[
+  {q: 'How do I see my app\'s logs from the terminal?', a: 'Run cloider app logs blog for the last 200 lines, -n 1000 for more, and -f to follow new lines as they come.'},
+  {q: 'How do I set an environment variable on an app?', a: 'Run cloider app env set blog NODE_ENV=production. Add --secret for values that should never be listed back, and use cloider app env import blog .env to load a whole file. The app restarts with the new variables.'},
+  {q: 'What is the difference between env, build-args and build-env?', a: 'env is the running app\'s environment. build-args are passed to a Dockerfile build as ARG or build secrets. build-env is the environment a buildpack build (an app without a Dockerfile) runs in. Neither build-args nor build-env reach the running app.'},
+  {q: 'How do I run a database migration inside my app?', a: 'Use cloider app exec --timeout 30m blog -- npm run migrate. It runs the command in the app\'s container and exits with the command\'s exit code.'},
+  {q: 'How do I create an app from a GitHub repository?', a: 'Connect GitHub once with cloider git connect github, then run cloider app create --git github --repo acme/api. Pushes to the branch deploy automatically unless you turn auto deploy off with cloider app git api --auto-deploy=false.'},
+  {q: 'How do I retry a failed build?', a: 'Find the build\'s version with cloider app builds blog, then run cloider app build retry blog 21 -f to build it again and follow it.'}
+]} />

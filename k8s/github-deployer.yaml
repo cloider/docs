@@ -1,0 +1,53 @@
+# Lets this repo's Deploy workflow log in to the registry with the namespace's
+# pull secret, roll out a new image to the docs Deployment (docs.cloider.com)
+# and wait for it, and nothing else.
+#   kubectl --context prod apply -f k8s/github-deployer.yaml
+#   k8s/kubeconfig.sh | gh secret set KUBECONFIG -R cloider/docs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-deployer
+  namespace: docs
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-deployer-token
+  namespace: docs
+  annotations:
+    kubernetes.io/service-account.name: github-deployer
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-deployer
+  namespace: docs
+rules:
+  # rollout status lists and watches
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["docs"]
+    verbs: ["patch"]
+  # the registry login the image is pushed with
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["regcred"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-deployer
+  namespace: docs
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: github-deployer
+subjects:
+  - kind: ServiceAccount
+    name: github-deployer
+    namespace: docs

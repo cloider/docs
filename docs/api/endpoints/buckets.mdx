@@ -1,0 +1,515 @@
+---
+title: Object storage buckets API endpoints
+sidebar_label: Buckets
+sidebar_position: 4
+description: Cloider API reference for S3 compatible buckets, create, list, delete, regions, usage, public or private visibility, bucket policies, versioning and lifecycle rules.
+keywords: [cloider bucket api, s3 bucket api, create bucket api, bucket policy api, bucket versioning api, lifecycle rules api, object storage rest api]
+---
+
+These endpoints manage Cloider [object storage](/object-storage/overview) buckets: create and delete them, read their endpoint and usage, make them public or private, and set bucket policies, versioning and lifecycle rules. To read and write the files inside a bucket you normally use any S3 client with an [access key](/api/endpoints/bucket-keys); the API's own file endpoints are on [Bucket objects](/api/endpoints/bucket-objects).
+
+All paths are relative to `https://cloider.com/api`. See [Authentication](/api/authentication) for the token header.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/buckets`](#list-buckets) | Read |
+| POST | [`/buckets`](#create-a-bucket) | Write |
+| GET | [`/buckets/regions`](#list-regions) | Read |
+| GET | [`/buckets/:hashed_id`](#get-a-bucket) | Read |
+| GET | [`/buckets/:hashed_id/status`](#get-a-buckets-status) | Read |
+| GET | [`/buckets/:hashed_id/usage`](#get-a-buckets-usage) | Read |
+| PUT | [`/buckets/:hashed_id/visibility`](#make-a-bucket-public-or-private) | Write |
+| PUT | [`/buckets/:hashed_id/policy`](#set-a-bucket-policy) | Write |
+| DELETE | [`/buckets/:hashed_id/policy`](#remove-the-bucket-policy) | Write |
+| GET | [`/buckets/:hashed_id/versioning`](#get-the-versioning-status) | Read |
+| PUT | [`/buckets/:hashed_id/versioning`](#turn-versioning-on-or-off) | Write |
+| GET | [`/buckets/:hashed_id/lifecycle`](#get-the-lifecycle-rules) | Read |
+| PUT | [`/buckets/:hashed_id/lifecycle`](#replace-the-lifecycle-rules) | Write |
+| DELETE | [`/buckets/:hashed_id`](#delete-a-bucket) | Write |
+
+## The bucket object
+
+```json
+{
+  "hashed_id": "b7r2x",
+  "bucket_name": "acme-assets",
+  "region": "eu-central-2",
+  "public": true,
+  "policy": null,
+  "status": "Ready",
+  "size_bytes": 734003200,
+  "size_sampled_at": "2026-10-20T09:00:04.118230Z",
+  "endpoint": "https://s3.eu-central-2.cloider.com",
+  "url": "https://acme-assets.s3.eu-central-2.cloider.com",
+  "created_at": "2026-09-30T15:12:48.551021Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The bucket's id |
+| `bucket_name` | string | The S3 bucket name. Unique across all of Cloider, and fixed once created |
+| `region` | string | The region code, for example `eu-central-2` |
+| `public` | boolean | `true` when anyone can read an object by its URL without a key. Listing stays private either way |
+| `policy` | string or null | The bucket policy as you wrote it, a JSON document in a string, or `null` |
+| `status` | string | `Creating`, `Ready`, `Terminating` or `Failed` |
+| `size_bytes` | integer | Bytes stored, as of the last usage sample |
+| `size_sampled_at` | string or null | When `size_bytes` was measured |
+| `endpoint` | string | The region's S3 endpoint, for S3 clients |
+| `url` | string | The bucket's own address, `https://<bucket>.<endpoint host>`. Public objects are at `<url>/<key>` |
+| `created_at` | string | When the bucket was created |
+
+## List buckets
+
+```http
+GET /buckets
+```
+
+Returns the account's buckets, newest first, without deleted ones.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/buckets \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "hashed_id": "b7r2x",
+    "bucket_name": "acme-assets",
+    "region": "eu-central-2",
+    "public": true,
+    "policy": null,
+    "status": "Ready",
+    "size_bytes": 734003200,
+    "size_sampled_at": "2026-10-20T09:00:04.118230Z",
+    "endpoint": "https://s3.eu-central-2.cloider.com",
+    "url": "https://acme-assets.s3.eu-central-2.cloider.com",
+    "created_at": "2026-09-30T15:12:48.551021Z"
+  }
+]
+```
+
+## List regions
+
+```http
+GET /buckets/regions
+```
+
+Returns the regions a bucket can be created in, each with the S3 endpoint its buckets answer on.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/buckets/regions \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {"code": "eu-central-2", "name": "Europe", "endpoint": "https://s3.eu-central-2.cloider.com"}
+]
+```
+
+## Create a bucket
+
+```http
+POST /buckets
+```
+
+Creates a bucket. Unlike clusters and databases, a bucket is created while the request runs, which takes a few seconds, so the answer also tells you whether the name was free.
+
+**Access:** Read & Write token.
+
+### Request body
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket_name` | string | Yes | 3 to 63 characters: lower case letters, digits and `-`, starting and ending with a letter or digit. No dots. Names are shared by every Cloider account, so pick something specific |
+| `region` | string | No | A region code from `GET /buckets/regions`. Default `eu-central-2` |
+| `public` | boolean | No | `true` to let anyone read objects by URL. Default `false` |
+| `versioning` | boolean | No | `true` to keep every version of every object from the start. Default `false` |
+
+```bash
+curl -X POST https://cloider.com/api/buckets \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"bucket_name": "acme-backups", "region": "eu-central-2", "versioning": true}'
+```
+
+```json title="Response"
+{"hashed_id": "k5t1v"}
+```
+
+Check `GET /buckets/k5t1v/status` once: it is normally `Ready` right away.
+
+### Errors
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `bucket_name` | `Bucket name must not be empty`, `Bucket name must be at least 3 characters`, `Bucket name must not exceed 63 characters`, `Bucket name can only have lowercase letters, numbers and "-"`, `Bucket name must start and end with a letter or a number`, `Bucket name is reserved`, `This bucket name is already taken` |
+| `400` | `region` | `Invalid region` |
+| `400` | `_` | `Free plan users can not create more than one bucket. UPGRADE NOW!` |
+| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `400` | `_` | `Buckets aren't available at the moment!`, `Operation failed, Couldn't create the bucket!` |
+| `403` | `_` | `This API token is read only!`, or `You have read-only access to this account, you can not create buckets!` for a Restricted member |
+
+These names are reserved: names starting with `xn--`, `sthree-` or `amzn-s3-demo-`, names ending with `-s3alias`, `--ol-s3`, `--x-s3` or `--table-s3`, and the name `filemeta`.
+
+## Get a bucket
+
+```http
+GET /buckets/:hashed_id
+```
+
+Returns one bucket, in the shape [above](#the-bucket-object).
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/buckets/b7r2x \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+A deleted bucket, or an id of another account, answers `404 Not Found` (plain text).
+
+## Get a bucket's status
+
+```http
+GET /buckets/:hashed_id/status
+```
+
+Returns the status as plain text: `Creating`, `Ready`, `Terminating` or `Failed`.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/buckets/b7r2x/status \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```text title="Response"
+Ready
+```
+
+Once a deletion has finished, this answers `404`.
+
+## Get a bucket's usage
+
+```http
+GET /buckets/:hashed_id/usage
+```
+
+Returns the bucket with its storage usage and cost: the last 31 days in `daily_usage` and this month's totals in `monthly_usage`. It is the bucket's entry from [`GET /usage`](/api/endpoints/account#get-month-to-date-usage).
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/buckets/b7r2x/usage \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response (trimmed)"
+{
+  "hashed_id": "b7r2x",
+  "bucket_name": "acme-assets",
+  "status": "Ready",
+  "size_bytes": 734003200,
+  "daily_usage": [
+    {
+      "resource_type": "bucket",
+      "date": "2026-10-19T00:00:00Z",
+      "total_cost": 0.0042,
+      "metrics": {"storage": 0.68, "storage_cost": 0.0042}
+    }
+  ],
+  "monthly_usage": {
+    "avg_storage_usage": 0.66,
+    "storage_total_cost": 0.08,
+    "total_cost": 0.08,
+    "days": 19,
+    "forecast_this_month": 0.13,
+    "forecast_next_month": 0.13
+  },
+  "forecast_rest_of_day": 0.002,
+  "date": "2026-10-20T00:00:00Z",
+  "month": "October 2026"
+}
+```
+
+`storage` and `avg_storage_usage` are in GiB. `404` with `Bucket not found!` for an unknown id. See [Usage and billing](/object-storage/usage-and-billing).
+
+## Make a bucket public or private
+
+```http
+PUT /buckets/:hashed_id/visibility
+```
+
+Makes the bucket public, so anyone can download an object from `<url>/<key>` without a key, or private again. Listing the bucket's contents always needs a key.
+
+**Access:** Read & Write token. The bucket must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `public` | boolean | Yes | `true` for public, `false` for private |
+
+```bash
+curl -X PUT https://cloider.com/api/buckets/b7r2x/visibility \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"public": true}'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+| Status | Message |
+| --- | --- |
+| `400` | `The bucket must be ready to change its visibility.` |
+| `400` | `The bucket's policy allows everyone ("*"), remove those statements first.` (making it private while the policy grants everyone access) |
+| `400` | `Another change to this bucket is in progress, try again in a moment!` |
+| `400` | `Couldn't change the bucket's visibility, try again in a moment!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not change buckets!` |
+
+See [Public and private buckets](/object-storage/public-and-private-buckets).
+
+## Set a bucket policy
+
+```http
+PUT /buckets/:hashed_id/policy
+```
+
+Sets the bucket's policy, an AWS style JSON document that allows or denies S3 actions to access keys or to everyone. The policy replaces any previous one. It is checked before it is applied, and a rejected policy says why.
+
+**Access:** Read & Write token. The bucket must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `policy` | string | Yes | The policy document as a **string** (JSON inside JSON), up to 16 KB. `Version` must be `2012-10-17` |
+
+```json title="policy.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Principal": {"AWS": ["CLDR4N7TQ2WB9XK0HJ3E"]},
+      "Action": ["s3:DeleteObject"],
+      "Resource": ["arn:aws:s3:::acme-backups/*"]
+    }
+  ]
+}
+```
+
+Build the request body with `jq`, which turns the file into a string:
+
+```bash
+jq -n --rawfile policy policy.json '{policy: $policy}' | \
+curl -X PUT https://cloider.com/api/buckets/k5t1v/policy \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary @-
+```
+
+```json title="Response"
+{"policy": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [ ... ]\n}"}
+```
+
+A policy that doesn't pass the checks answers `400` with the reason on `policy`, naming the statement:
+
+```json title="Response (400)"
+{
+  "errors": {"policy": ["Statement 1: Action \"s3:PutBucketAcl\" can't be allowed by a policy, only object actions can"]},
+  "data": null
+}
+```
+
+Other messages on `policy` include `The policy is empty`, `The policy is over 16 KB`, `Version must be "2012-10-17"`, `The policy has no statements`, `Effect must be "Allow" or "Deny"`, `Principal is required`, `Action is required`, `Resource is required` and `Storage rejected the policy (...)`. General errors are `The bucket must be ready to change its policy.`, `Another change to this bucket is in progress, try again in a moment!` and `Couldn't apply the policy, try again in a moment!`.
+
+Principals name access keys by their access key id (`CLDR...`). [Bucket policies](/object-storage/bucket-policies) explains which actions, principals and conditions are supported.
+
+## Remove the bucket policy
+
+```http
+DELETE /buckets/:hashed_id/policy
+```
+
+Removes the bucket's policy. Removing a policy from a bucket that has none succeeds and changes nothing.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/buckets/k5t1v/policy \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{"policy": null}
+```
+
+## Get the versioning status
+
+```http
+GET /buckets/:hashed_id/versioning
+```
+
+Returns whether the bucket keeps old versions of objects. It reflects changes made through the S3 API too.
+
+**Access:** any token. The bucket must be `Ready`.
+
+```bash
+curl https://cloider.com/api/buckets/k5t1v/versioning \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{"status": "Enabled"}
+```
+
+`status` is `Enabled`, `Suspended` (versioning was on and is now off; existing versions are kept) or an empty string (versioning was never turned on).
+
+## Turn versioning on or off
+
+```http
+PUT /buckets/:hashed_id/versioning
+```
+
+Turns versioning on, so every overwrite and delete keeps the previous version, or suspends it. A bucket that has had versioning can't go back to never versioned: turning it off suspends it.
+
+**Access:** Read & Write token. The bucket must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `enabled` | boolean | Yes | `true` to enable, `false` to suspend |
+
+```bash
+curl -X PUT https://cloider.com/api/buckets/k5t1v/versioning \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+```json title="Response"
+{"status": "Enabled"}
+```
+
+See [Versioning](/object-storage/versioning). Old versions are stored and billed like any other data, so pair versioning with a [lifecycle rule](#replace-the-lifecycle-rules) that expires noncurrent versions.
+
+## Get the lifecycle rules
+
+```http
+GET /buckets/:hashed_id/lifecycle
+```
+
+Returns the bucket's lifecycle rules, which delete objects, old versions and abandoned uploads after a number of days.
+
+**Access:** any token. The bucket must be `Ready`.
+
+```bash
+curl https://cloider.com/api/buckets/k5t1v/lifecycle \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "rules": [
+    {
+      "id": "expire-logs",
+      "prefix": "logs/",
+      "enabled": true,
+      "expire_days": 30,
+      "noncurrent_days": 7,
+      "abort_multipart_days": 2
+    }
+  ],
+  "unsupported_rules": 0
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `id` | The rule's name |
+| `prefix` | The rule applies to keys that start with it. Empty for the whole bucket |
+| `enabled` | Whether the rule is active |
+| `expire_days` | Delete objects this many days after they were written. `0` for never |
+| `noncurrent_days` | Delete old versions this many days after they were replaced. `0` for never |
+| `abort_multipart_days` | Abort unfinished multipart uploads after this many days. `0` for never |
+| `unsupported_rules` | Rules set through the S3 API with features these fields can't show, such as tag filters or transitions. They are counted, not returned |
+
+## Replace the lifecycle rules
+
+```http
+PUT /buckets/:hashed_id/lifecycle
+```
+
+Replaces all of the bucket's lifecycle rules with the list you send, including rules set through the S3 API that the dashboard can't show. An empty list removes the lifecycle configuration.
+
+**Access:** Read & Write token. The bucket must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `rules` | object list | Yes | Up to 100 rules, each with the fields above |
+
+Each rule must have an `id` of 1 to 255 letters, digits, `.`, `_` or `-`, unique in the list; a `prefix` of at most 1024 characters without a leading `/`; and at least one of the three day counts set, each between 1 and 36500.
+
+```bash
+curl -X PUT https://cloider.com/api/buckets/k5t1v/lifecycle \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rules": [
+      {"id": "expire-logs", "prefix": "logs/", "enabled": true, "expire_days": 30, "noncurrent_days": 7, "abort_multipart_days": 2}
+    ]
+  }'
+```
+
+```json title="Response"
+{
+  "rules": [
+    {"id": "expire-logs", "prefix": "logs/", "enabled": true, "expire_days": 30, "noncurrent_days": 7, "abort_multipart_days": 2}
+  ],
+  "unsupported_rules": 0
+}
+```
+
+Validation errors are on `rules` and name the rule, for example `Rule 2: another rule already has the ID "expire-logs"`, `Rule 1: set at least one of the day counts` or `A bucket can have up to 100 lifecycle rules`. See [Lifecycle rules](/object-storage/lifecycle-rules).
+
+## Delete a bucket
+
+```http
+DELETE /buckets/:hashed_id
+```
+
+Deletes the bucket and every object in it. This can't be undone. The bucket's policy is removed first, then the bucket goes to `Terminating` while its objects are deleted in the background, which can take a while for a large bucket. When it is done, the bucket disappears and its status answers `404`. The name becomes free for anyone to take.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/buckets/k5t1v \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's bucket list, with this bucket `Terminating`.
+
+| Status | Message |
+| --- | --- |
+| `400` | `This bucket is still being created!` |
+| `400` | `This bucket is already being deleted!` |
+| `400` | `Another change to this bucket is in progress, try again in a moment!` |
+| `400` | `Couldn't remove the bucket's policy, try again in a moment!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not delete buckets!` |
+| `404` | `Not Found` (plain text) |
+
+See [Delete a bucket](/object-storage/delete-a-bucket).
+
+## Related
+
+- [Bucket objects](/api/endpoints/bucket-objects): upload, download and delete files through the API
+- [Bucket keys](/api/endpoints/bucket-keys): S3 access keys for your tools
+- [Create a bucket](/object-storage/create-a-bucket) with every tool
+- [cloider bucket](/cli/commands/bucket) commands and the [cloider_bucket](/terraform/resources/bucket) Terraform resource

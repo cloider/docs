@@ -1,0 +1,199 @@
+---
+title: cloider dns command reference
+sidebar_label: dns
+sidebar_position: 10
+description: Reference for cloider dns, to list, show, create, update and delete the DNS records of a custom domain, with every record type, TTLs and multiple values.
+keywords: [cloider dns, dns records cli, add dns record, cloider dns create, a record, cname, mx, txt, caa, srv, https record]
+---
+
+`cloider dns` manages the [DNS records](/domains/dns-records) of your custom domains on Cloider's nameservers: A, AAAA, CNAME, ALIAS, MX, TXT, NS, CAA, HTTPS, SPF, SRV and PTR records. The domain must have been added with [`cloider domain create`](/cli/commands/domain#cloider-domain-create).
+
+```text
+cloider dns <command> [flags]
+```
+
+`list` and `create` take the domain; `get`, `update` and `delete` take the record's numeric **id**, which `cloider dns list <domain> -o wide` shows.
+
+## Subcommands
+
+| Command | Description |
+| --- | --- |
+| [`cloider dns list`](#cloider-dns-list) | List a domain's DNS records |
+| [`cloider dns get`](#cloider-dns-get) | Show a DNS record |
+| [`cloider dns create`](#cloider-dns-create) | Add a DNS record |
+| [`cloider dns update`](#cloider-dns-update) | Change a DNS record, keeping what isn't given |
+| [`cloider dns delete`](#cloider-dns-delete) | Delete a DNS record |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## Record flags
+
+`create` and `update` take the same flags:
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-t, --type` | string | `A` | Record type: `A`, `AAAA`, `CNAME`, `ALIAS`, `MX`, `TXT`, `NS`, `CAA`, `HTTPS`, `SPF`, `SRV` or `PTR` (any case) |
+| `-n, --name` | string | empty | Record name, for example `www`. Empty for the domain itself (shown as `@`) |
+| `-v, --value` | string | (required for `create`) | Record value. Separate several values with newlines |
+| `--ttl` | int | `300` | Time to live in seconds, from 60 to 172800 |
+
+Note that `-v` here is `--value`, not `--version`. The API validates each value for its type and explains what is wrong; see [DNS records](/domains/dns-records) for the format of every type.
+
+## cloider dns list
+
+List a domain's DNS records.
+
+```text
+cloider dns list <domain> [flags]
+```
+
+**Alias:** `cloider dns ls`.
+
+```bash
+cloider dns list example.com
+```
+
+```text title="Output"
+TYPE    NAME     VALUE                                                  TTL
+A       @        203.0.113.80                                           300
+CNAME   www      acme-web.cloider.app.                                  3600
+MX      @        10 mx1.mail.example.net.                               3600
+TXT     _dmarc   v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com   3600
+```
+
+With ids, which the other commands take:
+
+```bash
+cloider dns list example.com -o wide
+```
+
+```text title="Output"
+ID     TYPE    NAME   VALUE                      TTL
+1041   A       @      203.0.113.80               300
+1042   CNAME   www    acme-web.cloider.app.      3600
+1043   MX      @      10 mx1.mail.example.net.   3600
+```
+
+`-q` prints the ids. MCP tool: `list_dns_records`.
+
+## cloider dns get
+
+Show one DNS record.
+
+```text
+cloider dns get <record-id> [flags]
+```
+
+```bash
+cloider dns get 1042
+```
+
+```text title="Output"
+Id:       1042
+Domain:   example.com
+Type:     CNAME
+Name:     www
+Value:    acme-web.cloider.app.
+TTL:      3600
+Updated:  2026-10-14 11:20
+```
+
+A record id that isn't a number fails with ``a DNS record id is a number, see `cloider dns list <domain>` `` (exit code `2`).
+
+## cloider dns create
+
+Add a DNS record to a domain.
+
+```text
+cloider dns create <domain> [flags]
+```
+
+```bash
+cloider dns create example.com --type A --name www --value 203.0.113.10
+```
+
+```text title="Output"
+✓ Added A record www -> 203.0.113.10
+```
+
+More examples:
+
+```bash
+# The domain itself (apex)
+cloider dns create example.com --type A --value 203.0.113.10
+
+# IPv6
+cloider dns create example.com --type AAAA --value 2001:db8::10
+
+# Alias www to another name
+cloider dns create example.com --type CNAME --name www --value acme-web.cloider.app.
+
+# Mail servers, several values separated by newlines (bash $'...' quoting)
+cloider dns create example.com --type MX --ttl 3600 \
+  --value $'10 mx1.mail.example.net.\n20 mx2.mail.example.net.'
+
+# SPF and DMARC
+cloider dns create example.com --type TXT --value "v=spf1 include:_spf.mail.example.net -all" --ttl 3600
+cloider dns create example.com --type TXT --name _dmarc --value "v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"
+
+# Only let one certificate authority issue certificates
+cloider dns create example.com --type CAA --value '0 issue "letsencrypt.org"'
+
+# A wildcard
+cloider dns create example.com --type A --name '*' --value 203.0.113.10
+```
+
+`-o json` prints the created record. See [DNS records](/domains/dns-records) and [Email DNS records](/domains/email-dns-records). MCP tool: `create_dns_record`.
+
+## cloider dns update
+
+Change a DNS record. Only the flags you pass change; the rest is kept.
+
+```text
+cloider dns update <record-id> [flags]
+```
+
+```bash
+cloider dns update 1041 --ttl 3600
+cloider dns update 1041 --value $'203.0.113.10\n203.0.113.12'
+```
+
+```text title="Output"
+✓ Updated A record @ -> 203.0.113.10
+203.0.113.12
+```
+
+MCP tool: `update_dns_record`.
+
+## cloider dns delete
+
+Delete a DNS record.
+
+```text
+cloider dns delete <record-id> [flags]
+```
+
+**Alias:** `cloider dns rm`. The command shows the record and asks `Delete the A record www -> 203.0.113.10 of example.com? [y/N]`; pass `--yes` to skip it.
+
+```bash
+cloider dns delete 1041 --yes
+```
+
+```text title="Output"
+✓ Deleted DNS record 1041
+```
+
+MCP tool: `delete_dns_record`.
+
+## Related
+
+- [DNS records](/domains/dns-records) and [Email DNS records](/domains/email-dns-records)
+- [`cloider domain`](/cli/commands/domain) and [`cloider target`](/cli/commands/target)
+- [Terraform `cloider_dns_record`](/terraform/resources/dns-record)
+
+<FAQ items={[
+  {q: 'How do I add a DNS record with the Cloider CLI?', a: 'Run cloider dns create example.com --type A --name www --value 203.0.113.10. Leave out --name for the domain itself, and add --ttl to change the default of 300 seconds.'},
+  {q: 'How do I put several values in one record?', a: 'Separate them with newlines in --value, for example --value $\'10 mx1.mail.example.net.\\n20 mx2.mail.example.net.\' in bash.'},
+  {q: 'Where do I find a DNS record id?', a: 'cloider dns list example.com -o wide shows the ID column. cloider dns get, update and delete take that id.'},
+  {q: 'Which record types are supported?', a: 'A, AAAA, CNAME, ALIAS, MX, TXT, NS, CAA, HTTPS, SPF, SRV and PTR.'}
+]} />

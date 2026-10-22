@@ -1,0 +1,8 @@
+node_modules
+build
+.docusaurus
+.cache-loader
+tools/screenshots/node_modules
+tools/screenshots/out
+.DS_Store
+.cloider

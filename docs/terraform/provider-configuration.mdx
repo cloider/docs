@@ -1,0 +1,272 @@
+---
+title: Configure the Cloider Terraform provider
+sidebar_label: Provider configuration
+sidebar_position: 3
+description: Every argument and environment variable of the Cloider Terraform provider, how it finds its API token, CLI profiles, token files and several accounts with aliases.
+keywords: [cloider provider configuration, CLOIDER_TOKEN, CLOIDER_TOKEN_FILE, CLOIDER_PROFILE, CLOIDER_API_URL, terraform provider alias, terraform multiple accounts, cloider api token terraform]
+---
+
+The `provider "cloider"` block tells the Cloider provider which API token to use and which API to talk to. All of its arguments are optional: with an empty block, the provider takes the token from the `CLOIDER_TOKEN` environment variable or from the `cloider` CLI's login. This page lists every argument and environment variable, the exact order in which the provider looks for a token, and how to manage several Cloider accounts from one configuration.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Arguments** | `token`, `token_file`, `profile`, `api_url`, all optional |
+| **Environment variables** | `CLOIDER_TOKEN`, `CLOIDER_TOKEN_FILE`, `CLOIDER_PROFILE`, `CLOIDER_API_URL`, `CLOIDER_CONFIG_DIR` |
+| **Token format** | `cldr_` followed by random characters. Create one under **Access Control**, **API Tokens** |
+| **Token access** | **Read** is enough for `plan`, `apply` and `destroy` need **Read & Write** |
+| **Accounts** | One token reaches one account. Use one provider block per account, with `alias` |
+| **Default API** | `https://cloider.com/api` |
+
+## The minimal configuration
+
+```hcl title="versions.tf"
+terraform {
+  required_providers {
+    cloider = {
+      source  = "cloider/cloider"
+      version = "~> 0.1"
+    }
+  }
+}
+
+provider "cloider" {}
+```
+
+With this, the provider uses `CLOIDER_TOKEN` when it is set, and otherwise the token `cloider login` saved on your machine. That covers both your laptop and CI without any change to the code. You can even leave out the `provider "cloider" {}` block: Terraform then configures the provider with all arguments unset, which behaves the same.
+
+## Argument reference
+
+| Argument | Type | Default | Description |
+| --- | --- | --- | --- |
+| `token` | String, sensitive | `CLOIDER_TOKEN` | An API token (`cldr_...`). Takes priority over every other source. Leading and trailing whitespace is removed |
+| `token_file` | String | `CLOIDER_TOKEN_FILE` | Path of a file that holds the API token, used when `token` isn't set. `~/` is expanded to your home directory. The file must not be empty |
+| `profile` | String | `CLOIDER_PROFILE`, then the CLI's current profile, then `default` | The `cloider` CLI profile whose saved token to use when no other token is set. Letters, digits, `.`, `_` and `-`, up to 64 characters |
+| `api_url` | String | `CLOIDER_API_URL`, then the profile's API URL, then `https://cloider.com/api` | The API to talk to. You only change this when told to by Cloider support |
+
+The values of these arguments must be known when Terraform starts planning. Setting `token` from an attribute of a resource that isn't created yet fails with `Unknown token: The provider's token has to be known before planning, not come from a resource that isn't created yet.` Use a variable, an environment variable or a file instead.
+
+## Environment variable reference
+
+| Variable | Used for |
+| --- | --- |
+| `CLOIDER_TOKEN` | The API token, when the provider block sets neither `token` nor `token_file` |
+| `CLOIDER_TOKEN_FILE` | A file holding the API token, when `CLOIDER_TOKEN` isn't set either |
+| `CLOIDER_PROFILE` | The CLI profile whose saved token to use, when no other token is set and the block doesn't set `profile` |
+| `CLOIDER_API_URL` | The API to talk to, when the provider block doesn't set `api_url` |
+| `CLOIDER_CONFIG_DIR` | Where the CLI keeps its configuration and saved tokens. Defaults to `~/.cloider`. Set it only if you set it for the CLI too |
+
+These are the same variables the [`cloider` CLI](/cli/configuration) reads, so a shell set up for the CLI is set up for Terraform as well.
+
+## How does the provider choose a token?
+
+The provider takes the **first** of these that is set, and doesn't look further:
+
+1. `token` in the provider block
+2. `token_file` in the provider block
+3. the `CLOIDER_TOKEN` environment variable
+4. the `CLOIDER_TOKEN_FILE` environment variable
+5. the token file `cloider login` wrote for the CLI profile in use
+
+For step 5, the profile is `profile` in the provider block, else `CLOIDER_PROFILE`, else the CLI's current profile (`cloider profile use`), else `default`. The token file is:
+
+| Profile | Token file |
+| --- | --- |
+| `default` | `~/.cloider/token` |
+| any other, such as `staging` | `~/.cloider/tokens/staging` |
+| a profile added with its own token file (`cloider profile add <name> --token-file <path>`) | that file |
+
+`~/.cloider` is `CLOIDER_CONFIG_DIR` when that is set. If none of the five sources has a token, the provider stops with:
+
+```text
+Error: No Cloider API token
+
+no API token: set token or CLOIDER_TOKEN, or run `cloider login`
+```
+
+Once it has a token, the provider checks it against the API (`GET /whoami`) before planning anything. A token the API refuses stops the run with `Cloider refused the API token` and says which source the token came from, for example `The token from CLOIDER_TOKEN was refused`. That message tells you which of the five sources won, which is the fastest way to debug a token that "should" work.
+
+## Ways to give the provider a token
+
+### On your own computer: cloider login
+
+Log in with the [CLI](/cli/authentication) once, and leave the provider block empty:
+
+```bash
+cloider login
+terraform plan
+```
+
+The provider reads the token the CLI saved. When you log in again, for example to another account, Terraform uses the new token from its next run.
+
+### In CI: CLOIDER_TOKEN
+
+Store a token as a secret variable in your CI system and expose it as `CLOIDER_TOKEN`:
+
+```bash
+export CLOIDER_TOKEN="cldr_xxxxxxxxxxxxxxxxxxxxxxxx"
+terraform plan
+```
+
+A common setup uses two tokens: a **Read** token for `terraform plan` on merge requests, and a **Read & Write** token for `terraform apply` on the main branch only. See [CI/CD with Terraform](/terraform/guides/ci-cd) for complete GitHub Actions and GitLab pipelines.
+
+### From a file: token_file
+
+For a token mounted as a file, such as a Kubernetes Secret or a Docker secret:
+
+```hcl
+provider "cloider" {
+  token_file = "/run/secrets/cloider-token"
+}
+```
+
+Or without touching the code:
+
+```bash
+export CLOIDER_TOKEN_FILE=/run/secrets/cloider-token
+```
+
+The provider reads the whole file and strips whitespace, so a trailing newline is fine. An empty file is an error (`/run/secrets/cloider-token is empty`).
+
+### From a variable: token
+
+```hcl title="main.tf"
+variable "cloider_token" {
+  description = "Cloider API token"
+  type        = string
+  sensitive   = true
+}
+
+provider "cloider" {
+  token = var.cloider_token
+}
+```
+
+Set the variable with `TF_VAR_cloider_token`, or from a secrets manager through another provider's data source. `sensitive = true` keeps Terraform from printing it.
+
+:::warning[Never write a token literally into a .tf file]
+`token = "cldr_..."` ends up in git history, in every clone and in every CI log that prints the configuration. If a token has leaked, delete it in **Access Control**, **API Tokens** and create a new one. See [API tokens](/account/api-tokens).
+:::
+
+### From a CLI profile: profile
+
+The CLI keeps one saved login per [profile](/cli/authentication), and the provider can pick one:
+
+```bash
+cloider login --profile staging
+```
+
+```hcl
+# Uses the token `cloider login --profile staging` saved
+provider "cloider" {
+  profile = "staging"
+}
+```
+
+`CLOIDER_PROFILE=staging terraform plan` does the same without changing the code.
+
+## Manage several accounts with provider aliases
+
+A Cloider API token belongs to exactly one account. To manage resources in several accounts (for example your company's account and a client's), declare one provider block per account. The second and later blocks get an `alias`, and resources choose a provider with the `provider` meta-argument:
+
+```hcl title="main.tf"
+# The default provider: Acme Inc's account
+provider "cloider" {
+  profile = "acme"
+}
+
+# A second account, told apart by its alias
+provider "cloider" {
+  alias   = "client"
+  profile = "client"
+}
+
+resource "cloider_bucket" "assets" {
+  name = "acme-assets"
+}
+
+resource "cloider_bucket" "client_assets" {
+  provider = cloider.client
+
+  name = "client-assets"
+}
+```
+
+Log in to both profiles once:
+
+```bash
+cloider login --profile acme
+cloider login --profile client
+```
+
+In CI, where there is no CLI login, give each block its own token file or variable instead:
+
+```hcl
+provider "cloider" {
+  token_file = "/run/secrets/acme-token"
+}
+
+provider "cloider" {
+  alias      = "client"
+  token_file = "/run/secrets/client-token"
+}
+```
+
+`CLOIDER_TOKEN` applies to every block that sets neither `token` nor `token_file`, so don't rely on it when you have several accounts.
+
+### Pass an aliased provider to a module
+
+A module uses the default `cloider` provider unless you hand it another one:
+
+```hcl
+module "client_environment" {
+  source = "./modules/environment"
+
+  providers = {
+    cloider = cloider.client
+  }
+
+  name = "client-prod"
+}
+```
+
+## Debug the provider's API requests
+
+Terraform's own logging shows each request the provider makes. Set `TF_LOG_PROVIDER` to `DEBUG`:
+
+```bash
+TF_LOG_PROVIDER=DEBUG terraform plan 2> terraform-debug.log
+grep "cloider" terraform-debug.log
+```
+
+Look for `cloider provider configured`, which records the API URL, the token source and your role in the account, and `cloider api request` lines with the method, URL, status code and duration of each request. The token itself is never logged.
+
+The provider identifies itself to the API with the User-Agent `terraform-provider-cloider/<version> (terraform/<terraform version>)`.
+
+## Troubleshooting
+
+| Error | Cause | Fix |
+| --- | --- | --- |
+| `No Cloider API token` | None of the five sources has a token | `cloider login`, or set `CLOIDER_TOKEN` |
+| `Cloider refused the API token: The token from ... was refused` | That token is wrong, deleted or expired | The message names the source that won. Fix or unset it, or create a new token |
+| `can't read the token from token_file ...: ... no such file or directory` | `token_file` or `CLOIDER_TOKEN_FILE` points at a missing file | Fix the path. Relative paths are relative to where you run Terraform |
+| `invalid profile name "...": use letters, digits, '.', '_' or '-'` | The `profile` value has other characters | Use the name `cloider profile list` shows |
+| `Can't reach the Cloider api` with `GET https://cloider.com/api/whoami: ...` | No network, a proxy, or a wrong `api_url` | Check connectivity, unset `CLOIDER_API_URL` |
+| `This API token is read only!` during apply | A **Read** token was used to apply | Use a **Read & Write** token |
+| Resources from the wrong account | Another source won, such as a stale `CLOIDER_TOKEN` in your shell | `unset CLOIDER_TOKEN`, then check with `TF_LOG_PROVIDER=DEBUG` |
+
+## Next steps
+
+- [Get started](/terraform/get-started): a first cluster and database
+- [Multiple environments](/terraform/guides/multiple-environments): staging and production from one module
+- [CI/CD with Terraform](/terraform/guides/ci-cd): plan and apply from GitHub Actions or GitLab
+- [CLI authentication](/cli/authentication): logins and profiles the provider can reuse
+
+<FAQ items={[
+  {q: 'Which environment variable does the Cloider Terraform provider read the token from?', a: 'CLOIDER_TOKEN. If it isn\'t set, the provider reads CLOIDER_TOKEN_FILE, then the token cloider login saved for the CLI profile in use. token and token_file in the provider block take priority over all of these.'},
+  {q: 'Can one Terraform configuration manage several Cloider accounts?', a: 'Yes. A token belongs to one account, so declare one provider "cloider" block per account, each with its own token, token_file or profile, and an alias on all but the first. Resources pick one with provider = cloider.<alias>.'},
+  {q: 'Does the provider use my cloider CLI login?', a: 'Yes, when no other token is set. It reads the token file cloider login wrote for the current CLI profile, or the profile named by the profile argument or CLOIDER_PROFILE.'},
+  {q: 'Is a read only API token enough for Terraform?', a: 'For terraform plan, yes. terraform apply and terraform destroy change resources and need a Read & Write token. The API answers a write with a read only token with "This API token is read only!".'},
+  {q: 'Where do I create an API token for Terraform?', a: 'In the dashboard under Access Control, API Tokens. Tokens can only be created in the dashboard, not with the CLI, Terraform or the API.'},
+]} />

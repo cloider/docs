@@ -1,0 +1,3 @@
+# Left out of `cloider deploy`: authoring tools the site build doesn't use
+tools
+.github

@@ -1,0 +1,356 @@
+---
+title: Manage staging and production on Cloider with Terraform
+sidebar_label: Multiple environments
+sidebar_position: 5
+description: Run staging and production on Cloider from one Terraform module, with a folder per environment, workspaces or separate accounts, separate state and pausing staging.
+keywords: [terraform multiple environments, terraform staging production, terraform workspaces, terraform modules environments, cloider staging production, terraform folder per environment, terragrunt alternative]
+---
+
+Most teams run the same infrastructure more than once: a staging environment to test changes and a production environment for customers. With Terraform you describe an environment once, as a **module**, and create it several times with different inputs. This guide builds a reusable Cloider environment module (a Kubernetes cluster, a PostgreSQL database, a bucket and a key), then shows three ways to run it per environment: one folder per environment (recommended), Terraform workspaces, and a separate Cloider account per environment.
+
+## At a glance
+
+| Approach | State | Isolation | Best for |
+| --- | --- | --- | --- |
+| **Folder per environment** | One state per folder | Good: a plan only touches one environment | Most teams |
+| **Workspaces** | One state per workspace, same folder | Medium: easy to apply in the wrong workspace | Short lived or many identical environments |
+| **Account per environment** | One state per folder, one token per account | Strongest: a staging token can't touch production | Production with strict access control |
+| **One root, several module calls** | One state for all | Weak: one plan covers everything | Demos and tiny projects |
+
+Two environments need room for two clusters, two databases and two buckets. The free trial allows one of each, so this needs a paid account (see [Limits and quotas](/reference/limits-and-quotas)).
+
+## Step 1: Write the environment module
+
+A module is a folder of `.tf` files with input variables and outputs:
+
+```text
+infrastructure/
+├── modules/
+│   └── environment/
+│       ├── main.tf
+│       ├── variables.tf
+│       ├── outputs.tf
+│       └── versions.tf
+├── staging/
+└── production/
+```
+
+```hcl title="modules/environment/versions.tf"
+terraform {
+  required_providers {
+    cloider = {
+      source = "cloider/cloider"
+    }
+  }
+}
+```
+
+```hcl title="modules/environment/variables.tf"
+variable "name" {
+  description = "The environment's name, such as staging. Used in every resource's name."
+  type        = string
+}
+
+variable "bucket_prefix" {
+  description = "Prefix of the bucket's name, unique across every Cloider account, such as your company's name."
+  type        = string
+}
+
+variable "database_plan" {
+  description = "The database's plan."
+  type        = string
+  default     = "hobby"
+}
+
+variable "paused" {
+  description = "Pauses the cluster and the database, keeping their state."
+  type        = bool
+  default     = false
+}
+
+variable "trusted_networks" {
+  description = "IPv4 CIDRs that may reach the database besides the cluster, such as an office network."
+  type        = list(string)
+  default     = []
+}
+```
+
+```hcl title="modules/environment/main.tf"
+resource "cloider_cluster" "this" {
+  name   = var.name
+  paused = var.paused
+}
+
+resource "cloider_database" "this" {
+  name   = "${var.name}-db"
+  engine = "postgresql"
+  plan   = var.database_plan
+  paused = var.paused
+
+  trusted_sources = concat(["cluster:${cloider_cluster.this.id}"], var.trusted_networks)
+}
+
+resource "cloider_bucket" "uploads" {
+  name       = "${var.bucket_prefix}-${var.name}-uploads"
+  versioning = true
+}
+
+resource "cloider_bucket_key" "app" {
+  label   = "${var.name} app"
+  buckets = [cloider_bucket.uploads.id]
+}
+```
+
+```hcl title="modules/environment/outputs.tf"
+output "cluster_id" {
+  value = cloider_cluster.this.id
+}
+
+output "kube_config" {
+  value     = cloider_cluster.this.kube_config
+  sensitive = true
+}
+
+output "database_url" {
+  description = "For apps in the cluster"
+  value       = "postgresql://${cloider_database.this.user}:${urlencode(cloider_database.this.password)}@${cloider_database.this.private_host}:${cloider_database.this.port}/${cloider_database.this.name}?sslmode=require"
+  sensitive   = true
+}
+
+output "bucket" {
+  value = {
+    name     = cloider_bucket.uploads.name
+    endpoint = cloider_bucket.uploads.endpoint
+    region   = cloider_bucket.uploads.region
+  }
+}
+
+output "bucket_access_key" {
+  value = cloider_bucket_key.app.access_key
+}
+
+output "bucket_secret_key" {
+  value     = cloider_bucket_key.app.secret_key
+  sensitive = true
+}
+```
+
+## Step 2a: One folder per environment (recommended)
+
+Each environment is a small root configuration that calls the module with its own inputs and keeps its own state. A plan in `staging/` can never touch production.
+
+```hcl title="staging/main.tf"
+terraform {
+  required_providers {
+    cloider = {
+      source  = "cloider/cloider"
+      version = "~> 0.1"
+    }
+  }
+
+  backend "s3" {
+    bucket = "acme-terraform-state"
+    key    = "staging/terraform.tfstate"
+    # ... the rest of the Cloider backend settings
+  }
+}
+
+provider "cloider" {}
+
+module "env" {
+  source = "../modules/environment"
+
+  name             = "staging"
+  bucket_prefix    = "acme"
+  database_plan    = "hobby"
+  trusted_networks = ["203.0.113.0/24"] # the office
+}
+
+output "database_url" {
+  value     = module.env.database_url
+  sensitive = true
+}
+```
+
+```hcl title="production/main.tf"
+terraform {
+  required_providers {
+    cloider = {
+      source  = "cloider/cloider"
+      version = "~> 0.1"
+    }
+  }
+
+  backend "s3" {
+    bucket = "acme-terraform-state"
+    key    = "production/terraform.tfstate"
+    # ... the rest of the Cloider backend settings
+  }
+}
+
+provider "cloider" {}
+
+module "env" {
+  source = "../modules/environment"
+
+  name          = "production"
+  bucket_prefix = "acme"
+  database_plan = "standard"
+}
+
+output "database_url" {
+  value     = module.env.database_url
+  sensitive = true
+}
+```
+
+The full backend block is on [Store state in a bucket](/terraform/guides/state-backend). Then:
+
+```bash
+terraform -chdir=staging init
+terraform -chdir=staging apply
+
+terraform -chdir=production init
+terraform -chdir=production apply
+```
+
+A change to the module shows up in both environments, but you apply it to staging first, check it, and only then to production.
+
+## Step 2b: Use Terraform workspaces
+
+A **workspace** is a named state for the same configuration. One folder, one set of files, and `terraform workspace select` decides which environment a command acts on:
+
+```hcl title="main.tf"
+locals {
+  settings = {
+    staging    = { database_plan = "hobby", trusted_networks = ["203.0.113.0/24"] }
+    production = { database_plan = "standard", trusted_networks = [] }
+  }
+  env = local.settings[terraform.workspace]
+}
+
+module "env" {
+  source = "./modules/environment"
+
+  name             = terraform.workspace
+  bucket_prefix    = "acme"
+  database_plan    = local.env.database_plan
+  trusted_networks = local.env.trusted_networks
+}
+```
+
+```bash
+terraform workspace new staging
+terraform workspace new production
+
+terraform workspace select staging
+terraform apply
+
+terraform workspace select production
+terraform apply
+```
+
+`terraform workspace show` prints the current workspace. With the [S3 backend on a Cloider bucket](/terraform/guides/state-backend#workspaces), each workspace's state is stored under `env:/<workspace>/<key>`.
+
+:::warning[Check the workspace before applying]
+With workspaces, the same `terraform apply` command acts on whichever workspace is selected. Show `terraform workspace show` in your prompt or CI logs, and in CI always run `terraform workspace select <name>` explicitly. The `default` workspace has no entry in `local.settings` above, so applying in it fails at plan time, which is a useful guard.
+:::
+
+## Step 2c: A separate Cloider account per environment
+
+A Cloider [API token](/account/api-tokens) reaches one account. Putting production in its own account means a staging token, a staging CI job or a staging AI agent can't touch production at all. Each folder then uses its own token:
+
+```bash
+# staging/ uses the staging account's token
+CLOIDER_TOKEN="$STAGING_CLOIDER_TOKEN" terraform -chdir=staging apply
+
+# production/ uses the production account's token
+CLOIDER_TOKEN="$PRODUCTION_CLOIDER_TOKEN" terraform -chdir=production apply
+```
+
+On your own machine, log in to each account with a CLI profile and set `profile` in each folder's provider block:
+
+```bash
+cloider login --profile acme-staging
+cloider login --profile acme-production
+```
+
+```hcl title="production/main.tf"
+provider "cloider" {
+  profile = "acme-production"
+}
+```
+
+See [Provider configuration](/terraform/provider-configuration#manage-several-accounts-with-provider-aliases) for managing several accounts from one configuration, and [Switch accounts](/account/switch-accounts) for how accounts work.
+
+## Everything in one root (small projects)
+
+For a demo, both environments can be module calls in one configuration, with one state:
+
+```hcl title="main.tf"
+provider "cloider" {}
+
+module "staging" {
+  source        = "./modules/environment"
+  name          = "staging"
+  bucket_prefix = "acme"
+}
+
+module "production" {
+  source        = "./modules/environment"
+  name          = "production"
+  bucket_prefix = "acme"
+  database_plan = "standard"
+}
+```
+
+Every plan then covers both environments, so a mistake in staging inputs can't be applied without also applying whatever is pending for production. Use `-target=module.staging` sparingly, or move to folders.
+
+## Pause staging when nobody uses it
+
+A paused cluster keeps its state and isn't billed for compute, and a paused database keeps its data. The module passes `paused` to both:
+
+```hcl title="staging/main.tf"
+variable "paused" {
+  type    = bool
+  default = false
+}
+
+module "env" {
+  source = "../modules/environment"
+
+  name          = "staging"
+  bucket_prefix = "acme"
+  paused        = var.paused
+}
+```
+
+```bash
+terraform -chdir=staging apply -var paused=true    # evenings and weekends
+terraform -chdir=staging apply -var paused=false   # back to work
+```
+
+A scheduled CI job can run these. See [Pause and resume](/kubernetes/pause-and-resume) and [Billing model](/concepts/billing-model) for how paused resources are billed.
+
+## Promote changes safely
+
+1. Change the module in a branch.
+2. Open a merge request. CI runs `terraform plan` for staging and production and posts both plans (see [CI/CD with Terraform](/terraform/guides/ci-cd)).
+3. Merge and apply to staging. Check the result.
+4. Apply to production, ideally behind a manual approval.
+
+Pin the module with a git tag (`source = "git::https://gitlab.com/acme/infrastructure.git//modules/environment?ref=v1.4.0"`) when environments live in different repositories, so production only moves when you bump the tag.
+
+## Next steps
+
+- [Store state in a bucket](/terraform/guides/state-backend)
+- [CI/CD with Terraform](/terraform/guides/ci-cd)
+- [Import existing resources](/terraform/guides/import-existing-resources) into an environment
+- [Infrastructure as code with Terraform](/guides/infrastructure-as-code-with-terraform)
+
+<FAQ items={[
+  {q: 'Should I use Terraform workspaces or folders for staging and production on Cloider?', a: 'Folders are the safer default: each environment has its own small configuration and state, and a plan in one folder can\'t touch the other. Workspaces work too, but the same command acts on whichever workspace is selected, which makes mistakes easier.'},
+  {q: 'Can staging and production be in different Cloider accounts?', a: 'Yes. A token reaches one account, so give each environment folder its own token or CLI profile. This gives the strongest isolation: a staging token can\'t change production.'},
+  {q: 'Can I run staging and production on the Cloider free trial?', a: 'Not both at once. The trial allows one cluster, one database, one bucket and one registry project at a time, so two full environments need a paid account.'},
+  {q: 'How do I save money on a staging environment?', a: 'Pause it when nobody uses it. Set paused = true on the cloider_cluster and cloider_database and apply. A paused cluster keeps its state and isn\'t billed for compute, and a paused database keeps its data.'},
+]} />

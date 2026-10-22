@@ -1,0 +1,485 @@
+---
+title: Account API endpoints
+sidebar_label: Account
+sidebar_position: 1
+description: Cloider API reference for the account, whoami, options, public pricing, usage, billing, members and API tokens, with requests, responses and errors.
+keywords: [cloider api whoami, cloider api usage, cloider api billing, cloider pricing api, cloider members api, api tokens endpoint, cloider options]
+---
+
+These endpoints describe the account a token works in: who the token acts as, which options the create forms offer, prices, usage and bills, the members of the account and its API tokens. Changing who has access is done in the dashboard only; see [Manage members and tokens in the dashboard](#manage-members-and-tokens-in-the-dashboard).
+
+All paths are relative to `https://cloider.com/api`, and every example sends the token as described in [Authentication](/api/authentication).
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/whoami`](#get-who-the-token-acts-as) | Read |
+| GET | [`/options`](#list-the-options-for-new-resources) | Read |
+| GET | [`/pricing`](#get-current-prices) | Public |
+| GET | [`/dashboard`](#count-the-accounts-clusters) | Read |
+| GET | [`/usage`](#get-month-to-date-usage) | Read |
+| GET | [`/billing`](#list-bills) | Read, Owner only |
+| GET | [`/members`](#list-members) | Read |
+| GET | [`/api-tokens`](#list-api-tokens) | Read |
+| DELETE | [`/api-tokens/current`](#revoke-the-current-token) | Read |
+
+**Read** works with any token, and **Public** needs no token at all.
+
+## The user object
+
+Several responses contain users. A full user, as in `/whoami`, has these fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `first_name` | string | First name, from the Google or GitHub profile |
+| `last_name` | string | Last name |
+| `email` | string | Email address, in lower case |
+| `picture` | string | Profile picture URL, or empty |
+| `plan` | string | `Free` or `Paid` |
+| `trial_end_date` | string or null | When the free trial ends, as a timestamp, or `null` |
+| `suspended` | boolean | `true` when the account is suspended and can't create resources |
+
+A **public user**, as in a member's `authorizer` or a token's `creator`, has only `first_name`, `last_name`, `email` and `picture`.
+
+An account is itself a user: the user who owns it. The account's `email` is the owner's email, and that is how accounts are told apart in the dashboard's account switcher.
+
+## Get who the token acts as
+
+```http
+GET /whoami
+```
+
+Returns the member the token acts as (`user`), the account it works in (`account`), the role it has there (`role`), and the token itself (`token`). Scripts call it to check they have the right token before doing anything.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/whoami \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "user": {
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "email": "jane@example.com",
+    "picture": "",
+    "plan": "Free",
+    "trial_end_date": null,
+    "suspended": false
+  },
+  "account": {
+    "first_name": "Acme",
+    "last_name": "Inc",
+    "email": "ops@example.com",
+    "picture": "",
+    "plan": "Paid",
+    "trial_end_date": null,
+    "suspended": false
+  },
+  "role": "Admin",
+  "token": {
+    "hashed_id": "q2m7c",
+    "description": "Deploy script",
+    "read_only": false,
+    "creator": {
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "email": "jane@example.com",
+      "picture": ""
+    },
+    "last_used_at": "2026-10-19T08:41:12.311207Z",
+    "created_at": "2026-10-02T14:03:55.120941Z"
+  }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `user` | The token's creator |
+| `account` | The account the token works in. For a token created in your own account, the same as `user` |
+| `role` | `Owner` (the token is in the creator's own account), `Admin` or `Restricted`. A read only token is always `Restricted` |
+| `token` | The token's details, without the secret. `null` when the request comes from a dashboard session |
+
+The `plan` and `suspended` fields that matter for limits are the account's, not the user's.
+
+## List the options for new resources
+
+```http
+GET /options
+```
+
+Returns the choices the create forms offer: Kubernetes versions, database engines with their versions, database plans, the domain free subdomains are created under, and the nameservers a custom domain points to. The values come from the same lists the API validates against, so a client that reads them never offers something the API would refuse. The CLI and the Terraform `cloider_options` data source use this endpoint.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/options \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "cluster_versions": ["1.34", "1.33", "1.32"],
+  "database_engines": [
+    {"service": "PostgreSQL", "versions": ["18"], "ssl": true},
+    {"service": "MySQL", "versions": ["9"], "ssl": true},
+    {"service": "MongoDB", "versions": ["8"], "ssl": true},
+    {"service": "Redis", "versions": ["8"], "ssl": true}
+  ],
+  "database_plans": ["Hobby", "Starter", "Basic", "Standard", "Plus", "Pro", "Max", "Ultra"],
+  "subdomain_roots": ["cloider.app"],
+  "nameservers": ["ns1.cloider.com", "ns2.cloider.com", "ns3.cloider.com", "ns4.cloider.com"]
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `cluster_versions` | string list | Kubernetes versions `POST /clusters` accepts, newest first |
+| `database_engines` | object list | Engines that can be created now, each with its `service` name, its `versions` and whether it supports `ssl` |
+| `database_plans` | string list | Plan names `POST /databases` and `PUT /databases/:hashed_id/plan` accept, smallest first |
+| `subdomain_roots` | string list | The domain free subdomains are created under |
+| `nameservers` | string list | The nameservers to set at your registrar for a custom domain |
+
+Only engines that can be created right now are listed in `database_engines`. Versions and plans change over time, so read them from here instead of hard coding them.
+
+## Get current prices
+
+```http
+GET /pricing
+```
+
+Returns the current prices of every product. This endpoint is **public**: it needs no token, and is what the pricing table on cloider.com reads.
+
+**Access:** public.
+
+```bash
+curl https://cloider.com/api/pricing
+```
+
+```json title="Response (amounts are illustrative)"
+{
+  "cluster": {
+    "compute_unit": 0.0185,
+    "volume_gi": 0.00015,
+    "loadbalancer": 0.0075,
+    "cpu_to_mem_ratio": 3.072
+  },
+  "app": {
+    "compute_unit": 0.0185,
+    "cpu_to_mem_ratio": 3.072
+  },
+  "bucket": {"storage_gi": 0.0059},
+  "registry": {"storage_gi": 0.0059},
+  "database": {
+    "PostgreSQL": {
+      "Hobby": {"price": 3.99, "cpu": "0.25", "ram": "0.25 GB", "storage": "1 GB", "paused_price": 0.14},
+      "Standard": {"price": 14.99, "cpu": "1", "ram": "1 GB", "storage": "6 GB", "paused_price": 0.84}
+    }
+  }
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `cluster` | Kubernetes prices: `compute_unit`, `volume_gi` (persistent volume storage), `loadbalancer`, and `cpu_to_mem_ratio`, the divisor that turns memory into compute units. It is not an amount of money |
+| `app` | App Engine compute prices, measured like a cluster's |
+| `bucket` | Object storage price per GiB stored |
+| `registry` | Container registry price per GiB stored |
+| `database` | Per engine, per plan: the monthly `price`, the plan's `cpu` (cores), `ram` and `storage`, and `paused_price`, what the plan's storage costs for a month while the database is paused |
+
+A product that has no current price is `null`. Amounts are in US dollars. The numbers above only show the shape; call the endpoint for real prices, and see [Pricing](/reference/pricing) for how each product is billed.
+
+## Count the account's clusters
+
+```http
+GET /dashboard
+```
+
+Returns the number of Kubernetes clusters in the account that aren't deleted. The dashboard uses it for its sidebar.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/dashboard \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{"clusters_count": 2}
+```
+
+## Get month to date usage
+
+```http
+GET /usage
+```
+
+Returns what every resource of the account has used and cost so far this month, with the last 31 days of daily usage and a forecast for the rest of the month. This is the data behind the dashboard's **Usage** page.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/usage \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response (trimmed)"
+{
+  "clusters": [
+    {
+      "hashed_id": "k3x9p",
+      "cluster_name": "staging",
+      "cluster_label": "staging",
+      "cluster_version": "1.34",
+      "is_ha": false,
+      "status": "Ready",
+      "created_at": "2026-10-12T10:22:41.502113Z",
+      "daily_usage": [
+        {
+          "resource_type": "cluster",
+          "date": "2026-10-19T00:00:00Z",
+          "total_cost": 0.4412,
+          "total_time_seconds": 86400,
+          "metrics": {"cpu": 310, "memory": 742, "volumes": 5, "compute_cost": 0.4122, "volumes_cost": 0.029, "loadbalancers_cost": 0, "loadbalancers": []}
+        }
+      ],
+      "monthly_usage": {
+        "avg_cpu_usage": 298,
+        "avg_memory_usage": 731,
+        "avg_volumes_usage": 5,
+        "compute_total_cost": 3.21,
+        "volumes_total_cost": 0.23,
+        "lb_total_cost": 0,
+        "total_cost": 3.44,
+        "days": 8,
+        "forecast_this_month": 8.05,
+        "forecast_next_month": 13.62
+      },
+      "loadbalancers": [],
+      "loadbalancers_prev": [],
+      "forecast_rest_of_day": 0.19,
+      "date": "2026-10-20T00:00:00Z",
+      "month": "October 2026"
+    }
+  ],
+  "databases": [],
+  "apps": [],
+  "buckets": [],
+  "registry_projects": []
+}
+```
+
+The response has one list per product: `clusters`, `databases`, `apps`, `buckets` and `registry_projects`. Each entry is the resource itself (the same fields as in its list endpoint) plus:
+
+| Field | Description |
+| --- | --- |
+| `daily_usage` | Up to the last 31 days, oldest first. Each day has its `date`, `total_cost`, `total_time_seconds` and product specific `metrics` |
+| `monthly_usage` | This month's totals so far, `days` with usage, and `forecast_this_month` and `forecast_next_month` |
+| `forecast_rest_of_day` | The expected cost for the rest of today at the current rate |
+| `date` | Today, as a timestamp at midnight |
+| `month` | The current month, for example `October 2026` |
+
+`monthly_usage` differs per product:
+
+| Product | Fields of `monthly_usage` besides the totals and forecasts |
+| --- | --- |
+| Clusters | `avg_cpu_usage` (millicores), `avg_memory_usage` (MiB), `avg_volumes_usage` (GiB), `compute_total_cost`, `volumes_total_cost`, `lb_total_cost` |
+| Apps | `avg_cpu_usage` (millicores), `avg_memory_usage` (MiB), `compute_total_cost` |
+| Databases | `total_time_seconds`, `running_time_seconds`, `paused_time_seconds`, `plan_cost`, `paused_storage_cost` |
+| Buckets and registry projects | `avg_storage_usage` (GiB), `storage_total_cost` |
+
+Deleted clusters stay in the list for 60 days after their last day of usage, with the status `Terminated`, so this month's cost of a deleted resource is still accounted for. The single resource versions of this data are `GET /apps/:hashed_id/usage`, `GET /buckets/:hashed_id/usage` and `GET /registry/projects/:hashed_id/usage`. See [Usage](/account/usage) for what each figure means.
+
+## List bills
+
+```http
+GET /billing
+```
+
+Returns the account's monthly bills, newest first, each with its items per resource and the line items that make them up.
+
+**Access:** any token, but only the account **owner**. Admin and Restricted members, and their tokens, get `403`:
+
+```json title="Response (403)"
+{"errors": {"_": ["You don't have access to this account billing page!"]}, "data": null}
+```
+
+```bash
+curl https://cloider.com/api/billing \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "month": "September 2026",
+    "items": [
+      {
+        "service_type": "Kubernetes",
+        "description": "Cluster: \"staging\"",
+        "subitems": [
+          {
+            "service": "Compute",
+            "description": "Avg. CPU usage: 0.3 cores\nAvg. memory usage: 0.71 GB\nUsage time: 720 Hours",
+            "qty": 412.5,
+            "unit": "Compute-Hour",
+            "price": 0.0185,
+            "amount": 7.63
+          },
+          {
+            "service": "Persistent Volumes",
+            "description": "Avg usage: 5 GB",
+            "qty": 3600,
+            "unit": "GB-Hour",
+            "price": 0.00015,
+            "amount": 0.54
+          }
+        ],
+        "amount": 8.17
+      }
+    ],
+    "amount": 8.17,
+    "paid": true,
+    "created_at": "2026-10-01T02:00:13.204511Z"
+  }
+]
+```
+
+| Field | Description |
+| --- | --- |
+| `month` | The month billed, for example `September 2026` |
+| `items` | One item per resource: `service_type` (`Kubernetes`, `App`, `Bucket`, `Registry` or a database engine), a `description` naming the resource, its `subitems` and its `amount` |
+| `subitems` | The line items: `service`, a `description` of the usage, the quantity `qty` in `unit` (`Compute-Hour`, `GB-Hour`, `Hour`), the unit `price` and the `amount` |
+| `amount` | The bill's total |
+| `paid` | Whether the bill has been paid |
+
+See [Billing](/account/billing) for how bills are produced and paid.
+
+## List members
+
+```http
+GET /members
+```
+
+Returns the members invited to the account, oldest first. The account owner isn't in the list: they are the account.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/members \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "account": {"first_name": "", "last_name": "", "email": "", "picture": ""},
+    "authorizer": {"first_name": "", "last_name": "", "email": "", "picture": ""},
+    "email": "jane@example.com",
+    "user": null,
+    "role": "Admin",
+    "status": "Active",
+    "created_at": "2026-09-14T09:12:30.118403Z",
+    "updated_at": "2026-09-14T11:40:02.551930Z"
+  },
+  {
+    "account": {"first_name": "", "last_name": "", "email": "", "picture": ""},
+    "authorizer": {"first_name": "", "last_name": "", "email": "", "picture": ""},
+    "email": "sam@example.com",
+    "user": null,
+    "role": "Restricted",
+    "status": "Pending",
+    "created_at": "2026-10-18T16:05:44.902117Z",
+    "updated_at": "2026-10-18T16:05:44.902117Z"
+  }
+]
+```
+
+| Field | Description |
+| --- | --- |
+| `email` | The member's email address, which identifies the member in the account |
+| `role` | `Admin` or `Restricted` |
+| `status` | `Pending` (invited, hasn't signed in yet), `Active` or `Deactivated` |
+| `account`, `authorizer`, `user` | Not filled in by this endpoint: the objects are empty and `user` is `null` |
+| `created_at`, `updated_at` | When the member was invited and last changed |
+
+A pending member becomes `Active` the first time they sign in with the invited email address. [Access control](/account/access-control) explains roles and invitations.
+
+## List API tokens
+
+```http
+GET /api-tokens
+```
+
+Returns the account's API tokens, newest first, without their secrets. The owner and admins see every token of the account; other members see only the tokens they created.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/api-tokens \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "hashed_id": "q2m7c",
+    "description": "Deploy script",
+    "read_only": false,
+    "creator": {
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "email": "jane@example.com",
+      "picture": ""
+    },
+    "last_used_at": "2026-10-19T08:41:12.311207Z",
+    "created_at": "2026-10-02T14:03:55.120941Z"
+  }
+]
+```
+
+| Field | Description |
+| --- | --- |
+| `hashed_id` | The token's id, used to change or delete it in the dashboard |
+| `description` | What the token is for |
+| `read_only` | `true` for a Read token, `false` for Read & Write |
+| `creator` | The member the token acts as |
+| `last_used_at` | When the token was last used, to the minute, or `null` if never |
+| `created_at` | When the token was created |
+
+## Revoke the current token
+
+```http
+DELETE /api-tokens/current
+```
+
+Deletes the token that sends the request. It is the one change a token can make to tokens, and it works for read only tokens too. `cloider logout` uses it.
+
+**Access:** any token. A dashboard session gets `403` with `Only an API token can revoke itself, manage tokens from the dashboard!`.
+
+```bash
+curl -X DELETE https://cloider.com/api/api-tokens/current \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is `204 No Content` with an empty body.
+
+## Manage members and tokens in the dashboard
+
+Inviting and removing members, changing a member's role, activating or deactivating a member, and creating, changing or deleting API tokens are done in the dashboard only, so that a leaked token can't hand out more access. A token that tries gets `403 This endpoint can't be used with an API token!`.
+
+- Making a member `Restricted` turns all of their API tokens in the account into read only tokens.
+- Deactivating a member stops them and their API tokens from reaching the account right away.
+- Removing a member deletes every API token they created in the account.
+
+See [Access control](/account/access-control) for members and roles, and [API tokens](/account/api-tokens) for creating and managing tokens. To work in several accounts, use one token per account; see [Switch accounts](/account/switch-accounts).
+
+## Related
+
+- [Authentication](/api/authentication): tokens, access levels and what is dashboard only
+- [Access control](/account/access-control): members and roles in the dashboard
+- [API tokens](/account/api-tokens): creating and managing tokens
+- [Usage](/account/usage) and [Billing](/account/billing)

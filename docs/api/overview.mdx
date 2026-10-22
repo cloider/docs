@@ -1,0 +1,616 @@
+---
+title: Cloider REST API overview
+sidebar_label: Overview
+sidebar_position: 1
+description: The Cloider REST API at https://cloider.com/api, its JSON conventions, ids, errors and status polling, with a first request and an index of every endpoint.
+keywords: [cloider api, cloider rest api, cloider api reference, api base url, cloider api token, rest api json, cloider endpoints]
+---
+
+The Cloider REST API is the HTTP interface behind the dashboard, the `cloider` CLI, the Terraform provider and the MCP server. Everything those tools do, you can do with plain HTTPS requests that send and receive JSON: create a Kubernetes cluster, deploy an app, resize a database, upload a file to a bucket or add a DNS record.
+
+This page explains the conventions every endpoint follows, walks you through a first request, and lists every endpoint with a link to its reference page.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Base URL** | `https://cloider.com/api` |
+| **Protocol** | HTTPS only. JSON request and response bodies, with a few plain text and streaming exceptions listed below |
+| **Authentication** | An API token in the `Authorization: Bearer cldr_...` header. See [Authentication](/api/authentication) |
+| **Token scope** | One account per token, with Read or Read & Write access |
+| **Resource ids** | Short opaque ids such as `k3x9p` (`hashed_id`), domain names for domains, numeric ids for DNS records |
+| **Errors** | JSON `{"errors": {"field": ["message"]}, "data": null}`, with general messages under `_`. See [Errors](/api/errors) |
+| **Rate limits** | 10 requests a second and 100 requests a minute per client. See [Rate limits](/api/rate-limits) |
+| **Long running work** | Create, pause, resume, restore and delete answer at once; poll the resource's `/status` endpoint until it settles |
+| **Versioning** | One unversioned API. The CLI, Terraform provider and dashboard use the same routes you do |
+
+## Who should use the API?
+
+Use the REST API when you write your own integration: an internal tool, a deployment script in a language without a Cloider SDK, a chatbot, or a CI system where installing the CLI isn't practical. Every request is an ordinary HTTPS call, so any language with an HTTP client works.
+
+If one of the higher level tools fits, it is usually less work:
+
+| Tool | When it is the better choice |
+| --- | --- |
+| [CLI](/cli/overview) | Shell scripts and CI jobs. It resolves names to ids, waits for operations and retries rate limits for you |
+| [Terraform](/terraform/overview) | Declaring clusters, databases, buckets, registries, domains and DNS as code that is reviewed and applied |
+| [MCP server](/mcp/overview) | Letting an AI agent such as Claude or Cursor manage your resources |
+
+All of them call the endpoints documented here, so anything you learn on these pages applies to them too.
+
+## Base URL
+
+Every endpoint lives under one base URL:
+
+```text
+https://cloider.com/api
+```
+
+The paths in this reference are relative to it. `GET /clusters` means:
+
+```bash
+curl https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+There is no version segment in the path and no regional endpoint. Object storage, the container registry and your databases have endpoints of their own (an S3 endpoint per bucket region, `registry.cloider.com`, a host per database), and the API tells you what they are in each resource's response.
+
+## Make your first request
+
+The quickest way to check that your token works is `GET /whoami`, which tells you who the token acts as and in which account.
+
+### 1. Create an API token
+
+Open **Access Control** in the dashboard, go to the **API Tokens** tab and create a token. Pick **Read** for a token that only looks, or **Read & Write** for one that can change things. The token is shown once, so copy it right away. [API tokens](/account/api-tokens) walks through it with screenshots.
+
+### 2. Keep the token in an environment variable
+
+```bash
+export CLOIDER_TOKEN=cldr_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+`CLOIDER_TOKEN` is the variable every example in these docs uses, and the one the CLI reads, so the same variable serves both.
+
+### 3. Call `/whoami`
+
+<Tabs groupId="lang" queryString>
+<TabItem value="curl" label="curl" default>
+
+```bash
+curl https://cloider.com/api/whoami \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+</TabItem>
+<TabItem value="javascript" label="JavaScript">
+
+```js title="whoami.mjs"
+const res = await fetch('https://cloider.com/api/whoami', {
+  headers: { Authorization: `Bearer ${process.env.CLOIDER_TOKEN}` },
+});
+
+if (!res.ok) {
+  throw new Error(`${res.status}: ${await res.text()}`);
+}
+
+const me = await res.json();
+console.log(`${me.user.email} acts as ${me.role} in ${me.account.email}`);
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python title="whoami.py"
+import os
+import requests
+
+res = requests.get(
+    "https://cloider.com/api/whoami",
+    headers={"Authorization": f"Bearer {os.environ['CLOIDER_TOKEN']}"},
+    timeout=30,
+)
+res.raise_for_status()
+
+me = res.json()
+print(f"{me['user']['email']} acts as {me['role']} in {me['account']['email']}")
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+```go title="main.go"
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+)
+
+type whoami struct {
+	User    struct{ Email string `json:"email"` } `json:"user"`
+	Account struct{ Email string `json:"email"` } `json:"account"`
+	Role    string                               `json:"role"`
+}
+
+func main() {
+	req, _ := http.NewRequest("GET", "https://cloider.com/api/whoami", nil)
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("CLOIDER_TOKEN"))
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		log.Fatalf("whoami: %s", res.Status)
+	}
+
+	var me whoami
+	if err := json.NewDecoder(res.Body).Decode(&me); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%s acts as %s in %s\n", me.User.Email, me.Role, me.Account.Email)
+}
+```
+
+</TabItem>
+</Tabs>
+
+```json title="Response"
+{
+  "user": {
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "email": "jane@example.com",
+    "picture": "",
+    "plan": "Paid",
+    "trial_end_date": null,
+    "suspended": false
+  },
+  "account": {
+    "first_name": "Acme",
+    "last_name": "Inc",
+    "email": "ops@example.com",
+    "picture": "",
+    "plan": "Paid",
+    "trial_end_date": null,
+    "suspended": false
+  },
+  "role": "Admin",
+  "token": {
+    "hashed_id": "q2m7c",
+    "description": "Deploy script",
+    "read_only": false,
+    "creator": {
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "email": "jane@example.com",
+      "picture": ""
+    },
+    "last_used_at": "2026-10-19T08:41:12.311207Z",
+    "created_at": "2026-10-02T14:03:55.120941Z"
+  }
+}
+```
+
+`user` is the member who created the token, `account` is the account the token works in, and `role` is that member's current role there (`Owner`, `Admin` or `Restricted`). A read only token always reports `Restricted`. If you get `401` instead, the token is wrong or was revoked; see [Authentication](/api/authentication).
+
+### 4. List something
+
+With the token working, list the account's Kubernetes clusters:
+
+```bash
+curl https://cloider.com/api/clusters \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "hashed_id": "k3x9p",
+    "cluster_name": "staging",
+    "cluster_label": "staging",
+    "cluster_version": "1.34",
+    "is_ha": false,
+    "status": "Ready",
+    "created_at": "2026-10-12T10:22:41.502113Z"
+  }
+]
+```
+
+The `hashed_id` is what every other cluster endpoint takes in its path, for example `GET /clusters/k3x9p/status`.
+
+## Request conventions
+
+### Headers
+
+| Header | When | Value |
+| --- | --- | --- |
+| `Authorization` | Every request except `GET /pricing` | `Bearer cldr_...` |
+| `Content-Type` | Requests with a JSON body (`POST`, `PUT`, some `DELETE`) | `application/json` |
+| `Accept` | Streaming endpoints | `text/event-stream` (optional, the stream is sent either way) |
+| `Last-Event-ID` | Reconnecting to a build log stream | The `id` of the last event you received |
+
+### Request bodies
+
+Write endpoints take a JSON object. Field names are `snake_case`, the same names the API uses in its responses (`cluster_name`, `database_plan`, `read_only`). A field you leave out takes its zero value: an empty string, `0`, `false` or an empty list. The reference page of each endpoint marks which fields are required and what the defaults are.
+
+A few `DELETE` endpoints take a JSON body too, for example `DELETE /apps/:hashed_id` takes the free subdomains to delete with the app. Most HTTP clients support a body on `DELETE`; with curl, pass `-d` as usual.
+
+### Query parameters
+
+Filters, pagination and a few ids travel in the query string, for example `GET /buckets/k3x9p/objects?prefix=images/` or `GET /database/password?id=d7f2m`. URL encode values that contain `/`, spaces or other reserved characters (`curl -G --data-urlencode` does this for you).
+
+### CORS
+
+The API sends permissive CORS headers, so a browser can call it from any origin. That doesn't make it a good idea to put a token in a public web page: anyone who opens the page can read the token. Call the API from a server, a script or CI, and keep tokens in secrets.
+
+## How resources are identified
+
+Most resources have a short, opaque id called `hashed_id`, made of lower case letters and digits (for example `k3x9p`). It is in every list and create response, and it is what the path parameters named `:hashed_id` expect. The API does not look resources up by name: pass the id. The CLI and Terraform accept names because they list the resources first and pick the matching id for you.
+
+| Resource | Identified in paths by | Example |
+| --- | --- | --- |
+| Clusters, databases, apps, buckets | `hashed_id` | `/clusters/k3x9p`, `/apps/a8q2w` |
+| Bucket keys, registry tokens, targets | `hashed_id` | `/bucket-keys/b5n1t` |
+| Registry projects | `hashed_id` | `/registry/projects/r4c8z` |
+| App builds | the build's `hashed_id`, under the app | `/apps/a8q2w/builds/u9e3k/logs` |
+| Git connections | the installation's `hashed_id` | `/git/github/installations/g2h6v/repos` |
+| Support tickets and attachments | `hashed_id`, in upper case | `/support/tickets/K7Q2M` |
+| Domains | the domain name itself | `/domains/example.com` |
+| DNS records | the record's numeric `id` | `/dns-records/1042` |
+| Registry immutability rules, retention runs and tasks | the numeric `id` from their list endpoint | `/registry/projects/r4c8z/retention/runs/57` |
+| Uploaded app source | the `source_token` the upload returned | `/apps/source/<token>` |
+
+Three database endpoints take the id in the query string instead of the path: `GET /database/password?id=...`, `GET /database/cert?id=...` and `GET /database/backups?id=...`.
+
+### Names, labels and ids
+
+Clusters, databases and apps also have a **name** you choose and a **label** that is unique in the account. Names don't have to be unique: if the account already has a cluster named `staging`, a second one gets the label `staging-1`. The dashboard and CLI show the label; the API returns both (`cluster_name` and `cluster_label`, `database_name` and `database_label`, `app_name` and `app_label`). Only the `hashed_id` is guaranteed never to change.
+
+## Response conventions
+
+### Successful responses
+
+A successful response is the resource itself, not wrapped in an envelope. A list endpoint answers with a JSON array, a single resource with a JSON object:
+
+```json
+[{"hashed_id": "k3x9p", "cluster_name": "staging", "status": "Ready"}]
+```
+
+Some write endpoints answer with the updated list of things you just changed (for example changing a bucket key returns every key of the account), so you can refresh a view without a second request. Each endpoint's page shows its exact response.
+
+A list that has nothing in it is `[]`, never `null`, and a JSON object with no keys is `{}`.
+
+### Plain text responses
+
+A handful of endpoints answer with plain text because that is what you want to save or compare:
+
+| Endpoint | Body |
+| --- | --- |
+| `GET /clusters/:hashed_id/status` (and the same for databases, buckets, registry projects, apps) | The status word, for example `Ready` |
+| `GET /clusters/:hashed_id/kubeconfig` | The kubeconfig YAML file |
+| `GET /database/password` | The database password |
+| `GET /database/cert` | The CA certificate in PEM format |
+| `GET /apps/:hashed_id/builds/:build_hashed_id/logs` | The build log |
+
+### Streaming responses
+
+Logs are streamed as [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) (`text/event-stream`): `GET /apps/:hashed_id/logs/stream` for a running app and `GET /apps/:hashed_id/builds/:build_hashed_id/logs/stream` for a build. The exec endpoints (`POST /clusters/:hashed_id/exec` and the database and app equivalents) also answer with an event stream. Read them with `curl -N` so curl doesn't buffer the output. [Apps](/api/endpoints/apps#stream-an-apps-logs) and [App builds](/api/endpoints/app-builds) show the event format.
+
+### Redirects and presigned URLs
+
+Large files never pass through the API. To upload or download a bucket object, an app's source archive or a support attachment, the API hands you a short lived **presigned URL** on the storage service, and you send the bytes there directly. Most endpoints return the URL in their JSON answer; the support attachment download answers with a `302` redirect to it instead, so pass `-L` to curl to follow it. The flows are described step by step on [Bucket objects](/api/endpoints/bucket-objects), [Apps](/api/endpoints/apps) and [Support](/api/endpoints/support).
+
+### Field types
+
+| JSON type | Used for | Example |
+| --- | --- | --- |
+| string | ids, names, statuses, enums | `"hashed_id": "k3x9p"`, `"status": "Ready"` |
+| string, RFC 3339 timestamp | `created_at`, `updated_at`, `last_used_at` and other times | `"2026-10-12T10:22:41.502113Z"` |
+| string, month name | the month of a bill or of usage figures | `"month": "October 2026"` |
+| number | sizes in bytes, ports, counts, amounts of money | `"size_bytes": 1048576`, `"total_cost": 4.27` |
+| boolean | flags | `"read_only": true` |
+| `null` | an optional value that isn't set | `"last_used_at": null` |
+
+Timestamps carry fractional seconds and a time zone offset, so parse them with an RFC 3339 parser rather than a fixed format. Days in usage figures are timestamps at midnight, for example `"date": "2026-10-19T00:00:00Z"`. Amounts of money are plain JSON numbers in the account's billing currency.
+
+### Statuses
+
+Resources that take time to provision have a `status`. Clusters, databases and apps share these values:
+
+| Status | Meaning |
+| --- | --- |
+| `Creating`, `Starting` | Being provisioned or started |
+| `Ready` | Running and usable |
+| `Pausing`, `Paused` | Being stopped, or stopped with its data kept |
+| `Upgrading` | A change, such as a database resize, is being applied |
+| `Terminating`, `Terminated` | Being deleted, or deleted |
+| `Failed` | Provisioning or an operation failed |
+
+Apps and their builds use a few more (`Pending`, `Queued`, `Building`, `Deploying`, `Superseded`, `Canceled`). [Status values](/reference/status-values) lists every status of every product.
+
+## Long running operations
+
+Creating, pausing, resuming, restoring and deleting a resource takes from seconds to minutes. These endpoints don't wait: they accept the request, start the work and answer right away, usually with the resource in a transitional status such as `Creating` or `Pausing`. You then poll the resource's status endpoint until it reaches the status you want.
+
+```bash title="Wait for a new cluster to become Ready"
+until [ "$(curl -s https://cloider.com/api/clusters/k3x9p/status \
+  -H "Authorization: Bearer $CLOIDER_TOKEN")" = "Ready" ]; do
+  sleep 5
+done
+echo "Cluster is ready"
+```
+
+Poll every few seconds, not in a tight loop: every poll counts against the [rate limit](/api/rate-limits). Stop when the status is `Failed` too. The CLI's `--wait` flag does exactly this.
+
+| Operation | Endpoint to poll | Done when |
+| --- | --- | --- |
+| Create or resume a cluster | `GET /clusters/:hashed_id/status` | `Ready` |
+| Pause a cluster | `GET /clusters/:hashed_id/status` | `Paused` |
+| Create, resume, resize or restore a database | `GET /databases/:hashed_id/status` | `Ready` |
+| Create a bucket | `GET /buckets/:hashed_id/status` | `Ready` |
+| Create a registry project | `GET /registry/projects/:hashed_id/status` | `Ready` |
+| Deploy an app | `GET /apps/:hashed_id/builds` (the build's `status`) | `Ready` or `Failed` |
+| Delete a cluster, database or app | its status endpoint | `Terminated` |
+| Delete a bucket or registry project | its status endpoint | `404` |
+
+## Retries and idempotency
+
+The API has no idempotency keys, so a request that is sent twice runs twice. Follow these rules, which are the ones the CLI applies:
+
+- **Reads** (`GET`) are always safe to retry, including after a timeout or a `502`, `503` or `504`.
+- **A `429 Too Many Requests`** means the request was turned away before it reached the API, so it is safe to retry any request after waiting. See [Rate limits](/api/rate-limits).
+- **Writes** (`POST`, `PUT`, `DELETE`) that timed out or failed with a `5xx` may have gone through. Read the resource back before you try again. A second `POST /clusters` with the same name, for example, creates a second cluster labelled `staging-1` rather than failing.
+- **`PUT` endpoints** replace a setting with the value you send (trusted sources, environment variables, lifecycle rules), so sending the same body again leaves the same result.
+
+## Roles and permissions
+
+A token can never do more than the member who created it can do in the account, and its access is checked on every request. If the member is removed or deactivated, their tokens stop working at once; if they are made `Restricted`, their tokens become read only. [Authentication](/api/authentication) has the details, and [Accounts and roles](/concepts/accounts-and-roles) explains the roles.
+
+## What the API doesn't cover
+
+- **Signing in and connecting git providers.** Signing in to the dashboard and connecting GitHub, GitLab or Bitbucket happen in the browser, so an API token can't do them. Once a provider is connected, Cloider picks up its pushes by itself.
+- **Members and API tokens.** Inviting and removing members, changing their roles, and creating, changing or deleting API tokens are done in the dashboard only, so a leaked token can't hand out more access. You can list members and tokens, and a token can revoke itself. See [Authentication](/api/authentication#which-endpoints-are-dashboard-only).
+- **The workloads themselves.** Inside a Kubernetes cluster you use the standard Kubernetes API with the cluster's kubeconfig; inside a bucket, any S3 client; inside the registry, `docker`; inside a database, its own client. The Cloider API manages the resources, not what runs in them.
+
+## Endpoint index
+
+Every endpoint you can call with an API token, grouped as in the sidebar. The **Access** column says what can call it: **Read** works with any token, **Write** needs a Read & Write token, and **Public** needs no token.
+
+### Account
+
+[Account endpoints](/api/endpoints/account): who you are, options, pricing, usage, billing, members and API tokens.
+
+| Method | Path | What it does | Access |
+| --- | --- | --- | --- |
+| GET | `/whoami` | Who the token acts as, in which account, with which role | Read |
+| GET | `/dashboard` | The number of clusters in the account | Read |
+| GET | `/options` | Cluster versions, database engines and plans, subdomain roots, nameservers | Read |
+| GET | `/pricing` | Current prices of every product | Public |
+| GET | `/usage` | Month to date usage and cost of every resource | Read |
+| GET | `/billing` | Monthly bills | Read |
+| GET | `/members` | Members of the account | Read |
+| GET | `/api-tokens` | List API tokens | Read |
+| DELETE | `/api-tokens/current` | Revoke the token that makes the request | Read |
+
+### Kubernetes clusters
+
+[Cluster endpoints](/api/endpoints/clusters).
+
+| Method | Path | What it does | Access |
+| --- | --- | --- | --- |
+| GET | `/clusters` | List clusters | Read |
+| POST | `/clusters` | Create a cluster | Write |
+| GET | `/clusters/:hashed_id/status` | A cluster's status, as plain text | Read |
+| GET | `/clusters/:hashed_id/kubeconfig` | Download the kubeconfig | Read |
+| POST | `/clusters/:hashed_id/pause` | Pause a cluster | Write |
+| POST | `/clusters/:hashed_id/resume` | Resume a paused cluster | Write |
+| DELETE | `/clusters/:hashed_id` | Delete a cluster | Write |
+| GET | `/clusters/services` | Services in the account's clusters, for targets | Read |
+| GET | `/clusters/:hashed_id/terminal` | Open a web terminal | Write |
+| POST | `/clusters/:hashed_id/exec` | Run one `kubectl` or `helm` command | Write |
+
+### Databases
+
+[Database endpoints](/api/endpoints/databases).
+
+| Method | Path | What it does | Access |
+| --- | --- | --- | --- |
+| GET | `/databases` | List databases | Read |
+| POST | `/databases` | Create a database | Write |
+| GET | `/databases/:hashed_id` | A database with its connection details | Read |
+| GET | `/databases/:hashed_id/status` | A database's status, as plain text | Read |
+| GET | `/database/password?id=` | The database password, as plain text | Read |
+| GET | `/database/cert?id=` | The CA certificate, as PEM | Read |
+| GET | `/database/backups?id=` | List backups | Read |
+| POST | `/databases/:hashed_id/restore` | Restore a backup | Write |
+| POST | `/databases/:hashed_id/pause` | Pause a database | Write |
+| POST | `/databases/:hashed_id/resume` | Resume a paused database | Write |
+| DELETE | `/databases/:hashed_id` | Delete a database | Write |
+| PUT | `/databases/:hashed_id/plan` | Resize to another plan | Write |
+| PUT | `/databases/:hashed_id/label` | Rename (change the label) | Write |
+| PUT | `/databases/:hashed_id/ssl` | Turn SSL on or off | Write |
+| PUT | `/databases/:hashed_id/trusted-sources` | Replace the trusted sources | Write |
+| GET | `/databases/:hashed_id/insights` | CPU, memory, storage and connection insights | Read |
+| GET | `/databases/:hashed_id/terminal` | Open a web terminal | Write |
+| POST | `/databases/:hashed_id/terminal/wake` | Start the terminal's client environment | Write |
+| POST | `/databases/:hashed_id/terminal/heartbeat` | Keep the terminal awake | Write |
+| POST | `/databases/:hashed_id/exec` | Run one query or command | Write |
+
+### Object storage
+
+[Bucket endpoints](/api/endpoints/buckets), [bucket object endpoints](/api/endpoints/bucket-objects) and [bucket key endpoints](/api/endpoints/bucket-keys).
+
+| Method | Path | What it does | Access |
+| --- | --- | --- | --- |
+| GET | `/buckets` | List buckets | Read |
+| POST | `/buckets` | Create a bucket | Write |
+| GET | `/buckets/regions` | Regions a bucket can be created in | Read |
+| GET | `/buckets/:hashed_id` | A bucket | Read |
+| DELETE | `/buckets/:hashed_id` | Delete a bucket | Write |
+| GET | `/buckets/:hashed_id/status` | A bucket's status, as plain text | Read |
+| GET | `/buckets/:hashed_id/usage` | A bucket's usage and cost | Read |
+| PUT | `/buckets/:hashed_id/visibility` | Make a bucket public or private | Write |
+| PUT | `/buckets/:hashed_id/policy` | Set a bucket policy | Write |
+| DELETE | `/buckets/:hashed_id/policy` | Remove the bucket policy | Write |
+| GET | `/buckets/:hashed_id/versioning` | Versioning status | Read |
+| PUT | `/buckets/:hashed_id/versioning` | Turn versioning on or off | Write |
+| GET | `/buckets/:hashed_id/lifecycle` | Lifecycle rules | Read |
+| PUT | `/buckets/:hashed_id/lifecycle` | Replace the lifecycle rules | Write |
+| GET | `/buckets/:hashed_id/objects` | List folders and files | Read |
+| POST | `/buckets/:hashed_id/objects/upload` | Get presigned upload URLs | Write |
+| GET | `/buckets/:hashed_id/objects/download` | Get a presigned download URL for a file | Read |
+| POST | `/buckets/:hashed_id/objects/delete` | Delete files and folders | Write |
+| POST | `/buckets/:hashed_id/folders` | Create a folder | Write |
+| GET | `/buckets/:hashed_id/objects/versions` | Versions of a file | Read |
+| GET | `/buckets/:hashed_id/objects/deleted` | Deleted files that can be restored | Read |
+| POST | `/buckets/:hashed_id/objects/restore` | Restore a deleted file or an old version | Write |
+| POST | `/buckets/:hashed_id/objects/versions/delete` | Delete versions of a file for good | Write |
+| GET | `/bucket-keys` | List S3 access keys | Read |
+| POST | `/bucket-keys` | Create an S3 access key | Write |
+| PUT | `/bucket-keys/:hashed_id` | Change a key's name, buckets or access | Write |
+| DELETE | `/bucket-keys/:hashed_id` | Delete a key | Write |
+
+### Container registry
+
+[Registry endpoints](/api/endpoints/registry) and [registry token endpoints](/api/endpoints/registry-tokens).
+
+| Method | Path | What it does | Access |
+| --- | --- | --- | --- |
+| GET | `/registry/projects` | List registry projects | Read |
+| POST | `/registry/projects` | Create a project | Write |
+| GET | `/registry/projects/options` | Registry host and storage limits | Read |
+| GET | `/registry/projects/:hashed_id` | A project | Read |
+| DELETE | `/registry/projects/:hashed_id` | Delete a project | Write |
+| GET | `/registry/projects/:hashed_id/status` | A project's status, as plain text | Read |
+| GET | `/registry/projects/:hashed_id/usage` | A project's usage and cost | Read |
+| GET | `/registry/projects/:hashed_id/summary` | Live repository count and storage used | Read |
+| PUT | `/registry/projects/:hashed_id/settings` | Change visibility and storage limit | Write |
+| PUT | `/registry/projects/:hashed_id/immutable-tags` | Turn immutable tags on or off | Write |
+| GET | `/registry/projects/:hashed_id/repositories` | List repositories | Read |
+| POST | `/registry/projects/:hashed_id/repositories/delete` | Delete a repository | Write |
+| GET | `/registry/projects/:hashed_id/artifacts` | List images in a repository | Read |
+| POST | `/registry/projects/:hashed_id/artifacts/delete` | Delete an image | Write |
+| POST | `/registry/projects/:hashed_id/tags/delete` | Remove a tag | Write |
+| GET | `/registry/projects/:hashed_id/retention` | Retention rules and schedule | Read |
+| PUT | `/registry/projects/:hashed_id/retention/rules` | Replace the retention rules | Write |
+| PUT | `/registry/projects/:hashed_id/retention/schedule` | Set the retention schedule | Write |
+| GET | `/registry/projects/:hashed_id/retention/runs` | List retention runs | Read |
+| POST | `/registry/projects/:hashed_id/retention/runs` | Start a retention run or dry run | Write |
+| GET | `/registry/projects/:hashed_id/retention/runs/:run_id` | A run's tasks | Read |
+| GET | `/registry/projects/:hashed_id/retention/runs/:run_id/tasks/:task_id` | What a task kept and deleted | Read |
+| GET | `/registry/projects/:hashed_id/immutability` | List immutability rules | Read |
+| POST | `/registry/projects/:hashed_id/immutability` | Add an immutability rule | Write |
+| PUT | `/registry/projects/:hashed_id/immutability/:rule_id` | Change a rule | Write |
+| DELETE | `/registry/projects/:hashed_id/immutability/:rule_id` | Delete a rule | Write |
+| GET | `/registry/tokens` | List registry tokens | Read |
+| POST | `/registry/tokens` | Create a registry token | Write |
+| PUT | `/registry/tokens/:hashed_id` | Change a registry token | Write |
+| DELETE | `/registry/tokens/:hashed_id` | Delete a registry token | Write |
+
+### Apps
+
+[App endpoints](/api/endpoints/apps), [app build endpoints](/api/endpoints/app-builds) and [git endpoints](/api/endpoints/git).
+
+| Method | Path | What it does | Access |
+| --- | --- | --- | --- |
+| GET | `/apps` | List apps | Read |
+| POST | `/apps/source` | Get a presigned URL to upload source code | Write |
+| GET | `/apps/source/:token` | Detection result for uploaded source | Read |
+| POST | `/apps/source/:token/detect` | Start detecting the language and port | Write |
+| POST | `/apps/source/github` | Import source from a GitHub repository | Write |
+| POST | `/apps/source/gitlab` | Import source from a GitLab project | Write |
+| POST | `/apps/source/bitbucket` | Import source from a Bitbucket repository | Write |
+| POST | `/apps` | Create an app | Write |
+| GET | `/apps/:hashed_id` | An app | Read |
+| GET | `/apps/:hashed_id/status` | An app's status, as plain text | Read |
+| GET | `/apps/:hashed_id/usage` | An app's usage and cost | Read |
+| POST | `/apps/:hashed_id/pause` | Pause an app | Write |
+| POST | `/apps/:hashed_id/resume` | Resume a paused app | Write |
+| DELETE | `/apps/:hashed_id` | Delete an app | Write |
+| PUT | `/apps/:hashed_id/settings` | Change port or start command | Write |
+| PUT | `/apps/:hashed_id/git` | Change branch or auto deploy | Write |
+| GET | `/apps/:hashed_id/env` | List runtime environment variables | Read |
+| PUT | `/apps/:hashed_id/env` | Replace runtime environment variables | Write |
+| GET | `/apps/:hashed_id/env/value` | Reveal one secret variable | Read |
+| GET | `/apps/:hashed_id/build-env` | List build environment variables | Read |
+| PUT | `/apps/:hashed_id/build-env` | Replace build environment variables | Write |
+| GET | `/apps/:hashed_id/build-env/value` | Reveal one secret build variable | Read |
+| GET | `/apps/:hashed_id/build-args` | List Dockerfile build arguments | Read |
+| PUT | `/apps/:hashed_id/build-args` | Replace Dockerfile build arguments | Write |
+| GET | `/apps/:hashed_id/build-args/value` | Reveal one secret build argument | Read |
+| GET | `/apps/:hashed_id/logs/stream` | Stream the app's logs | Read |
+| GET | `/apps/:hashed_id/terminal` | Open a web terminal | Write |
+| POST | `/apps/:hashed_id/terminal/wake` | Start the terminal's shell environment | Write |
+| POST | `/apps/:hashed_id/terminal/heartbeat` | Keep the terminal awake | Write |
+| POST | `/apps/:hashed_id/exec` | Run one command in the app | Write |
+| GET | `/apps/:hashed_id/builds` | List builds | Read |
+| POST | `/apps/:hashed_id/builds` | Start a build from new uploaded source | Write |
+| POST | `/apps/:hashed_id/builds/git` | Build the latest commit of the app's branch | Write |
+| POST | `/apps/:hashed_id/builds/:build_hashed_id/uploaded` | Confirm the source upload, starting the build | Write |
+| POST | `/apps/:hashed_id/builds/:build_hashed_id/retry` | Retry a build | Write |
+| GET | `/apps/:hashed_id/builds/:build_hashed_id/logs` | A build's log, as plain text | Read |
+| GET | `/apps/:hashed_id/builds/:build_hashed_id/logs/stream` | Stream a build's log | Read |
+| GET | `/git/github/installations` | GitHub connections | Read |
+| GET | `/git/github/installations/:installation_hashed_id/repos` | Repositories of a GitHub connection | Read |
+| GET | `/git/github/installations/:installation_hashed_id/branches` | Branches of a GitHub repository | Read |
+| DELETE | `/git/github/installations/:installation_hashed_id` | Disconnect GitHub | Write |
+| GET | `/git/gitlab/installations` | GitLab connections | Read |
+| GET | `/git/gitlab/installations/:installation_hashed_id/repos` | Projects of a GitLab connection | Read |
+| GET | `/git/gitlab/installations/:installation_hashed_id/branches` | Branches of a GitLab project | Read |
+| DELETE | `/git/gitlab/installations/:installation_hashed_id` | Disconnect GitLab | Write |
+| GET | `/git/bitbucket/installations` | Bitbucket connections | Read |
+| GET | `/git/bitbucket/installations/:installation_hashed_id/repos` | Repositories of a Bitbucket connection | Read |
+| GET | `/git/bitbucket/installations/:installation_hashed_id/branches` | Branches of a Bitbucket repository | Read |
+| DELETE | `/git/bitbucket/installations/:installation_hashed_id` | Disconnect Bitbucket | Write |
+
+### Domains and DNS
+
+[Domain endpoints](/api/endpoints/domains), [DNS record endpoints](/api/endpoints/dns-records) and [target endpoints](/api/endpoints/targets).
+
+| Method | Path | What it does | Access |
+| --- | --- | --- | --- |
+| GET | `/domains` | List domains | Read |
+| POST | `/domains` | Add a custom domain or claim a free subdomain | Write |
+| GET | `/domains/availability` | Check whether a free subdomain is available | Read |
+| GET | `/domains/:domain_name` | A domain | Read |
+| DELETE | `/domains/:domain_name` | Delete a domain | Write |
+| GET | `/domains/:domain_name/dns-records` | List a domain's DNS records | Read |
+| POST | `/domains/:domain_name/dns-records` | Add a DNS record | Write |
+| GET | `/dns-records/:record_id` | A DNS record | Read |
+| PUT | `/dns-records/:record_id` | Change a DNS record | Write |
+| DELETE | `/dns-records/:record_id` | Delete a DNS record | Write |
+| GET | `/targets` | List targets | Read |
+| POST | `/targets` | Route a domain path to an app or cluster service | Write |
+| PUT | `/targets/:hashed_id` | Change a target | Write |
+| DELETE | `/targets/:hashed_id` | Delete a target | Write |
+
+### Support
+
+[Support endpoints](/api/endpoints/support).
+
+| Method | Path | What it does | Access |
+| --- | --- | --- | --- |
+| GET | `/support` | List support tickets | Read |
+| GET | `/support/tickets/:hashed_id` | A ticket with its replies | Read |
+| POST | `/support/tickets` | Open a ticket | Write |
+| POST | `/support/tickets/:hashed_id/reply` | Reply to a ticket | Write |
+| POST | `/support/attachments-uploaded` | Confirm attachment uploads | Write |
+| GET | `/support/attachments/:hashed_id` | Download an attachment (redirect) | Read |
+
+## Frequently asked questions
+
+<FAQ items={[
+  {q: 'What is the base URL of the Cloider API?', a: 'The base URL is https://cloider.com/api. Every path in the API reference is relative to it, so GET /clusters is https://cloider.com/api/clusters. There is no version segment and no regional endpoint.'},
+  {q: 'How do I authenticate to the Cloider API?', a: 'Create an API token in the dashboard under Access Control, API Tokens, and send it in the Authorization header as Bearer cldr_... on every request. Tokens are either Read or Read & Write and belong to one account.'},
+  {q: 'Does the Cloider API accept resource names?', a: 'No. Endpoints take the resource id (hashed_id) in the path, except domains, which are addressed by their domain name, and DNS records, which have a numeric id. List the resources to find an id. The CLI and Terraform accept names because they do this lookup for you.'},
+  {q: 'Is there an OpenAPI or Swagger file?', a: 'No machine readable specification is published. These pages document every endpoint with its parameters, request body, response and errors. The Go types in the open source Terraform provider mirror the response shapes if you want to generate a client.'},
+  {q: 'How do I know when a cluster or database is ready?', a: 'Create requests answer at once. Poll GET /clusters/{id}/status or GET /databases/{id}/status every few seconds until the plain text answer is Ready, and stop on Failed.'},
+  {q: 'Can I call the Cloider API from a browser?', a: 'The API allows cross origin requests, so it works from browser code. Never ship a token in a public page, though: anyone could read it. Call the API from a server, script or CI job.'},
+  {q: 'Are the CLI and Terraform provider using the same API?', a: 'Yes. The cloider CLI, the MCP server, the Terraform provider and the dashboard call the same endpoints documented here. Run any CLI command with --debug to see the requests it makes.'},
+]} />

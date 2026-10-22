@@ -1,0 +1,290 @@
+---
+title: Pause, resume and delete a database
+sidebar_label: Pause, resume and delete
+sidebar_position: 14
+description: Pause a Cloider database to stop paying for its plan while keeping its data, resume it later with the same connection details, or delete it with its backups.
+keywords: [pause database, resume database, delete database, stop database billing, cloider db pause, cloider db delete, paused database cost]
+---
+
+Pausing a database stops it and stops the charge for its plan, while its data stays on its volume. You pay only for that storage until you resume it. Resuming starts it again with the same host, port, user, password and data. Deleting a database removes it, its data and its backups for good.
+
+## At a glance
+
+| | Pause | Resume | Delete |
+| --- | --- | --- | --- |
+| **Data** | Kept | Kept | Deleted, with all backups |
+| **Connections** | Refused | Accepted again once `Ready` | Gone |
+| **Host, port, password** | Kept | Unchanged | Gone |
+| **Billing** | Storage only, at the volume rate | The plan again | Stops |
+| **Status** | `Pausing`, then `Paused` | `Starting`, then `Ready` | `Terminating`, then removed |
+| **Undo** | Resume | Pause | Not possible |
+
+## What does a paused database cost?
+
+A paused database is billed only for its storage: the plan's volume size at the per GB volume rate, the same rate as Kubernetes volumes. CPU and RAM aren't billed. For example, a PostgreSQL database on the Standard plan keeps its 6 GB volume while paused, and that 6 GB is what you pay for.
+
+The **Pause Database** dialog shows the exact monthly amount for your database, and `cloider pricing` lists the paused price of every plan in its `PAUSED` column. See [how databases are billed](/databases/overview#how-are-cloider-databases-billed).
+
+## What happens while a database is paused?
+
+- The database server is stopped. Nothing can connect to it, over the public host, the private host, the terminal or `cloider db exec`.
+- Its volume and data are kept as they are.
+- No new [backups](/databases/backups-and-restore) are taken, because there is nothing running to back up. The backups taken before the pause stay available, and you can still restore them into a new database.
+- [Insights](/databases/insights) aren't sampled.
+- The connection details don't change. Apps that use the database get connection errors until you resume it.
+
+## Pause a database
+
+The database must be `Ready` to be paused.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Databases** in the sidebar.
+2. Click the **⋮** button in the database's row and choose **Pause**.
+3. The **Pause Database** dialog says that the database stops running and its plan is no longer billed, and how much its storage costs per month while paused. Click **Pause database**.
+
+<Screenshot
+  src="/img/screenshots/databases/pause-dialog.webp"
+  url="/dashboard/databases"
+  alt="The Pause Database dialog for orders-db, saying the plan is no longer billed and showing the monthly price of its storage while paused, with Cancel and Pause database buttons"
+  caption="The dialog shows what the database costs while paused."
+/>
+
+The status changes to **Pausing**, then **Paused**.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider db pause orders-db --wait
+```
+
+```text title="Output"
+✓ Pausing database orders-db
+✓ Database orders-db is Paused
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="main.tf"
+resource "cloider_database" "staging" {
+  name   = "staging-db"
+  engine = "postgresql"
+  paused = true
+}
+```
+
+Setting `paused` back to `false` resumes it. `terraform apply` waits for the change (the `update` timeout, 20 minutes by default).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X POST https://cloider.com/api/databases/p0q9zm/pause \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's list of databases, with this one in `Pausing`:
+
+```json title="Response"
+[
+  {
+    "hashed_id": "p0q9zm",
+    "database_name": "orders-db",
+    "database_label": "orders-db",
+    "database_user": "orders_db_user",
+    "service": "PostgreSQL",
+    "database_version": "18",
+    "status": "Pausing",
+    "ssl": true,
+    "database_plan": "Standard",
+    "trusted_sources": [{"name": "Allow Everything", "code": "*", "type": "Anywhere"}],
+    "created_at": "2026-09-02T14:12:08Z"
+  }
+]
+```
+
+Poll `GET /api/databases/p0q9zm/status` until it is `Paused`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Pause the staging database until Monday.
+```
+
+```json title="Tool call: pause_database"
+{"database": "staging-db", "wait": true}
+```
+
+The agent can pause it now. Resuming on Monday is a separate request.
+
+</TabItem>
+</Tabs>
+
+## Resume a database
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Databases** in the sidebar.
+2. Click the **⋮** button in the database's row and choose **Resume**.
+3. In the **Resume Database** dialog, click **Resume database**.
+
+The status changes to **Starting**, then **Ready**.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider db resume orders-db --wait
+```
+
+```text title="Output"
+✓ Resuming database orders-db
+✓ Database orders-db is Ready
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Set `paused = false`, or remove the attribute (it defaults to `false`), and run `terraform apply`.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X POST https://cloider.com/api/databases/p0q9zm/resume \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the list of databases, with this one in `Starting`. Poll `GET /api/databases/p0q9zm/status` until it is `Ready`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```json title="Tool call: resume_database"
+{"database": "staging-db", "wait": true}
+```
+
+</TabItem>
+</Tabs>
+
+After a resume, the database has the same host, port, user, password and data as before the pause. Connection pools in your apps reconnect on their own once it is `Ready`.
+
+## Delete a database
+
+Deleting a database permanently removes the database, its data, its volume and **all of its backups**. It can't be undone.
+
+:::danger[Deleting is permanent]
+Before you delete a database you might need again, export its data with `pg_dump`, `mysqldump`, `mongodump` or `redis-cli --rdb`, see [make your own backups](/databases/backups-and-restore#make-your-own-backups). Cloider's daily backups are deleted together with the database.
+:::
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the database and go to the **Settings** tab, then click **Delete database** in the danger zone. (Or click **⋮** in the database's row on the Databases list and choose **Delete**.)
+2. The **Delete Database** dialog asks whether you are sure. Click **I want to delete the database**.
+3. Type the database's label to confirm, then click the delete button (labeled **Delete cluster**).
+
+<Screenshot
+  src="/img/screenshots/databases/delete-dialog.webp"
+  url="/dashboard/databases/orders-db-p0q9zm"
+  alt="The Delete Database dialog asking to type orders-db to confirm deleting the database"
+  caption="Deleting asks you to type the database's label."
+/>
+
+The database shows **Terminating** while it is removed, then disappears from the list.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider db delete orders-db --wait
+```
+
+```text title="Output"
+This permanently deletes database orders-db.
+Type orders-db to confirm: orders-db
+✓ Deleting database orders-db
+✓ Database orders-db is deleted
+```
+
+In scripts, which have no terminal to type in, pass `--yes`: `cloider db delete orders-db --yes`. `rm` is an alias of `delete`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Remove the `cloider_database` resource from your configuration and run `terraform apply`, or run `terraform destroy -target=cloider_database.orders`. A database with `lifecycle { prevent_destroy = true }` can't be destroyed until you remove that setting.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X DELETE https://cloider.com/api/databases/p0q9zm \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the list of databases, with this one in `Terminating`. Once it is gone, `GET /api/databases/p0q9zm/status` returns `Terminated`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Delete the database staging-db.
+```
+
+```json title="Tool call: delete_database"
+{"database": "staging-db", "wait": true}
+```
+
+`delete_database` is marked as a destructive tool, so MCP clients ask you before running it.
+
+</TabItem>
+</Tabs>
+
+Billing stops when the database is deleted. On the free plan, a deleted database no longer counts toward the one database limit.
+
+## Pause or delete: which one?
+
+| Situation | Choose |
+| --- | --- |
+| A staging or demo database you need again next week | Pause |
+| A database you aren't sure you still need | Pause, or export the data, then delete |
+| A database you will never need again | Delete |
+| You want to stop all charges | Delete (a paused database still costs its storage) |
+| You want to keep an old copy cheaply for a long time | Export it to a [bucket](/object-storage/overview), then delete |
+
+## Troubleshooting
+
+### Pause is greyed out in the menu
+
+Only a `Ready` database can be paused. Wait until a running change (creating, resizing, an SSL change) has finished.
+
+### The database stays in Pausing or Starting
+
+Pausing and resuming usually take a minute or two. If the status hasn't changed after 15 minutes, [contact support](/account/support) with the database's id.
+
+### This database is paused. Resume it to open a terminal!
+
+The terminal and `cloider db exec` need a running database. Resume it first.
+
+### You have read-only access to this account, you can not pause databases!
+
+Your role or API token is read-only. The same applies to resuming and deleting.
+
+## Next steps
+
+- [How databases are billed](/databases/overview#how-are-cloider-databases-billed)
+- [Backups and restore](/databases/backups-and-restore)
+- [Usage and costs](/account/usage)
+
+<FAQ items={[
+  {q: 'Do I keep my data when I pause a database?', a: 'Yes. A paused database keeps its volume and all its data. When you resume it, it has the same host, port, user, password and data as before.'},
+  {q: 'How much does a paused database cost?', a: 'Only its storage: the plan\'s volume size at the per GB volume rate. The plan\'s CPU and RAM are not billed while it is paused. The Pause Database dialog and cloider pricing show the exact monthly amount.'},
+  {q: 'Can I connect to a paused database?', a: 'No. A paused database is stopped, so connections, the browser terminal and cloider db exec all fail until you resume it.'},
+  {q: 'Are backups taken while a database is paused?', a: 'No, a paused database is not running and can\'t be backed up. The backups taken before the pause stay available and can be restored into a new database.'},
+  {q: 'Can I recover a deleted database?', a: 'No. Deleting a database also deletes its backups, so it can\'t be recovered. Export the data before deleting a database you might need again.'}
+]} />

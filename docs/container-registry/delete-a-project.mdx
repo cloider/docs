@@ -1,0 +1,174 @@
+---
+title: Delete a container registry project
+sidebar_label: Delete a project
+sidebar_position: 11
+description: Permanently delete a Cloider registry project and its images from the dashboard, CLI, Terraform, REST API or an AI agent, and what happens to tokens.
+keywords: [delete registry project, cloider registry delete, delete container registry, remove docker images, registry project deletion]
+---
+
+Deleting a project permanently deletes **every repository and image in it**, stops its storage charges, and frees its name for anyone to take. This page shows how to delete a project with every tool, what happens step by step, and what to check first.
+
+:::danger[Deleting a project is permanent]
+Images in a deleted project can't be recovered. Anything that pulls them, such as Kubernetes deployments, CI jobs and servers, fails on its next pull. Copy any image you want to keep to another project first (see [Copy an image to another project](/container-registry/push-and-pull-images#copy-an-image-to-another-project)).
+:::
+
+## Before you begin
+
+- The **Owner** or **Admin** role. Members with the **Restricted** role and read-only API tokens can't delete projects.
+- The project isn't **Creating** or already **Terminating**.
+- Find what still pulls from the project: search your manifests, Helm values, Compose files and CI pipelines for `registry.cloider.com/<project>/`. The **Last pulled** column in the **Repositories** tab shows which images are still in use.
+
+You don't need to delete images or policies first: deleting the project removes everything, including images protected by immutable tags.
+
+## Delete a project
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Registry** in the sidebar.
+2. Either open the actions menu on the project's row and choose **Delete**, or open the project, go to the **Settings** tab and, under **Delete project** (*This action is irreversible. Every image in the project is permanently deleted and cannot be recovered.*), click **Delete project**.
+3. The **Delete Project** dialog warns that every image goes with it and that its name is free for anyone to take afterwards. Click **I want to delete the project**.
+4. Type the project's name, for example `acme`, and click **Delete project**.
+
+The project shows **Terminating** in the list while its images are deleted, then disappears.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider registry delete acme --wait
+```
+
+The command asks you to type the project's name to confirm:
+
+```text title="Output"
+✓ Deleting project acme
+✓ Project acme is deleted
+```
+
+In scripts, where nothing can prompt, confirm with `--yes`:
+
+```bash
+cloider registry delete acme --yes --wait --timeout 30m
+```
+
+Without `--wait` the command returns as soon as the deletion is queued.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Remove the `cloider_registry` resource from your configuration and apply, or destroy it directly:
+
+```bash
+terraform destroy -target=cloider_registry.acme
+```
+
+```text title="Output"
+cloider_registry.acme: Destroying... [id=r4t6yu]
+cloider_registry.acme: Destruction complete after 38s
+
+Destroy complete! Resources: 1 destroyed.
+```
+
+Changing a project's `name` also deletes it, with its images, and creates a new one. The `delete` timeout defaults to 20 minutes; raise it for a project with many repositories:
+
+```hcl title="main.tf"
+resource "cloider_registry" "acme" {
+  name = "acme"
+
+  timeouts {
+    delete = "40m"
+  }
+}
+```
+
+To protect a project from an accidental destroy, add `lifecycle { prevent_destroy = true }`.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X DELETE https://cloider.com/api/registry/projects/r4t6yu \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's project list, with this project's `status` set to `Terminating`. Poll the status until it answers `404`:
+
+```bash
+curl https://cloider.com/api/registry/projects/r4t6yu/status \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```text title="Response"
+Terminating
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Delete the acme-staging registry project and wait until it is gone.
+```
+
+It calls the `delete_registry_project` tool:
+
+```json title="Tool call: delete_registry_project"
+{"project": "acme-staging", "wait": true}
+```
+
+The tool is marked as destructive, so your MCP client asks you to approve it. Run the server with `cloider mcp --read-only` to make deletes impossible.
+
+</TabItem>
+</Tabs>
+
+## What happens when you delete a project
+
+1. The project's status changes to **Terminating**, and no settings change can run on it any more.
+2. Registry tokens lose access to the project right away, so nothing can push into it while it is emptied.
+3. Every repository and image is deleted, including images protected by immutable tags. A project with many repositories takes longer.
+4. The project is deleted, disappears from your list, and its name becomes free for anyone on Cloider.
+
+If something goes wrong on the way, the project shows **Failed**; delete it again from its **Settings** tab or contact [support](/account/support).
+
+## What happens to tokens
+
+Tokens aren't deleted with a project:
+
+- A token for **All projects** keeps working for your other projects.
+- A token that named this project among others keeps working for the others.
+- A token that named only this project reaches nothing: the token list shows **None left** under **Projects**. Delete it, or edit it to reach another project.
+
+See [Registry tokens](/container-registry/tokens).
+
+## Billing after deleting
+
+Storage is billed until the project is deleted. Costs for the days before deletion stay on the month's bill, and the project's line appears in [Usage](/account/usage) for that month.
+
+## The apps project can't be deleted
+
+The project with the **Apps** badge holds your apps' images and is managed by Cloider: it has no **Delete** action, and the API answers `This project holds your apps' images and is managed by Cloider, it can't be deleted.` Deleting an [app](/apps/pause-resume-and-delete) deletes its images. An apps project in the **Failed** status never held images and can be deleted.
+
+## Reusing the name
+
+After deletion the name is free for **anyone** on Cloider, not only your account. To recreate a project with the same name, create it as soon as the deletion is done. To move to a new name instead, copy your images first, then delete the old project.
+
+## Troubleshooting
+
+| Error | Cause and fix |
+| --- | --- |
+| `This project is still being created!` | Wait until it is **Ready** or **Failed** |
+| `This project is already being deleted!` | Wait for the deletion to finish |
+| `Another change to this project is in progress, try again in a moment!` | A settings change is running. Retry |
+| `This project holds your apps' images and is managed by Cloider, it can't be deleted.` | See the section on the apps project above |
+| `You have read-only access to this account, you can not delete projects!` | Your role is **Restricted** or your API token is read-only |
+| `deleting project acme needs --yes when not running in a terminal` (CLI) | Add `--yes` in scripts and CI |
+| `the name didn't match, nothing was deleted` (CLI) | Type the project's exact name |
+| Project stuck in **Terminating** for a long time | Projects with many repositories take longer. If it doesn't finish, contact [support](/account/support) |
+
+## Next steps
+
+- [Create a new project](/container-registry/create-a-project).
+- [Delete only some images instead](/container-registry/repositories-and-tags).
+- [Clean up registry tokens](/container-registry/tokens#delete-a-token).

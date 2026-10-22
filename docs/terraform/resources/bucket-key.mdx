@@ -1,0 +1,177 @@
+---
+title: cloider_bucket_key resource (Terraform)
+sidebar_label: cloider_bucket_key
+sidebar_position: 4
+description: Create S3 access keys for Cloider buckets with the cloider_bucket_key Terraform resource, scoped to some or all buckets, read only or read and write, with the secret key.
+keywords: [cloider_bucket_key, s3 access key terraform, aws_access_key_id terraform, s3 credentials terraform, read only s3 key, cloider bucket key, object storage credentials]
+---
+
+The `cloider_bucket_key` resource creates an [S3 access key](/object-storage/access-keys) for your Cloider buckets: an access key id and a secret access key that S3 clients use as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. A key reaches either a list of buckets or every bucket in the account, and can be limited to reading.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `label`, and either `buckets` or `all_buckets = true` |
+| **Changes in place** | `label`, `buckets`, `all_buckets`, `read_only` |
+| **Changes that replace the key** | None |
+| **Sensitive attributes** | `secret_key` |
+| **Timeouts** | None, keys are created immediately |
+| **Import ID** | The key id |
+| **API** | [`/api/bucket-keys`](/api/endpoints/bucket-keys) |
+| **CLI equivalent** | [`cloider bucket key`](/cli/commands/bucket) |
+
+:::info[The secret key is only shown once]
+Cloider shows a key's secret only when the key is created. Terraform saves it in state at that moment. An **imported** key has no `secret_key`: to have one in Terraform, create a new key instead.
+:::
+
+## Example usage
+
+### A key for one bucket
+
+```hcl title="main.tf"
+resource "cloider_bucket" "assets" {
+  name = "acme-assets"
+}
+
+resource "cloider_bucket_key" "web" {
+  label   = "web app"
+  buckets = [cloider_bucket.assets.id]
+}
+
+output "access_key" {
+  value = cloider_bucket_key.web.access_key
+}
+
+output "secret_key" {
+  value     = cloider_bucket_key.web.secret_key
+  sensitive = true
+}
+```
+
+```bash
+terraform output -raw secret_key
+```
+
+### A read only key for every bucket
+
+`all_buckets = true` reaches every bucket in the account, including buckets created later:
+
+```hcl title="main.tf"
+resource "cloider_bucket_key" "reporting" {
+  label       = "reporting"
+  all_buckets = true
+  read_only   = true
+}
+```
+
+### A key for several buckets
+
+```hcl title="main.tf"
+resource "cloider_bucket_key" "backups" {
+  label = "backup job"
+  buckets = [
+    cloider_bucket.backups.id,
+    cloider_bucket.assets.id,
+  ]
+}
+```
+
+### Hand the key to a Kubernetes workload
+
+With the `kubernetes` provider configured from a [`cloider_cluster`](/terraform/resources/cluster):
+
+```hcl title="main.tf"
+resource "kubernetes_secret_v1" "s3" {
+  metadata {
+    name      = "s3-credentials"
+    namespace = "default"
+  }
+
+  data = {
+    AWS_ACCESS_KEY_ID     = cloider_bucket_key.web.access_key
+    AWS_SECRET_ACCESS_KEY = cloider_bucket_key.web.secret_key
+    AWS_ENDPOINT_URL_S3   = cloider_bucket.assets.endpoint
+    AWS_REGION            = cloider_bucket.assets.region
+    S3_BUCKET             = cloider_bucket.assets.name
+  }
+}
+```
+
+### Rotate a key
+
+A key's secret can't be changed. To rotate it, replace the key: Terraform creates a new one (with a new access key and secret) and deletes the old one.
+
+```bash
+terraform apply -replace=cloider_bucket_key.web
+```
+
+Anything still using the old key stops working once it is deleted, so update its consumers in the same apply, for example through the Kubernetes Secret above.
+
+## Argument reference
+
+| Argument | Type | Required | Default | Changing it | Description |
+| --- | --- | --- | --- | --- | --- |
+| `label` | String | Yes | | In place | What the key is for, up to 64 characters |
+| `buckets` | Set of String | One of `buckets` or `all_buckets` | | In place | The ids of the buckets the key reaches, at least one. A bucket that is deleted drops out of the set |
+| `all_buckets` | Bool | One of `buckets` or `all_buckets` | `false` | In place | Whether the key reaches every bucket, those created later included |
+| `read_only` | Bool | No | `false` | In place | Whether the key may only read (list and download). `false` allows reading and writing |
+
+Setting both fails with `Conflicting scope: all_buckets and buckets don't go together.` Setting neither fails with `Missing scope: Set buckets, or all_buckets = true.`
+
+## Attribute reference
+
+| Attribute | Type | Sensitive | Description |
+| --- | --- | --- | --- |
+| `id` | String | No | The key's id |
+| `access_key` | String | No | The access key id, for `AWS_ACCESS_KEY_ID` |
+| `secret_key` | String | Yes | The secret access key, for `AWS_SECRET_ACCESS_KEY`. Only known for a key this configuration created, null after an import |
+| `created_at` | String | No | When the key was created, in RFC 3339 |
+
+The secret key is stored in Terraform's state in plain text, so treat the state as sensitive.
+
+## Behavior notes
+
+- **Every change is in place.** Changing `label`, `buckets`, `all_buckets` or `read_only` updates the existing key: its access key and secret stay the same, so its consumers keep working.
+- **Deleted buckets.** When a bucket in `buckets` is deleted, it drops out of the key's list, and the next plan shows the difference.
+- **Deleted outside Terraform.** If the key is deleted in the dashboard, the next refresh removes it from state and the plan creates a new key, with a new secret.
+- **Destroy** deletes the key immediately. Clients still using it are refused from then on.
+
+## Import
+
+Import an existing key by its id. `cloider bucket key list -o wide` shows the ids:
+
+```bash
+cloider bucket key list -o wide
+```
+
+With an `import` block:
+
+```hcl title="imports.tf"
+import {
+  to = cloider_bucket_key.reporting
+  id = "KEY_ID"
+}
+```
+
+With the `terraform import` command:
+
+```bash
+terraform import cloider_bucket_key.reporting KEY_ID
+```
+
+Replace `KEY_ID` with the value of the **ID** column. An imported key has `secret_key = null`, because Cloider doesn't show a secret again after creating it.
+
+## Related
+
+- [`cloider_bucket`](/terraform/resources/bucket)
+- [Object storage with the AWS provider](/terraform/guides/object-storage): use the key with the `aws` provider, the AWS CLI and rclone
+- [Store Terraform state in a bucket](/terraform/guides/state-backend)
+- [Access keys](/object-storage/access-keys) in the dashboard and CLI
+
+<FAQ items={[
+  {q: 'How do I get S3 credentials for a Cloider bucket in Terraform?', a: 'Create a cloider_bucket_key with buckets = [cloider_bucket.<name>.id]. Its access_key and secret_key attributes are the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for S3 clients, and the bucket\'s endpoint attribute is the endpoint URL.'},
+  {q: 'Why is secret_key null after importing a bucket key?', a: 'Cloider shows a key\'s secret only once, when the key is created. An imported key was created elsewhere, so Terraform never saw its secret. Create a new key with Terraform if you need the secret in Terraform.'},
+  {q: 'How do I rotate a Cloider bucket key with Terraform?', a: 'Run terraform apply -replace=cloider_bucket_key.<name>. Terraform creates a new key with a new secret and deletes the old one. Update everything that uses the key in the same apply.'},
+  {q: 'Can one key access every bucket, including future ones?', a: 'Yes. Set all_buckets = true instead of buckets. Combine it with read_only = true for a key that can only read.'},
+]} />

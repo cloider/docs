@@ -1,0 +1,216 @@
+---
+title: Cloider status values reference
+sidebar_label: Status values
+sidebar_position: 4
+description: "Every status value Cloider shows, per resource: clusters, databases, apps, builds, buckets, registry projects, domains, members and support requests."
+keywords: [cloider status, cluster status, app build status, database status, ready, pausing, terminating, superseded, domain status]
+---
+
+Every Cloider resource has a **status** that says what it is doing. The same values appear in the dashboard, in `cloider ... status` and `-o json` output, in the API's `status` fields and plain text `/status` endpoints, and in Terraform's `status` attributes. This page lists every value per resource.
+
+## At a glance
+
+| Status | Means | Seen on |
+| --- | --- | --- |
+| **Creating** | Being provisioned for the first time | Clusters, databases, buckets, registry projects |
+| **Starting** | Starting up, after create or resume | Clusters, databases, apps |
+| **Ready** | Running and usable | Clusters, databases, apps, buckets, registry projects |
+| **Pausing** | Stopping its compute | Clusters, databases, apps |
+| **Paused** | Stopped, data kept | Clusters, databases, apps |
+| **Upgrading** | Being resized to a new plan | Databases |
+| **Terminating** | Being deleted | Clusters, databases, apps, buckets, registry projects |
+| **Failed** | Couldn't be provisioned or built, and won't retry on its own | Apps, builds, buckets, registry projects |
+
+Deleted resources end up **Terminated**, which the lists don't show. It appears on the [Usage](/account/usage) page, where deleted resources stay for 60 days.
+
+## Kubernetes clusters
+
+| Status | Meaning | What you can do |
+| --- | --- | --- |
+| **Creating** | The cluster is being provisioned | Wait |
+| **Starting** | The control plane is starting, after create or resume | Wait |
+| **Ready** | The cluster answers `kubectl` | Everything: kubeconfig, terminal, pause, delete |
+| **Pausing** | The cluster is being paused | Wait for **Paused** |
+| **Paused** | Stopped; objects and volumes are kept | Resume or delete |
+| **Terminating** | Being deleted | Nothing, it will disappear |
+
+The CLI's `cloider cluster create --wait` waits for **Ready**. Terraform's `cloider_cluster.status` uses the same values.
+
+## Databases
+
+| Status | Meaning | Billing |
+| --- | --- | --- |
+| **Creating** | Being provisioned | Nothing yet |
+| **Starting** | Starting, after create or resume | Nothing |
+| **Ready** | Accepting connections | The plan price |
+| **Upgrading** | Moving to a larger plan after a resize | Nothing during the move |
+| **Pausing** | Being paused | Nothing |
+| **Paused** | Stopped; data, users and settings are kept | The plan's storage (`paused_price`) |
+| **Terminating** | Being deleted | Nothing |
+
+## Apps
+
+An app's status follows its current build while one is running, then settles.
+
+| Status | Meaning |
+| --- | --- |
+| **Pending** | The source archive is still being uploaded |
+| **Queued** | The build is waiting for a builder |
+| **Building** | The container image is being built from the source |
+| **Deploying** | The new image is being applied |
+| **Starting** | The new containers are starting; also shown while an app resumes |
+| **Ready** | The app is running and serving requests |
+| **Pausing** | The app is being paused |
+| **Paused** | The app's containers are stopped; image, variables and settings are kept |
+| **Failed** | The build or start failed and the app has no other version to serve |
+| **Terminating** | Being deleted |
+
+A failed build of an app that already runs a version doesn't change the app to **Failed**: the running version keeps serving.
+
+## Builds
+
+Each deploy of an app creates a build, numbered `1`, `2`, `3`...
+
+| Status | Meaning |
+| --- | --- |
+| **Pending** | Created; the source archive hasn't finished uploading |
+| **Queued** | Waiting for a builder |
+| **Building** | The image is being built; the build log is live |
+| **Deploying** | The image is being applied to the app |
+| **Starting** | The new version's containers are starting |
+| **Ready** | This version is running and serving the app |
+| **Superseded** | This version was live and a later one replaced it. Nothing went wrong |
+| **Failed** | The build or start failed. You can retry it, which runs the same version again |
+| **Canceled** | The build never ran, because the app was deleted while it was queued |
+
+**Ready**, **Superseded**, **Failed** and **Canceled** are final: the build doesn't change on its own after them.
+
+## Buckets and registry projects
+
+| Status | Meaning |
+| --- | --- |
+| **Creating** | Being created; usually takes seconds |
+| **Ready** | Usable |
+| **Failed** | Couldn't be created |
+| **Terminating** | Being deleted |
+
+### Bucket versioning
+
+| Value | Meaning |
+| --- | --- |
+| *(empty)* | Versioning was never turned on |
+| **Enabled** | Previous versions of files are kept |
+| **Suspended** | Versioning was turned off after being on; versions already kept stay |
+
+### Registry retention runs
+
+| Value | Meaning |
+| --- | --- |
+| `pending` | The run is about to start |
+| `running` | The run is deleting what the rules don't keep |
+| `succeeded` | The run finished |
+| `failed` | The run failed |
+| `stopped` | The run was stopped |
+
+## Domains
+
+| Status | Meaning |
+| --- | --- |
+| **Pending** | Added, but nothing routes to it yet |
+| **Active** | At least one target routes the domain to an app or a cluster service |
+| **Suspended** | It had targets, and none is left |
+
+## Account and members
+
+### Account (the Owner's row in Access Control)
+
+| Status | Meaning |
+| --- | --- |
+| **Trial** | The account is on the free trial |
+| **Active** | The account is on the paid plan |
+| **Suspended** | The trial ended without an upgrade; the account can't create resources |
+
+### Members
+
+| Status | Meaning |
+| --- | --- |
+| **Pending** | Invited, hasn't opened the account yet |
+| **Active** | Has access with their role |
+| **Deactivated** | Access switched off; the membership is kept |
+
+### API tokens
+
+API tokens have no status: they either exist or are deleted. Their access is **Read** or **Read & Write**.
+
+## Support requests
+
+| Status | Meaning |
+| --- | --- |
+| **Open** | Received and being looked at |
+| **InProgress** | A support agent is working on it |
+| **Pending** | Waiting for information or action from you |
+| **WaitingForReply** | Waiting for your reply |
+| **OnHold** | Paused, waiting on an external factor or a decision |
+| **Resolved** | Believed resolved, waiting for your confirmation |
+| **Closed** | Done |
+| **Reopened** | Opened again after being closed |
+| **Cancelled** | Won't be worked on, for example a duplicate |
+
+## Invoices
+
+| Status | Meaning |
+| --- | --- |
+| **Paid** (`"paid": true`) | The payment is recorded |
+| **Unpaid** (`"paid": false`) | Not paid yet. The dashboard shows no tag |
+
+## Read a status from each tool
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+Statuses are shown in each list and on each detail page, and update by themselves while a resource is changing.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider cluster status staging
+cloider db status orders-db
+cloider app status blog
+cloider bucket status acme-assets
+cloider registry status acme
+```
+
+Each prints the status alone, for example `Ready`, which is easy to test in a script.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Resources expose a read-only `status` attribute, for example `cloider_cluster.staging.status`.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -H "Authorization: Bearer $CLOIDER_TOKEN" https://cloider.com/api/apps/r2m8k/status
+```
+
+```text title="Response"
+Building
+```
+
+The `/status` endpoints of clusters, databases, apps, buckets and registry projects answer with the status as plain text. List and show endpoints include it as `status`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+`get_cluster`, `get_database`, `get_app`, `get_bucket` and `get_registry_project` include the status.
+
+</TabItem>
+</Tabs>
+
+## Next steps
+
+- [Resource lifecycle](/concepts/resource-lifecycle): how resources move between statuses.
+- [Billing model](/concepts/billing-model): what each status costs.
+- [Troubleshooting](/reference/troubleshooting)

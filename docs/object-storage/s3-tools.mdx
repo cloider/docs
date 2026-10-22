@@ -1,0 +1,412 @@
+---
+title: Use the AWS CLI, rclone and s3cmd with Cloider
+sidebar_label: S3 tools
+sidebar_position: 4
+description: Configure the AWS CLI, rclone, s3cmd, the MinIO client and Cyberduck for Cloider buckets, with complete configs, checksum settings and everyday commands.
+keywords: [aws cli custom endpoint, aws s3 endpoint-url, rclone s3, s3cmd config, minio client mc alias, cyberduck s3, aws s3 sync, s3 compatible cli, AWS_REQUEST_CHECKSUM_CALCULATION]
+---
+
+Any command line or desktop tool that speaks S3 and lets you set a custom endpoint works with Cloider buckets. This page gives a complete, tested shape of configuration for the most common ones (the AWS CLI, rclone, s3cmd, the MinIO client and Cyberduck) followed by the commands you will use every day.
+
+All examples use the bucket `acme-assets` in the region `eu-central-2`, and an access key with the id `CLDRZ8Q4M2X7KD1PLW0B`. Replace them with your own.
+
+## Before you begin
+
+You need three things from Cloider:
+
+| Setting | Value | Where to find it |
+| --- | --- | --- |
+| Endpoint | `https://s3.eu-central-2.cloider.com` | The bucket's **Overview** tab, **Connection Details** |
+| Region | `eu-central-2` | Same place |
+| Access key id and secret key | `CLDRZ8Q4M2X7KD1PLW0B` and its 40 character secret | Shown once when you [create an access key](/object-storage/access-keys) |
+
+Two things to know before configuring any tool:
+
+- **Buckets are created by Cloider, not by S3 tools.** Commands like `aws s3 mb`, `s3cmd mb` or `mc mb` fail with `AccessDenied`. Create buckets in the dashboard or with `cloider bucket create`. Tools that try to create the bucket before copying (rclone does by default) need to be told not to, as shown below.
+- **Newer AWS tools need the checksum setting.** The AWS CLI (from version 2.23) and the AWS SDKs released since January 2025 add a checksum to every upload by default, which Cloider's storage doesn't accept. Set `request_checksum_calculation = when_required` and `response_checksum_validation = when_required`, as in every example below.
+
+## Path style and virtual hosted style
+
+S3 clients address a bucket in one of two ways, and Cloider supports both:
+
+| Style | URL of `images/logo.png` in `acme-assets` |
+| --- | --- |
+| Virtual hosted style | `https://acme-assets.s3.eu-central-2.cloider.com/images/logo.png` |
+| Path style | `https://s3.eu-central-2.cloider.com/acme-assets/images/logo.png` |
+
+Most tools pick one on their own and you don't need to change anything. If a tool or an older library only supports path style, turn it on (it is often called `force_path_style`, `s3ForcePathStyle`, `use_path_style_endpoint` or `addressing_style = path`). It works the same.
+
+## AWS CLI
+
+The [AWS CLI](https://aws.amazon.com/cli/) is the most widely used S3 tool. Version 2 is recommended. Setting the endpoint in the config file, as below, needs AWS CLI 2.13 or later; with older versions pass `--endpoint-url https://s3.eu-central-2.cloider.com` on every command instead.
+
+### Configure a cloider profile
+
+A **profile** keeps Cloider's settings apart from any real AWS account you also use. Run:
+
+```bash
+aws configure set aws_access_key_id CLDRZ8Q4M2X7KD1PLW0B --profile cloider
+aws configure set aws_secret_access_key 7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn --profile cloider
+aws configure set region eu-central-2 --profile cloider
+aws configure set endpoint_url https://s3.eu-central-2.cloider.com --profile cloider
+aws configure set request_checksum_calculation when_required --profile cloider
+aws configure set response_checksum_validation when_required --profile cloider
+```
+
+The first four lines are the **AWS CLI profile** snippet the dashboard shows when you create a key. The last two add the checksum setting. The result is two files:
+
+```ini title="~/.aws/credentials"
+[cloider]
+aws_access_key_id = CLDRZ8Q4M2X7KD1PLW0B
+aws_secret_access_key = 7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+```
+
+```ini title="~/.aws/config"
+[profile cloider]
+region = eu-central-2
+endpoint_url = https://s3.eu-central-2.cloider.com
+request_checksum_calculation = when_required
+response_checksum_validation = when_required
+```
+
+Use the profile with `--profile cloider`, or make it the default for a shell session:
+
+```bash
+export AWS_PROFILE=cloider
+```
+
+### Configure with environment variables
+
+In CI and containers, environment variables are simpler than config files. The AWS CLI reads these:
+
+```bash
+export AWS_ACCESS_KEY_ID=CLDRZ8Q4M2X7KD1PLW0B
+export AWS_SECRET_ACCESS_KEY=7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+export AWS_REGION=eu-central-2
+export AWS_ENDPOINT_URL_S3=https://s3.eu-central-2.cloider.com
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required
+export AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+```
+
+`AWS_ENDPOINT_URL_S3` sets the endpoint for S3 only. `AWS_ENDPOINT_URL` (what `cloider bucket key create --print-env` prints) sets it for every AWS service, which is fine when the CLI only talks to Cloider.
+
+:::tip[A key straight into your shell]
+`eval "$(cloider bucket key create --label laptop --bucket acme-assets --print-env)"` creates a key and exports it in one step. Add the two checksum variables afterwards.
+:::
+
+### List buckets and files
+
+```bash
+aws s3 ls s3://acme-assets --profile cloider
+```
+
+```text title="Output"
+                           PRE images/
+                           PRE css/
+2026-10-20 11:40:12       1532 index.html
+2026-10-20 11:40:12        431 robots.txt
+```
+
+`PRE` marks a prefix (a folder). List everything under a prefix, with sizes in human units and a total:
+
+```bash
+aws s3 ls s3://acme-assets/images/ --recursive --human-readable --summarize --profile cloider
+```
+
+### Upload, download and copy files
+
+```bash
+# Upload one file
+aws s3 cp ./logo.png s3://acme-assets/images/logo.png --profile cloider
+
+# Upload with a content type and a cache header, for files served to browsers
+aws s3 cp ./styles.css s3://acme-assets/css/styles.css \
+  --content-type text/css --cache-control "public, max-age=86400" --profile cloider
+
+# Download one file
+aws s3 cp s3://acme-assets/images/logo.png ./logo.png --profile cloider
+
+# Copy a whole folder, both ways
+aws s3 cp ./images s3://acme-assets/images/ --recursive --profile cloider
+aws s3 cp s3://acme-assets/images/ ./images --recursive --profile cloider
+
+# Copy between two buckets of the account
+aws s3 cp s3://acme-assets/images/logo.png s3://acme-backups/assets/logo.png --profile cloider
+
+# Stream from stdin and to stdout
+pg_dump orders | gzip | aws s3 cp - s3://acme-backups/orders/$(date +%F).sql.gz --profile cloider
+aws s3 cp s3://acme-backups/orders/2026-10-20.sql.gz - --profile cloider | gunzip | head
+```
+
+Files larger than 8 MB are uploaded in parts (a multipart upload) automatically, so there is no practical size limit with the AWS CLI.
+
+### Sync a folder
+
+`aws s3 sync` copies only what changed, which is ideal for deploying a static site or a nightly backup:
+
+```bash
+# Upload new and changed files
+aws s3 sync ./dist s3://acme-assets --profile cloider
+
+# Also delete files from the bucket that no longer exist locally
+aws s3 sync ./dist s3://acme-assets --delete --profile cloider
+
+# Download a bucket to a local folder
+aws s3 sync s3://acme-backups ./restore --profile cloider
+
+# Only some files
+aws s3 sync ./logs s3://acme-backups/logs --exclude "*" --include "*.gz" --profile cloider
+```
+
+Add `--dryrun` to see what would happen without changing anything.
+
+### Move and delete files
+
+```bash
+aws s3 mv s3://acme-assets/tmp/draft.pdf s3://acme-assets/docs/final.pdf --profile cloider
+aws s3 rm s3://acme-assets/docs/old.pdf --profile cloider
+aws s3 rm s3://acme-assets/tmp/ --recursive --profile cloider
+```
+
+On a bucket with [versioning](/object-storage/versioning), a delete keeps the earlier versions and the file can be restored.
+
+### Share a file with a presigned URL
+
+A presigned URL lets anyone who has it download one private file for a limited time, without a key:
+
+```bash
+aws s3 presign s3://acme-assets/docs/report.pdf --expires-in 3600 --profile cloider
+```
+
+The command prints a URL with the signature in its query string, shaped like this (depending on its version, the AWS CLI uses virtual hosted or path style, and both work):
+
+```text title="Output"
+https://acme-assets.s3.eu-central-2.cloider.com/docs/report.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=CLDRZ8Q4M2X7KD1PLW0B%2F20261020%2Feu-central-2%2Fs3%2Faws4_request&X-Amz-Date=20261020T094500Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=...
+```
+
+`--expires-in` is in seconds, up to 604800 (7 days). The URL stops working when it expires or when the key that signed it is deleted.
+
+### Lower level commands with aws s3api
+
+`aws s3api` exposes the individual S3 operations, which is useful for metadata, versions and scripting:
+
+```bash
+# Object metadata (size, type, ETag, version)
+aws s3api head-object --bucket acme-assets --key images/logo.png --profile cloider
+
+# List objects as JSON, filtered with --query
+aws s3api list-objects-v2 --bucket acme-assets --prefix images/ \
+  --query 'Contents[].{Key: Key, Size: Size}' --profile cloider
+
+# Upload with custom metadata
+aws s3api put-object --bucket acme-assets --key data/export.csv --body ./export.csv \
+  --content-type text/csv --metadata source=crm,owner=finance --profile cloider
+
+# Versioning (read and write keys)
+aws s3api get-bucket-versioning --bucket acme-backups --profile cloider
+aws s3api list-object-versions --bucket acme-backups --prefix orders/ --profile cloider
+aws s3api get-object --bucket acme-backups --key orders/latest.sql.gz \
+  --version-id 3HL4kqtJlcpXroDTDmJ+rmSpXd3dIbrHY ./previous.sql.gz --profile cloider
+
+# Tags
+aws s3api put-object-tagging --bucket acme-assets --key data/export.csv \
+  --tagging 'TagSet=[{Key=team,Value=finance}]' --profile cloider
+aws s3api get-object-tagging --bucket acme-assets --key data/export.csv --profile cloider
+
+# Lifecycle rules as S3 JSON (read and write keys)
+aws s3api get-bucket-lifecycle-configuration --bucket acme-backups --profile cloider
+```
+
+Bucket policies can't be read or set through the S3 API: use the dashboard or `cloider bucket policy`. See [Bucket policies](/object-storage/bucket-policies).
+
+## rclone
+
+[rclone](https://rclone.org) copies and syncs files between your computer, Cloider and other clouds, with parallel transfers and checksums. It is a good choice for large migrations and backups.
+
+### Configure an rclone remote
+
+Add this to your rclone config (`rclone config file` prints where it is, usually `~/.config/rclone/rclone.conf`):
+
+```ini title="rclone.conf"
+[cloider]
+type = s3
+provider = Other
+access_key_id = CLDRZ8Q4M2X7KD1PLW0B
+secret_access_key = 7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+endpoint = https://s3.eu-central-2.cloider.com
+region = eu-central-2
+no_check_bucket = true
+```
+
+The first six settings are the **rclone** snippet on the bucket's **Overview** tab. `no_check_bucket = true` stops rclone from trying to create the bucket before uploading, which an access key isn't allowed to do.
+
+Without a config file, for example in CI, the same remote can be set with environment variables:
+
+```bash
+export RCLONE_CONFIG_CLOIDER_TYPE=s3
+export RCLONE_CONFIG_CLOIDER_PROVIDER=Other
+export RCLONE_CONFIG_CLOIDER_ACCESS_KEY_ID=CLDRZ8Q4M2X7KD1PLW0B
+export RCLONE_CONFIG_CLOIDER_SECRET_ACCESS_KEY=7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+export RCLONE_CONFIG_CLOIDER_ENDPOINT=https://s3.eu-central-2.cloider.com
+export RCLONE_CONFIG_CLOIDER_REGION=eu-central-2
+export RCLONE_CONFIG_CLOIDER_NO_CHECK_BUCKET=true
+```
+
+### rclone commands
+
+```bash
+# List files and folders
+rclone lsf cloider:acme-assets
+rclone ls cloider:acme-assets/images
+
+# Upload and download
+rclone copy ./images cloider:acme-assets/images --progress
+rclone copy cloider:acme-backups/orders ./restore
+
+# Make the bucket match a local folder (deletes extra files in the bucket)
+rclone sync ./dist cloider:acme-assets --progress
+
+# Check that both sides are identical
+rclone check ./dist cloider:acme-assets
+
+# Size of a bucket or folder
+rclone size cloider:acme-backups
+
+# Delete files older than 30 days under a prefix
+rclone delete cloider:acme-backups/tmp --min-age 30d
+
+# A presigned link valid for one hour
+rclone link cloider:acme-assets/docs/report.pdf --expire 1h
+
+# Mount a bucket as a folder (needs FUSE)
+rclone mount cloider:acme-assets ~/acme-assets --vfs-cache-mode writes
+```
+
+### Migrate from another S3 provider
+
+rclone copies directly between two remotes. With a remote for your old provider (here `old`) and the `cloider` remote:
+
+```bash
+rclone copy old:legacy-assets cloider:acme-assets --progress --transfers 16
+rclone check old:legacy-assets cloider:acme-assets
+```
+
+## s3cmd
+
+[s3cmd](https://s3tools.org/s3cmd) is a long standing command line S3 client available in most Linux distributions.
+
+```ini title="~/.s3cfg"
+[default]
+access_key = CLDRZ8Q4M2X7KD1PLW0B
+secret_key = 7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+host_base = s3.eu-central-2.cloider.com
+host_bucket = %(bucket)s.s3.eu-central-2.cloider.com
+bucket_location = eu-central-2
+use_https = True
+signature_v2 = False
+```
+
+`host_bucket` uses virtual hosted style. For path style, set it to the same value as `host_base`.
+
+```bash
+s3cmd ls s3://acme-assets
+s3cmd put ./logo.png s3://acme-assets/images/logo.png
+s3cmd get s3://acme-assets/images/logo.png ./logo.png
+s3cmd sync ./dist/ s3://acme-assets/
+s3cmd del s3://acme-assets/images/old.png
+s3cmd du s3://acme-backups
+s3cmd signurl s3://acme-assets/docs/report.pdf +3600
+```
+
+Keep several configs apart with `-c`: `s3cmd -c ~/.s3cfg-cloider ls s3://acme-assets`.
+
+## MinIO client (mc)
+
+The [MinIO client](https://min.io/docs/minio/linux/reference/minio-mc.html) `mc` works with any S3 compatible storage. Register Cloider as an alias:
+
+```bash
+mc alias set cloider https://s3.eu-central-2.cloider.com CLDRZ8Q4M2X7KD1PLW0B 7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+```
+
+Then:
+
+```bash
+mc ls cloider/acme-assets
+mc cp ./logo.png cloider/acme-assets/images/logo.png
+mc cp --recursive ./images/ cloider/acme-assets/images/
+mc mirror ./dist cloider/acme-assets
+mc cat cloider/acme-assets/robots.txt
+mc rm cloider/acme-assets/images/old.png
+mc du cloider/acme-backups
+mc share download --expire 1h cloider/acme-assets/docs/report.pdf
+```
+
+`mc mb` (make bucket) and `mc admin` commands don't apply to Cloider: create buckets with Cloider's tools.
+
+## Cyberduck and other desktop apps
+
+[Cyberduck](https://cyberduck.io) (macOS and Windows) and its command line sibling `duck` browse buckets like a file manager. Generic S3 desktop apps are configured the same way:
+
+1. Click **Open Connection** and choose **Amazon S3** as the connection type.
+2. Set **Server** to `s3.eu-central-2.cloider.com` and **Port** to `443`.
+3. Enter the **Access Key ID** and the **Secret Access Key**.
+4. Under **More Options**, set **Path** to `/acme-assets` so the app opens your bucket directly.
+5. Connect.
+
+For other desktop clients, look for a "custom S3 endpoint", "S3 compatible" or "other S3 provider" option, then use the endpoint, the region `eu-central-2` and your key.
+
+## Other tools
+
+Anything built on the S3 API works with the same four settings, including backup tools (restic, Kopia, Duplicati, Velero), static site deployers, log shippers, and data tools (DuckDB, Spark, pandas through s3fs). Look for the tool's endpoint (or "S3 URL"), region, access key and secret key settings, and a "path style" option if it only supports one style.
+
+For example, [restic](https://restic.net) backs up a server to a bucket:
+
+```bash
+export AWS_ACCESS_KEY_ID=CLDRZ8Q4M2X7KD1PLW0B
+export AWS_SECRET_ACCESS_KEY=7hT2kV9qWm4LxR8zNc3PbY6sJd1FgA5eUo0iKlMn
+export RESTIC_REPOSITORY=s3:https://s3.eu-central-2.cloider.com/acme-backups/restic
+export RESTIC_PASSWORD='a long passphrase you keep safe'
+
+restic init
+restic backup /var/www
+restic snapshots
+```
+
+## Cloider's own CLI for files
+
+For quick jobs you don't need an access key at all: the `cloider` CLI lists, uploads and downloads files with your Cloider login.
+
+```bash
+cloider bucket ls acme-assets images/
+cloider bucket upload acme-assets ./logo.png --prefix images/
+cloider bucket download acme-assets images/logo.png
+```
+
+It moves each file in one request of up to 5 GB and spaces requests out, so it suits a handful of files. For thousands of files or very large ones, use one of the S3 tools above. See [Manage files](/object-storage/manage-files).
+
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| `XAmzContentSHA256Mismatch`, `InvalidRequest` or another error on every upload with a recent AWS CLI | Set `request_checksum_calculation = when_required` and `response_checksum_validation = when_required`. See [Checksum errors on upload](/object-storage/troubleshooting#checksum-errors) |
+| `Could not connect to the endpoint URL: "https://acme-assets.s3.eu-central-2.amazonaws.com/..."` | The endpoint isn't set, so the tool talks to AWS. Set `endpoint_url` or pass `--endpoint-url` |
+| `InvalidAccessKeyId` | The key was deleted, or the id is mistyped. Check `cloider bucket key list` |
+| `SignatureDoesNotMatch` | The secret is wrong, or a proxy changes the request. See [Troubleshooting](/object-storage/troubleshooting#signaturedoesnotmatch) |
+| `AccessDenied` on `mb`, `rclone copy` or `rclone mkdir` | Tools can't create buckets. Create the bucket in Cloider, and set `no_check_bucket = true` for rclone |
+| `AccessDenied` on uploads or deletes | The key is read only, doesn't open this bucket, or a bucket policy denies it. See [Troubleshooting](/object-storage/troubleshooting#accessdenied) |
+| `NoSuchBucket` | The bucket name is mistyped, or the bucket was deleted |
+
+## Next steps
+
+- [Use the AWS SDKs from your code](/object-storage/sdks).
+- [Make a bucket public to serve files on the web](/object-storage/public-and-private-buckets).
+- [Back up a database to a bucket](/guides/back-up-a-database-to-a-bucket).
+- [Keep Terraform state in a bucket](/terraform/guides/state-backend).
+
+<FAQ items={[
+  {q: 'How do I use the AWS CLI with Cloider Object Storage?', a: 'Create an access key in Cloider, then configure a profile with your access key id and secret, region eu-central-2, endpoint_url https://s3.eu-central-2.cloider.com, and request_checksum_calculation and response_checksum_validation set to when_required. Then use aws s3 cp, sync, ls and rm with --profile cloider as you would with Amazon S3.'},
+  {q: 'Why does aws s3 cp fail on Cloider with a new AWS CLI version?', a: 'Since version 2.23 the AWS CLI adds a checksum to every upload by default, which Cloider\'s storage doesn\'t accept. Set request_checksum_calculation = when_required and response_checksum_validation = when_required in the profile, or export AWS_REQUEST_CHECKSUM_CALCULATION=when_required and AWS_RESPONSE_CHECKSUM_VALIDATION=when_required.'},
+  {q: 'Can I create a bucket with aws s3 mb?', a: 'No. Buckets are created with Cloider\'s tools (the dashboard, cloider bucket create, Terraform, the API or MCP). Access keys can read and write objects but can\'t create or delete buckets.'},
+  {q: 'Does Cloider support path style addressing?', a: 'Yes. Both path style (https://s3.eu-central-2.cloider.com/acme-assets/key) and virtual hosted style (https://acme-assets.s3.eu-central-2.cloider.com/key) work, so tools can use either.'},
+  {q: 'How do I configure rclone for Cloider?', a: 'Add a remote with type = s3, provider = Other, your access_key_id and secret_access_key, endpoint = https://s3.eu-central-2.cloider.com, region = eu-central-2 and no_check_bucket = true. Then use rclone copy, sync and ls with cloider:<bucket>.'},
+]} />

@@ -1,0 +1,780 @@
+---
+title: Apps API endpoints
+sidebar_label: Apps
+sidebar_position: 9
+description: Cloider API reference for App Engine apps, upload source with a presigned URL, detect, create, import from git, environment variables, logs stream, exec, pause and delete.
+keywords: [cloider app api, deploy app api, app engine api, presigned upload zip, app environment variables api, stream app logs sse, app exec api]
+---
+
+These endpoints manage [App Engine](/apps/overview) apps: they upload or import source code, detect its language and port, create the app, set its environment variables and build settings, stream its logs, run commands in it, and pause, resume or delete it. Every new version of an app is a **build**; the build endpoints are on [App builds](/api/endpoints/app-builds), and the git connections an import uses are on [Git](/api/endpoints/git).
+
+All paths are relative to `https://cloider.com/api`. See [Authentication](/api/authentication) for the token header.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/apps`](#list-apps) | Read |
+| GET | [`/apps/:hashed_id`](#get-an-app) | Read |
+| GET | [`/apps/:hashed_id/status`](#get-an-apps-status) | Read |
+| GET | [`/apps/:hashed_id/usage`](#get-an-apps-usage) | Read |
+| POST | [`/apps/source`](#step-1-get-an-upload-url) | Write |
+| POST | [`/apps/source/:token/detect`](#step-3-start-detection) | Write |
+| GET | [`/apps/source/:token`](#step-4-read-the-detection-result) | Read |
+| POST | [`/apps/source/github`](#import-source-from-a-git-repository) | Write |
+| POST | [`/apps/source/gitlab`](#import-source-from-a-git-repository) | Write |
+| POST | [`/apps/source/bitbucket`](#import-source-from-a-git-repository) | Write |
+| POST | [`/apps`](#step-5-create-the-app) | Write |
+| PUT | [`/apps/:hashed_id/settings`](#change-the-port-or-start-command) | Write |
+| PUT | [`/apps/:hashed_id/git`](#change-the-branch-or-auto-deploy) | Write |
+| GET | [`/apps/:hashed_id/env`](#list-variables) | Read |
+| PUT | [`/apps/:hashed_id/env`](#replace-the-runtime-environment) | Write |
+| GET | [`/apps/:hashed_id/env/value`](#reveal-a-secret-value) | Read |
+| GET | [`/apps/:hashed_id/build-env`](#list-variables) | Read |
+| PUT | [`/apps/:hashed_id/build-env`](#replace-build-variables-or-build-arguments) | Write |
+| GET | [`/apps/:hashed_id/build-env/value`](#reveal-a-secret-value) | Read |
+| GET | [`/apps/:hashed_id/build-args`](#list-variables) | Read |
+| PUT | [`/apps/:hashed_id/build-args`](#replace-build-variables-or-build-arguments) | Write |
+| GET | [`/apps/:hashed_id/build-args/value`](#reveal-a-secret-value) | Read |
+| GET | [`/apps/:hashed_id/logs/stream`](#stream-an-apps-logs) | Read |
+| POST | [`/apps/:hashed_id/exec`](#run-a-command-with-exec) | Write |
+| GET | [`/apps/:hashed_id/terminal`](#web-terminal-endpoints) | Write |
+| POST | [`/apps/:hashed_id/terminal/wake`](#web-terminal-endpoints) | Write |
+| POST | [`/apps/:hashed_id/terminal/heartbeat`](#web-terminal-endpoints) | Write |
+| POST | [`/apps/:hashed_id/pause`](#pause-an-app) | Write |
+| POST | [`/apps/:hashed_id/resume`](#resume-an-app) | Write |
+| DELETE | [`/apps/:hashed_id`](#delete-an-app) | Write |
+
+## The app object
+
+```json
+{
+  "hashed_id": "a8q2w",
+  "app_name": "blog",
+  "app_label": "blog",
+  "port": 8080,
+  "start_command": "",
+  "status": "Ready",
+  "language": "JavaScript",
+  "framework": "Next.js",
+  "source_filename": "blog.zip",
+  "source_size": 1843200,
+  "uploaded": true,
+  "git_provider": "GitHub",
+  "repo_full_name": "acme/blog",
+  "repo_url": "https://github.com/acme/blog",
+  "repo_branch": "main",
+  "auto_deploy": true,
+  "git_connected": true,
+  "image_ref": "registry.cloider.com/acme-apps/blog-a8q2w:3",
+  "dockerfile_args": [],
+  "version": "3",
+  "url": "https://blog.cloider.app",
+  "domains": [
+    {"domain_name": "blog.cloider.app", "domain_type": "Subdomain"},
+    {"domain_name": "blog.example.com", "domain_type": "CustomDomain"}
+  ],
+  "created_at": "2026-10-01T09:20:31.774208Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The app's id |
+| `app_name` | string | The name you gave it |
+| `app_label` | string | A name unique among the account's apps (`-1`, `-2` appended when taken) |
+| `port` | integer | The port the app listens on. It is passed to the app as the `PORT` environment variable |
+| `start_command` | string | The command a buildpack build starts the app with, or empty to let the source decide |
+| `status` | string | See [App statuses](#app-statuses) |
+| `language`, `framework` | string | What detection found in the source, for display only |
+| `source_filename`, `source_size` | string, integer | The source archive of the live build |
+| `uploaded` | boolean | Whether the app's source has arrived |
+| `git_provider` | string | `GitHub`, `GitLab` or `Bitbucket`. Only meaningful when `repo_full_name` is set |
+| `repo_full_name`, `repo_url`, `repo_branch` | string | The repository and branch the app deploys from. Empty for an uploaded app |
+| `auto_deploy` | boolean | Whether a push to `repo_branch` builds a new version |
+| `git_connected` | boolean | Whether the git connection the repository is read through still exists |
+| `image_ref` | string | The image the app is running. Empty until a build has deployed |
+| `dockerfile_args` | object list | The `ARG`s the source's Dockerfile declares, each with a `name` and a `default` (or `null`) |
+| `version` | string | The version of the build being served. Empty until the first deploy |
+| `url` | string | The address the app is served on, or empty when no domain points to it |
+| `domains` | object list | Every domain the app is served on, with its `domain_type` (`Subdomain` or `CustomDomain`) |
+| `created_at` | string | When the app was created |
+
+### App statuses
+
+An app's status follows its latest build while one runs, so a list of apps shows how far a deploy has got.
+
+| Status | Meaning |
+| --- | --- |
+| `Pending` | Waiting for the source to be uploaded |
+| `Queued`, `Building`, `Deploying`, `Starting` | A build is running through its stages |
+| `Ready` | Running and serving its URL |
+| `Failed` | The first build failed. An app that was already running stays `Ready` when a later build fails |
+| `Pausing`, `Paused` | Being stopped, or stopped |
+| `Terminating`, `Terminated` | Being deleted, or deleted |
+
+## List apps
+
+```http
+GET /apps
+```
+
+Returns the account's apps, newest first, without deleted ones.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is a list of [app objects](#the-app-object).
+
+## Get an app
+
+```http
+GET /apps/:hashed_id
+```
+
+Returns one app. An unknown id answers `404` with `App not found!`.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps/a8q2w \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+## Get an app's status
+
+```http
+GET /apps/:hashed_id/status
+```
+
+Returns the status as plain text, for example `Building` or `Ready`.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps/a8q2w/status \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+To wait for a deploy, poll the [builds list](/api/endpoints/app-builds#list-builds) instead: the build says whether it ended `Ready` or `Failed`, and why.
+
+## Get an app's usage
+
+```http
+GET /apps/:hashed_id/usage
+```
+
+Returns the app with its compute usage and cost: the last 31 days in `daily_usage` (with `cpu` in millicores, `memory` in MiB and `compute_cost` per day) and this month's totals in `monthly_usage` (`avg_cpu_usage`, `avg_memory_usage`, `compute_total_cost`, `total_cost`, `days`, `forecast_this_month`, `forecast_next_month`), plus `forecast_rest_of_day`, `date` and `month`. It is the app's entry from [`GET /usage`](/api/endpoints/account#get-month-to-date-usage) and the data of the **Insights** tab.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps/a8q2w/usage \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+## Create an app from uploaded source
+
+Creating an app from code on your machine takes five requests. The source is a **zip archive** of your project, up to 100 MB. The bytes go straight to storage through a presigned URL, never through the API.
+
+```mermaid
+sequenceDiagram
+    participant You
+    participant API as cloider.com/api
+    participant S3 as Storage
+    You->>API: POST /apps/source (name, size)
+    API-->>You: token, presigned_url
+    You->>S3: PUT zip to presigned_url
+    You->>API: POST /apps/source/{token}/detect
+    loop until status is Done or Failed
+        You->>API: GET /apps/source/{token}
+    end
+    You->>API: POST /apps (app_name, port, source_token)
+    API-->>You: hashed_id, build_hashed_id
+```
+
+This is what `cloider deploy` does the first time it deploys a folder. See [Deploy from your computer](/apps/deploy-from-your-computer).
+
+### Step 1: get an upload URL
+
+```http
+POST /apps/source
+```
+
+Stages an upload and returns a token that names it, and a presigned URL to `PUT` the archive to.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source.name` | string | Yes | The archive's file name, for example `blog.zip` |
+| `source.type` | string | Yes | Must be `application/zip` |
+| `source.size` | integer | Yes | The archive's exact size in bytes, at most 100 MB |
+
+```bash
+cd blog && zip -qr ../blog.zip . -x 'node_modules/*' '.git/*' && cd ..
+
+curl -s -X POST https://cloider.com/api/apps/source \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"source\": {\"name\": \"blog.zip\", \"type\": \"application/zip\", \"size\": $(wc -c < blog.zip)}}"
+```
+
+```json title="Response"
+{
+  "token": "9f2c4e7a1b3d5f60718293a4b5c6d7e8",
+  "presigned_url": "https://s3.eu-central-2.cloider.com/...uploads/9f2c4e7a...?X-Amz-Signature=..."
+}
+```
+
+Errors on `source`: `Please select your app folder, a zip file or an HTML file!` (size 0), `The app source exceeded the allowed size of 100MB!`, `Invalid app source!` (not `application/zip`). A staged upload expires after two hours.
+
+### Step 2: upload the archive
+
+`PUT` the zip to the presigned URL with the same size and `Content-Type: application/zip`. Don't send your API token to it.
+
+```bash
+curl -X PUT "$PRESIGNED_URL" \
+  -H "Content-Type: application/zip" \
+  --data-binary @blog.zip
+```
+
+### Step 3: start detection
+
+```http
+POST /apps/source/:token/detect
+```
+
+Asks Cloider to read the archive and detect the language, framework, port and a suggested name. It answers `200` at once and runs in the background.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/apps/source/$TOKEN/detect \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+An expired or unknown token answers `404` with `This upload has expired, upload your app again!`.
+
+### Step 4: read the detection result
+
+```http
+GET /apps/source/:token
+```
+
+Returns what detection found. Poll it every second or two until `status` is `Done`, `Failed` or `Unavailable`.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps/source/$TOKEN \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "status": "Done",
+  "app_name": "blog",
+  "language": "JavaScript",
+  "framework": "Next.js",
+  "port": 3000,
+  "message": "",
+  "build_args": [{"name": "NEXT_PUBLIC_API_URL", "default": null}]
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `status` | `Pending` (waiting for the upload), `Fetching` (an import is being downloaded), `Detecting`, `Done`, `Failed` (detection gave up, but the app can still be created and built) or `Unavailable` (an import that couldn't be fetched, the one status an app can't be created from) |
+| `app_name` | A name that passes the naming rules, from the project's own name or the archive's |
+| `language`, `framework` | What was detected, possibly empty |
+| `port` | The detected port, or `0` when there is no opinion |
+| `message` | Why detection failed or the import is unavailable |
+| `build_args` | The `ARG`s declared by a Dockerfile in the source |
+| `git` | Only for an import: `provider`, `repo_full_name`, `repo_url`, `branch`, `commit_sha` and `commit_message` |
+
+### Step 5: create the app
+
+```http
+POST /apps
+```
+
+Creates the app from a staged source and starts its first build right away. Optionally claims a free subdomain and sets variables in the same request.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app_name` | string | Yes | 2 to 64 characters: lower case letters, digits and `-`, starting with a letter, not ending with `-` |
+| `port` | integer | Yes | 1 to 65535, the port the app listens on |
+| `source_token` | string | Yes | The `token` from step 1, or from an import |
+| `start_command` | string | No | One line, up to 1000 characters. Only buildpack builds read it |
+| `subdomain` | string | No | A full free subdomain to claim, for example `blog.cloider.app`. Empty for none |
+| `env_vars` | object list | No | Runtime environment variables, see [Variables](#environment-variables-build-variables-and-build-arguments) |
+| `build_env_vars` | object list | No | Build variables |
+| `build_args` | object list | No | Dockerfile build arguments |
+
+```bash
+curl -X POST https://cloider.com/api/apps \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "app_name": "blog",
+    "port": 3000,
+    "source_token": "9f2c4e7a1b3d5f60718293a4b5c6d7e8",
+    "subdomain": "blog.cloider.app",
+    "env_vars": [
+      {"key": "NODE_ENV", "value": "production", "secret": false},
+      {"key": "DATABASE_URL", "value": "postgresql://orders:...@orders-db-d7f2m.db.cloider.internal:20417/orders-db", "secret": true}
+    ]
+  }'
+```
+
+```json title="Response"
+{
+  "hashed_id": "a8q2w",
+  "build_hashed_id": "u9e3k",
+  "version": "1"
+}
+```
+
+The app is created even when a later part of the request fails. Those failures come back as extra fields of a successful response, not as errors: `subdomain_error` (the subdomain couldn't be claimed), `env_error`, `build_env_error` and `build_args_error` (the variables couldn't be saved; set them again with the variable endpoints). Follow the first build with [`GET /apps/a8q2w/builds`](/api/endpoints/app-builds#list-builds) until its status is `Ready` or `Failed`.
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `app_name` | `App name must not be empty`, `App name can not be upper case`, `App name must not have special characters except "-"`, `App name must be at least 2 characters`, `App name must not exceed 64 characters`, and the like |
+| `400` | `port` | `App port must not be empty`, `App port must be between 1 and 65535` |
+| `400` | `start_command` | `Start command must be at most 1000 characters`, `Start command must be a single line` |
+| `400` | `source` | `Your app source is no longer available, upload it again!`, `Your repository is still being fetched, give it a moment and try again!`, or the import's own message |
+| `400` | `subdomain` | `This subdomain is already taken. Please try another one.`, `You already own this subdomain. Connect it to the app from Domains instead.`, and the subdomain naming rules |
+| `400` | `env_vars.<KEY>` | Per variable messages, see [Variables](#environment-variables-build-variables-and-build-arguments) |
+| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.`, `Couldn't prepare your app's registry, try again in a moment!`, `Operation failed, Couldn't create the app!` |
+| `400` | `_` | `App created but its first build could not be started!`, with `data` set to `{"hashed_id": "..."}` of the app that was created |
+| `403` | `_` | `This API token is read only!` |
+
+Check a subdomain before you create the app with [`GET /domains/availability`](/api/endpoints/domains#check-whether-a-free-subdomain-is-available).
+
+## Import source from a git repository
+
+```http
+POST /apps/source/github
+POST /apps/source/gitlab
+POST /apps/source/bitbucket
+```
+
+Instead of uploading, you can stage the source from a repository on a connected GitHub, GitLab or Bitbucket account. The import downloads the latest commit of the branch in the background and runs detection on it; you then poll [`GET /apps/source/:token`](#step-4-read-the-detection-result) and create the app with [`POST /apps`](#step-5-create-the-app), exactly as for an upload. An app created this way deploys every push to its branch.
+
+**Access:** Read & Write token, and a git connection made in the dashboard. See [Git](/api/endpoints/git) to list connections, repositories and branches.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `installation_hashed_id` | string | Yes | The connection's `hashed_id` from `GET /git/<provider>/installations` |
+| `repo_full_name` | string | Yes for GitHub and Bitbucket | `owner/repo` (GitHub) or `workspace/repo` (Bitbucket). For GitLab, a display hint |
+| `project_id` | integer | Yes for GitLab | The GitLab project's numeric id |
+| `branch` | string | Yes | The branch to deploy |
+
+```bash
+curl -X POST https://cloider.com/api/apps/source/github \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"installation_hashed_id": "g2h6v", "repo_full_name": "acme/api", "branch": "main"}'
+```
+
+```json title="Response"
+{"token": "4b8e1d0c7a2f9e6b3d5c8a1f0e7d2b9c"}
+```
+
+The import starts with the status `Fetching`. When the repository can't be read, the status becomes `Unavailable` with a `message` such as `We could not read acme/api at main. The branch may be gone, or the repository may have no commits yet.` or `acme/api is over the 100MB limit.`
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `source` | `That repository name is not one we can read.`, `Pick a project to import.`, `Pick a branch to deploy from.` |
+| `400` | `_` | `This GitHub installation is suspended. Re-enable it there to import from it.` (and the same for the other providers) |
+| `404` | `_` | `This GitHub connection is no longer available, reconnect it!` |
+
+## Change the port or start command
+
+```http
+PUT /apps/:hashed_id/settings
+```
+
+Changes the port the app listens on and its start command. Saving them also applies them to the running app: a changed port redeploys the current image, a changed start command builds the current source again.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `port` | integer | Yes | 1 to 65535. Send the current port to keep it |
+| `start_command` | string | No | One line, up to 1000 characters. Empty clears it |
+
+```bash
+curl -X PUT https://cloider.com/api/apps/a8q2w/settings \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"port": 8080, "start_command": "node server.js"}'
+```
+
+```json title="Response"
+{"applied": "build"}
+```
+
+`applied` says what happened: `none` (nothing changed, or the app has never deployed, so its next build picks the settings up), `redeploy` (the port changed and the running image is being redeployed) or `build` (the start command changed and a new build started).
+
+| Status | Message |
+| --- | --- |
+| `400` | `This app is paused. Resume it before deploying a new version!`, `This app is being deleted!` |
+| `400` | `This app is building, wait for that build to finish before changing its settings!` |
+| `400` | `The settings were saved but the app could not be redeployed!` |
+
+See [Settings](/apps/settings).
+
+## Change the branch or auto deploy
+
+```http
+PUT /apps/:hashed_id/git
+```
+
+For an app created from a repository, sets the branch it deploys from and whether a push to that branch deploys automatically.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `branch` | string | Yes | The branch name |
+| `auto_deploy` | boolean | Yes | `true` to deploy every push to the branch. Leaving it out turns auto deploy off |
+
+```bash
+curl -X PUT https://cloider.com/api/apps/a8q2w/git \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"branch": "production", "auto_deploy": true}'
+```
+
+It answers `200` with an empty body. Errors: `This app was not created from a repository.` and `Pick a branch to deploy from.` (on `branch`). To deploy the branch's latest commit now, use [`POST /apps/:hashed_id/builds/git`](/api/endpoints/app-builds#build-the-latest-commit).
+
+## Environment variables, build variables and build arguments
+
+An app has three lists of variables, each read and replaced with its own endpoints:
+
+| List | Endpoints | Read by | Applied |
+| --- | --- | --- | --- |
+| **Environment** (runtime) | `/apps/:hashed_id/env` | The running app | Saving restarts the app |
+| **Build variables** | `/apps/:hashed_id/build-env` | Buildpack builds (no Dockerfile) | Saving starts a build of the current source |
+| **Build arguments** | `/apps/:hashed_id/build-args` | Dockerfile builds, as `ARG` (secret ones as build secrets) | Saving starts a build of the current source |
+
+Each variable is an object:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `key` | string | 1 to 128 characters, a letter or `_` first, then letters, digits and `_` |
+| `value` | string or null | The value, up to 16 KB. In a read, `null` for a secret. In a write, `null` keeps the value already stored |
+| `secret` | boolean | `true` to store the value as a secret, which is never returned by the list endpoints |
+
+A list can hold up to 100 variables and 64 KB in total. See [Environment variables](/apps/environment-variables) and [Build configuration](/apps/build-configuration).
+
+### List variables
+
+```http
+GET /apps/:hashed_id/env
+GET /apps/:hashed_id/build-env
+GET /apps/:hashed_id/build-args
+```
+
+Returns one of the lists, with secret values as `null`.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps/a8q2w/env \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {"key": "NODE_ENV", "secret": false, "value": "production"},
+  {"key": "DATABASE_URL", "secret": true, "value": null}
+]
+```
+
+### Reveal a secret value
+
+```http
+GET /apps/:hashed_id/env/value?key=:key
+GET /apps/:hashed_id/build-env/value?key=:key
+GET /apps/:hashed_id/build-args/value?key=:key
+```
+
+Returns one variable's value as plain text, secret or not.
+
+**Access:** any token, including read only tokens.
+
+```bash
+curl -G https://cloider.com/api/apps/a8q2w/env/value \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  --data-urlencode "key=DATABASE_URL"
+```
+
+```text title="Response"
+postgresql://orders:Xk29fQ7pLm3vT8wZ@orders-db-d7f2m.db.cloider.internal:20417/orders-db
+```
+
+Errors: `400 No variable was asked for!`, `404 Variable not found!`.
+
+### Replace the runtime environment
+
+```http
+PUT /apps/:hashed_id/env
+```
+
+Replaces the app's environment with the list you send, then restarts the app so it picks the values up. A variable missing from the list is removed. A variable sent with `"value": null` keeps its stored value, so you can send back the list you read without losing secrets.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `env_vars` | object list | Yes | The complete new list |
+
+```bash
+curl -X PUT https://cloider.com/api/apps/a8q2w/env \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "env_vars": [
+      {"key": "NODE_ENV", "value": "production", "secret": false},
+      {"key": "DATABASE_URL", "value": null, "secret": true},
+      {"key": "STRIPE_KEY", "value": "sk_live_xxxxxxxx", "secret": true}
+    ]
+  }'
+```
+
+```json title="Response"
+{"success": true}
+```
+
+To add one variable without touching the others, read the list, change it, and send it back:
+
+```bash
+curl -s https://cloider.com/api/apps/a8q2w/env -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  | jq '{env_vars: (map(select(.key != "LOG_LEVEL")) + [{key: "LOG_LEVEL", value: "debug", secret: false}])}' \
+  | curl -X PUT https://cloider.com/api/apps/a8q2w/env \
+      -H "Authorization: Bearer $CLOIDER_TOKEN" \
+      -H "Content-Type: application/json" --data-binary @-
+```
+
+Validation errors are keyed by the variable: `env_vars.<KEY>` with `Variable name must start with a letter or underscore and contain only letters, numbers and underscores`, `Variable name must not exceed 128 characters`, `This variable is set more than once` or `This value exceeds the allowed size of 16KB`; and on `env_vars`, `An app can have at most 100 environment variables` or `The environment variables exceed the allowed size of 64KB`. `The environment could not be saved, try again!` means the change wasn't applied.
+
+### Replace build variables or build arguments
+
+```http
+PUT /apps/:hashed_id/build-env
+PUT /apps/:hashed_id/build-args
+```
+
+Replace the build variables or the build arguments, with the same body and rules as the environment (`env_vars` is the field name for both). Because only a build reads them, saving starts a build of the source the app is serving, so the change reaches the running app.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X PUT https://cloider.com/api/apps/a8q2w/build-args \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"env_vars": [{"key": "NEXT_PUBLIC_API_URL", "value": "https://api.example.com", "secret": false}]}'
+```
+
+```json title="Response"
+{"applied": "build"}
+```
+
+`applied` is `build` when a build started, or `none` when the app has never deployed (its first build reads them). Errors besides validation: `This app is paused. Resume it before deploying a new version!`, `This app is building, wait for that build to finish before changing its build arguments!`, and `The build arguments were saved, and apply from the next build on!`.
+
+## Stream an app's logs
+
+```http
+GET /apps/:hashed_id/logs/stream
+```
+
+Streams what the app prints to standard output and standard error as [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events). It starts with the last lines and then follows new output for up to an hour.
+
+**Access:** any token, including read only tokens. The logs contain whatever the app prints, secrets included.
+
+| Query parameter | Required | Description |
+| --- | --- | --- |
+| `lines` | No | How many past lines to start with: `100`, `200`, `500` or `1000`. Default `200` |
+| `follow` | No | `false` to send the past lines and end. Default: follow |
+
+```bash
+curl -N "https://cloider.com/api/apps/a8q2w/logs/stream?lines=100" \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```text title="Response"
+: open
+
+event: reset
+data: 1
+
+data: > blog@1.0.0 start
+data: > next start -p 8080
+
+data: ready - started server on 0.0.0.0:8080
+
+: ping
+
+data: GET /api/posts 200 in 41ms
+
+```
+
+| Event | Meaning |
+| --- | --- |
+| `message` (lines with no `event:`) | Log output. A chunk can span several `data:` lines; join them with newlines to get exactly what was printed |
+| `reset` | A fresh tail starts. Sent first on every connection: drop what you showed from an earlier connection |
+| `end` | The stream is over (`follow=false`, the one hour limit, or the tail stopped). Close the connection |
+
+Lines starting with `:` (`: open`, `: ping`) keep the connection alive; ignore them. An app that hasn't deployed yet answers with the single line `This app has not deployed a version yet.` and `end`. If the stream drops, reconnect: you get a new tail, announced by `reset`. See [Logs](/apps/logs).
+
+<details>
+<summary>Read the log stream in JavaScript</summary>
+
+```js title="logs.mjs"
+const res = await fetch('https://cloider.com/api/apps/a8q2w/logs/stream?lines=200', {
+  headers: { Authorization: `Bearer ${process.env.CLOIDER_TOKEN}` },
+});
+if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+
+const decoder = new TextDecoder();
+let buffer = '';
+
+for await (const chunk of res.body) {
+  buffer += decoder.decode(chunk, { stream: true });
+  let sep;
+  while ((sep = buffer.indexOf('\n\n')) !== -1) {
+    const raw = buffer.slice(0, sep);
+    buffer = buffer.slice(sep + 2);
+    let event = 'message';
+    const data = [];
+    for (const line of raw.split('\n')) {
+      if (line.startsWith(':')) continue;
+      if (line.startsWith('event: ')) event = line.slice(7);
+      else if (line.startsWith('data: ')) data.push(line.slice(6));
+    }
+    if (event === 'end') process.exit(0);
+    if (event === 'reset') console.log('--- new tail ---');
+    if (event === 'message') process.stdout.write(data.join('\n') + '\n');
+  }
+}
+```
+
+</details>
+
+## Run a command with exec
+
+```http
+POST /apps/:hashed_id/exec
+```
+
+Runs one command in the app's running container and streams back its output and exit code. `cloider app exec` uses it.
+
+**Access:** Read & Write token. The app must have a running container.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `command` | string list | Yes | The program and its arguments, run directly, not through a shell. Up to 64 KiB, no NUL bytes |
+| `stdin` | string (base64) | No | Standard input, base64 encoded, up to 2 MiB |
+| `timeout` | integer | No | Seconds, default `600`, at most `3600` |
+
+```bash
+curl -N -X POST https://cloider.com/api/apps/a8q2w/exec \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"command": ["sh", "-c", "ps aux | grep node"]}'
+```
+
+The response is the event stream described on [cluster exec](/api/endpoints/clusters#run-a-command-with-exec): base64 `stdout` and `stderr` chunks, then `exit`, `timeout` or `error`, then `end`. Errors before the stream starts:
+
+| Status | Message |
+| --- | --- |
+| `400` | `Give a command to run!` (on `command`), and the size and timeout errors of cluster exec |
+| `403` | `This API token is read only!` |
+| `404` | `App not found!` |
+| `409` | `This app is paused. Resume it to run a command!`, `This app is being deleted!`, `This app has not been deployed yet!`, `This app has no running container right now!` |
+| `503` | `The command could not be started, try again in a moment!` |
+
+## Web terminal endpoints
+
+The dashboard's **Terminal** tab opens a shell in the app's container. Three endpoints drive it; for scripts, [exec](#run-a-command-with-exec) is simpler.
+
+| Endpoint | What it does | Response |
+| --- | --- | --- |
+| `GET /apps/:hashed_id/terminal` | Returns the terminal's URL | `{"url": "https://cloider.com/terminal?kind=app&..."}` |
+| `POST /apps/:hashed_id/terminal/wake` | Starts the terminal, which sleeps when unused, and answers once it accepts connections | `200` |
+| `POST /apps/:hashed_id/terminal/heartbeat` | Keeps the terminal awake while it is in use | `204` |
+
+All three need a Read & Write token and a deployed, running app. Otherwise they answer `409` with `This app is paused. Resume it to open a terminal!`, `This app is being deleted!` or `This app has not been deployed yet!`. A read only token gets `403 Terminals need a Read & Write API token!` for the URL. With an API token, the URL carries a terminal token valid for 2 minutes. See [Terminal and exec](/apps/terminal-and-exec).
+
+## Pause an app
+
+```http
+POST /apps/:hashed_id/pause
+```
+
+Stops the app without losing anything: its image, environment and domains stay. The status goes to `Pausing`, then `Paused`.
+
+**Access:** Read & Write token. The app must be `Ready`.
+
+```bash
+curl -X POST https://cloider.com/api/apps/a8q2w/pause \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's app list. Errors: `400 Only a running app can be paused!`, `400 This app is building, wait for that build to finish before pausing it!`, `403` for read only tokens and Restricted members.
+
+## Resume an app
+
+```http
+POST /apps/:hashed_id/resume
+```
+
+Starts a paused app again on the image it was running. The status goes to `Starting`, then `Ready`.
+
+**Access:** Read & Write token. The app must be `Paused`.
+
+```bash
+curl -X POST https://cloider.com/api/apps/a8q2w/resume \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the app list. A non paused app answers `400 Only a paused app can be resumed!`.
+
+## Delete an app
+
+```http
+DELETE /apps/:hashed_id
+```
+
+Deletes the app, its builds and its routes. Optionally deletes the free subdomains that were claimed for it in the same request. A custom domain is never deleted this way: it only loses its route to the app.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `delete_domains` | string list | No | Free subdomains of this app to delete with it, for example `["blog.cloider.app"]` |
+
+```bash
+curl -X DELETE https://cloider.com/api/apps/a8q2w \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"delete_domains": ["blog.cloider.app"]}'
+```
+
+The response is the app list, with this app `Terminating`. Its status then becomes `Terminated`. Deleting an app that is already being deleted answers `400 This app is already being deleted!`. See [Pause, resume and delete](/apps/pause-resume-and-delete).
+
+## Related
+
+- [App builds](/api/endpoints/app-builds): new versions, build logs and retries
+- [Git](/api/endpoints/git): connections, repositories and branches for imports
+- [Deploy from git](/apps/deploy-from-git) and [deploy from your computer](/apps/deploy-from-your-computer)
+- [cloider app](/cli/commands/app) and [cloider deploy](/cli/commands/deploy)

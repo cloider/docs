@@ -1,0 +1,451 @@
+---
+title: Deploy to a Cloider cluster with Terraform Kubernetes and Helm
+sidebar_label: Kubernetes and Helm providers
+sidebar_position: 2
+description: Wire the kubernetes and helm Terraform providers to a Cloider cluster's kube_config, deploy an app with its registry, database and domain, and install Helm charts.
+keywords: [terraform kubernetes provider cloider, terraform helm provider, kube_config terraform, helm_release cloider, kubernetes_deployment terraform, deploy to kubernetes terraform, terraform_remote_state kubeconfig]
+---
+
+A [`cloider_cluster`](/terraform/resources/cluster)'s `kube_config` attribute holds everything the HashiCorp [`kubernetes`](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs) and [`helm`](https://registry.terraform.io/providers/hashicorp/helm/latest/docs) providers need to deploy into the cluster. This guide shows how to wire them up, how to structure configurations so that plans stay reliable, and then deploys a complete app: its image from a Cloider registry project, its credentials for a Cloider database, and its Service on a `cloider.app` domain over HTTPS. It ends with installing a Helm chart.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **What you connect** | `kubernetes` and `helm` providers to `cloider_cluster.<name>.kube_config` or `data.cloider_cluster.<name>.kube_config` |
+| **Authentication** | The kubeconfig's client certificate, as the cluster's admin |
+| **Recommended structure** | Two configurations: one creates the cluster, the other deploys into it |
+| **Exposing Services** | `cloider_target` (Ingress objects aren't served) |
+| **Provider versions used here** | `hashicorp/kubernetes ~> 3.0`, `hashicorp/helm ~> 3.0` |
+
+## Before you begin
+
+- Terraform 1.5 or later (or OpenTofu) and the Cloider provider configured, see [Get started](/terraform/get-started).
+- Basic Kubernetes concepts: Deployments, Services, Secrets and namespaces. See [Deploy a workload](/kubernetes/deploy-a-workload) for a refresher.
+- A **Read & Write** API token, and room in your account for a cluster, a database and a registry project (the trial allows one of each).
+
+## Configure the providers
+
+The parts of `kube_config` map one to one onto the providers' arguments. The certificates are already PEM decoded, so pass them as they are:
+
+```hcl title="providers.tf"
+provider "kubernetes" {
+  host                   = cloider_cluster.shop.kube_config.host
+  cluster_ca_certificate = cloider_cluster.shop.kube_config.cluster_ca_certificate
+  client_certificate     = cloider_cluster.shop.kube_config.client_certificate
+  client_key             = cloider_cluster.shop.kube_config.client_key
+}
+
+provider "helm" {
+  kubernetes = {
+    host                   = cloider_cluster.shop.kube_config.host
+    cluster_ca_certificate = cloider_cluster.shop.kube_config.cluster_ca_certificate
+    client_certificate     = cloider_cluster.shop.kube_config.client_certificate
+    client_key             = cloider_cluster.shop.kube_config.client_key
+  }
+}
+```
+
+:::note[helm provider 2.x vs 3.x]
+The helm provider 3.x takes `kubernetes` as an attribute, `kubernetes = { ... }`, with an equals sign. The 2.x releases took it as a nested block, `kubernetes { ... }`. Use the form that matches the version you pin.
+:::
+
+Don't use `base64decode()` on these values, and don't use `config_path` pointing at a file written by the same apply: the provider reads `config_path` before the file exists.
+
+## One configuration or two?
+
+A provider configured from a resource's attributes can't reach the cluster before the cluster exists. Terraform also can't plan Kubernetes objects in a cluster that a plan is about to replace. So choose one of these structures.
+
+### One configuration, applied in two steps
+
+Keep everything in one folder, but create the cluster on its own the first time:
+
+```bash
+terraform apply -target=cloider_cluster.shop
+terraform apply
+```
+
+After that first run, plain `terraform apply` works, because the cluster already exists when the providers are configured. This suits small projects and a cluster that is rarely replaced, such as one cluster per app.
+
+### Two configurations: one for the cluster, one for what runs in it
+
+HashiCorp recommends this for the kubernetes provider, and it is the most robust option. A `platform` configuration creates the Cloider resources. An `app` configuration deploys into the cluster, and looks the cluster up with the [`cloider_cluster` data source](/terraform/data-sources/cluster):
+
+```text
+infrastructure/
+├── platform/     # cloider_cluster, cloider_database, cloider_registry, cloider_domain
+└── app/          # kubernetes_*, helm_release, cloider_target
+```
+
+```hcl title="app/providers.tf"
+data "cloider_cluster" "shop" {
+  name = "shop"
+}
+
+provider "kubernetes" {
+  host                   = data.cloider_cluster.shop.kube_config.host
+  cluster_ca_certificate = data.cloider_cluster.shop.kube_config.cluster_ca_certificate
+  client_certificate     = data.cloider_cluster.shop.kube_config.client_certificate
+  client_key             = data.cloider_cluster.shop.kube_config.client_key
+}
+```
+
+Data sources are read before planning, so the providers always get real values.
+
+Alternatively, the `platform` configuration outputs the kubeconfig, and `app` reads it with `terraform_remote_state`:
+
+```hcl title="platform/outputs.tf"
+output "kube_config" {
+  value     = cloider_cluster.shop.kube_config
+  sensitive = true
+}
+```
+
+```hcl title="app/providers.tf"
+# Use the backend the platform configuration's state is in, such as the s3
+# backend on a Cloider bucket
+data "terraform_remote_state" "platform" {
+  backend = "local"
+
+  config = {
+    path = "../platform/terraform.tfstate"
+  }
+}
+
+locals {
+  kube = data.terraform_remote_state.platform.outputs.kube_config
+}
+
+provider "kubernetes" {
+  host                   = local.kube.host
+  cluster_ca_certificate = local.kube.cluster_ca_certificate
+  client_certificate     = local.kube.client_certificate
+  client_key             = local.kube.client_key
+}
+```
+
+The data source approach needs only the Cloider token in the `app` configuration. The remote state approach needs read access to the platform state, which contains secrets.
+
+## Deploy an app end to end
+
+This single configuration (applied in two steps the first time) creates a cluster, a PostgreSQL database that only the cluster may reach, a registry project with a push token for CI and a pull token for the cluster, a free subdomain, and then the Kubernetes objects and the route.
+
+```hcl title="versions.tf"
+terraform {
+  required_version = ">= 1.5"
+
+  required_providers {
+    cloider = {
+      source  = "cloider/cloider"
+      version = "~> 0.1"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 3.0"
+    }
+  }
+}
+```
+
+```hcl title="variables.tf"
+variable "name" {
+  description = "The app's name, used for the cluster, the database and the Kubernetes objects"
+  type        = string
+  default     = "shop"
+}
+
+variable "registry_project" {
+  description = "The registry project's name, unique across every Cloider account"
+  type        = string
+  default     = "acme"
+}
+
+variable "subdomain" {
+  description = "The free subdomain, such as acme-shop for acme-shop.cloider.app"
+  type        = string
+  default     = "acme-shop"
+}
+
+variable "image_tag" {
+  type    = string
+  default = "latest"
+}
+
+variable "replicas" {
+  type    = number
+  default = 2
+}
+```
+
+```hcl title="main.tf"
+provider "cloider" {}
+
+# Cloider resources
+
+resource "cloider_cluster" "shop" {
+  name = var.name
+}
+
+resource "cloider_database" "shop" {
+  name            = "${var.name}-db"
+  engine          = "postgresql"
+  trusted_sources = ["cluster:${cloider_cluster.shop.id}"]
+}
+
+data "cloider_options" "current" {}
+
+resource "cloider_domain" "shop" {
+  name = "${var.subdomain}.${data.cloider_options.current.subdomain_roots[0]}"
+}
+
+resource "cloider_registry" "shop" {
+  name = var.registry_project
+}
+
+# For CI to push images with
+resource "cloider_registry_token" "push" {
+  label           = "${var.name} CI push"
+  projects        = [cloider_registry.shop.id]
+  expires_in_days = 365
+}
+
+# For the cluster to pull them with
+resource "cloider_registry_token" "pull" {
+  label     = "${var.name} cluster pull"
+  projects  = [cloider_registry.shop.id]
+  read_only = true
+}
+
+# Kubernetes resources, in the cluster above
+
+provider "kubernetes" {
+  host                   = cloider_cluster.shop.kube_config.host
+  cluster_ca_certificate = cloider_cluster.shop.kube_config.cluster_ca_certificate
+  client_certificate     = cloider_cluster.shop.kube_config.client_certificate
+  client_key             = cloider_cluster.shop.kube_config.client_key
+}
+
+resource "kubernetes_namespace_v1" "shop" {
+  metadata {
+    name = var.name
+  }
+}
+
+# The image pull secret, from the read only token
+resource "kubernetes_secret_v1" "registry" {
+  metadata {
+    name      = "cloider-registry"
+    namespace = kubernetes_namespace_v1.shop.metadata[0].name
+  }
+
+  type = "kubernetes.io/dockerconfigjson"
+
+  data = {
+    ".dockerconfigjson" = jsonencode({
+      auths = {
+        (cloider_registry.shop.host) = {
+          username = cloider_registry_token.pull.username
+          password = cloider_registry_token.pull.secret
+          auth     = base64encode("${cloider_registry_token.pull.username}:${cloider_registry_token.pull.secret}")
+        }
+      }
+    })
+  }
+}
+
+# The database credentials, on the private host the cluster is trusted on
+resource "kubernetes_secret_v1" "database" {
+  metadata {
+    name      = "database"
+    namespace = kubernetes_namespace_v1.shop.metadata[0].name
+  }
+
+  data = {
+    DATABASE_URL = "postgresql://${cloider_database.shop.user}:${urlencode(cloider_database.shop.password)}@${cloider_database.shop.private_host}:${cloider_database.shop.port}/${cloider_database.shop.name}?sslmode=require"
+  }
+}
+
+resource "kubernetes_deployment_v1" "shop" {
+  metadata {
+    name      = var.name
+    namespace = kubernetes_namespace_v1.shop.metadata[0].name
+  }
+
+  # Don't wait for the pods: they can't start before CI pushes the image
+  wait_for_rollout = false
+
+  spec {
+    replicas = var.replicas
+
+    selector {
+      match_labels = { app = var.name }
+    }
+
+    template {
+      metadata {
+        labels = { app = var.name }
+      }
+
+      spec {
+        image_pull_secrets {
+          name = kubernetes_secret_v1.registry.metadata[0].name
+        }
+
+        container {
+          name  = var.name
+          image = "${cloider_registry.shop.url}/${var.name}:${var.image_tag}"
+
+          port {
+            container_port = 8080
+          }
+
+          env_from {
+            secret_ref {
+              name = kubernetes_secret_v1.database.metadata[0].name
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+resource "kubernetes_service_v1" "shop" {
+  metadata {
+    name      = var.name
+    namespace = kubernetes_namespace_v1.shop.metadata[0].name
+  }
+
+  spec {
+    selector = { app = var.name }
+
+    port {
+      port        = 80
+      target_port = 8080
+    }
+  }
+}
+
+# Serves the Service at https://acme-shop.cloider.app
+resource "cloider_target" "shop" {
+  domain     = cloider_domain.shop.name
+  cluster_id = cloider_cluster.shop.id
+  namespace  = kubernetes_service_v1.shop.metadata[0].namespace
+  service    = kubernetes_service_v1.shop.metadata[0].name
+  port       = 80
+}
+```
+
+```hcl title="outputs.tf"
+output "registry_url" {
+  description = "Push the image as <registry_url>/<name>:<tag>"
+  value       = cloider_registry.shop.url
+}
+
+output "registry_push_username" {
+  value = cloider_registry_token.push.username
+}
+
+output "registry_push_password" {
+  value     = cloider_registry_token.push.secret
+  sensitive = true
+}
+
+output "kubeconfig" {
+  value     = cloider_cluster.shop.kube_config.raw
+  sensitive = true
+}
+
+output "url" {
+  value = "https://${cloider_domain.shop.name}"
+}
+```
+
+### Apply it
+
+```bash
+terraform init
+terraform apply -target=cloider_cluster.shop   # the first time only
+terraform apply
+```
+
+### Push the image
+
+The Deployment points at `registry.cloider.com/acme/shop:latest`, which doesn't exist yet. Push it with the push token:
+
+```bash
+terraform output -raw registry_push_password | \
+  docker login registry.cloider.com -u "$(terraform output -raw registry_push_username)" --password-stdin
+
+docker build -t registry.cloider.com/acme/shop:latest .
+docker push registry.cloider.com/acme/shop:latest
+```
+
+The pods pull the image on their next retry. Check them:
+
+```bash
+terraform output -raw kubeconfig > kubeconfig.yaml
+KUBECONFIG=./kubeconfig.yaml kubectl -n shop get pods
+curl -I "$(terraform output -raw url)"
+```
+
+## Install a Helm chart
+
+With the `helm` provider configured as above, a `helm_release` installs a chart. Pin the chart `version` so that plans are repeatable:
+
+```hcl title="helm.tf"
+resource "helm_release" "podinfo" {
+  name             = "podinfo"
+  repository       = "https://stefanprodan.github.io/podinfo"
+  chart            = "podinfo"
+  version          = "6.15.0"
+  namespace        = "podinfo"
+  create_namespace = true
+
+  set = [
+    {
+      name  = "replicaCount"
+      value = "2"
+    },
+  ]
+}
+
+resource "cloider_target" "podinfo" {
+  domain      = cloider_domain.shop.name
+  path        = "/podinfo"
+  target_path = "/"
+  cluster_id  = cloider_cluster.shop.id
+  namespace   = "podinfo"
+  service     = "podinfo"
+  port        = 9898
+}
+```
+
+In the helm provider 3.x, `set` is a list attribute (`set = [{ ... }]`). In 2.x it was a repeated `set { }` block. The `podinfo` chart's Service listens on port 9898. Check your chart's values for its Service name and port before routing to it. See [Helm](/kubernetes/helm) for using Helm against Cloider clusters directly.
+
+## Reach Services from the internet
+
+Cloider doesn't serve Ingress objects in a cluster, so a `kubernetes_ingress_v1` on its own doesn't make anything reachable. Use a [`cloider_target`](/terraform/resources/target) per host name and path, as above, or a `LoadBalancer` Service for non HTTP traffic (see [Load balancers](/kubernetes/load-balancers)). For a custom domain, add the [DNS record](/terraform/resources/dns-record) that points it at Cloider too.
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| `Get "http://localhost/api/v1/namespaces/...": dial tcp [::1]:80: connect: connection refused` | The kubernetes provider had no host yet, because the cluster didn't exist when it was configured | Apply in two steps (`-target=cloider_cluster.shop` first), or split into two configurations |
+| Plan wants to replace the cluster and fails on Kubernetes resources | The cluster's `name` or `version` changed | Revert the change, or use two configurations |
+| Pods in `ImagePullBackOff` | The image isn't pushed yet, or the pull secret is missing | Push the image, check `imagePullSecrets` and the pull token's `projects` |
+| App can't connect to the database | It uses `host` instead of `private_host`, or the cluster isn't in `trusted_sources` | Use `private_host` and `cluster:<id>` |
+
+## Next steps
+
+- [`cloider_target`](/terraform/resources/target): more routing options
+- [Multiple environments](/terraform/guides/multiple-environments): staging and production from one module
+- [Store state in a bucket](/terraform/guides/state-backend): share state between `platform` and `app`
+- [WordPress on Kubernetes](/guides/wordpress-on-kubernetes)
+
+<FAQ items={[
+  {q: 'How do I configure the Terraform kubernetes provider for a Cloider cluster?', a: 'Set host, cluster_ca_certificate, client_certificate and client_key from the cloider_cluster resource\'s or data source\'s kube_config attribute. The values are already PEM decoded, so don\'t wrap them in base64decode().'},
+  {q: 'Should the cluster and the Kubernetes resources be in the same Terraform configuration?', a: 'It works if the cluster is created first with terraform apply -target, but two configurations are more robust: one creates the cluster, the other deploys into it and finds the cluster with the cloider_cluster data source.'},
+  {q: 'How do I expose a Service in a Cloider cluster from Terraform?', a: 'Create a cloider_domain and a cloider_target pointing at the Service\'s namespace, name and port. Ingress objects in Cloider clusters are not served.'},
+  {q: 'Does the helm provider work with Cloider clusters?', a: 'Yes. Configure its kubernetes attribute (helm provider 3.x) or block (2.x) with the same kube_config values, and use helm_release as with any Kubernetes cluster.'},
+]} />

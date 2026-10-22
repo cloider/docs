@@ -1,0 +1,131 @@
+---
+title: cloider version, update and completion command reference
+sidebar_label: tooling
+sidebar_position: 15
+description: Reference for the commands that manage the cloider CLI itself, cloider version, cloider update with status, enable and disable, and cloider completion.
+keywords: [cloider version, cloider update, cloider update status, cloider update disable, cloider completion, cli self update]
+---
+
+These commands look after the CLI itself: which version you have, keeping it up to date, and shell completion. Details and background are in [Updating the CLI](/cli/updating) and [Shell completion](/cli/shell-completion).
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| [`cloider version`](#cloider-version) | Print the CLI's version |
+| [`cloider update`](#cloider-update) | Update the CLI to the latest version |
+| [`cloider update status`](#cloider-update-status) | Show the version, the latest one and whether auto-update is on |
+| [`cloider update disable`](#cloider-update-disable-and-enable) | Stop updating automatically |
+| [`cloider update enable`](#cloider-update-disable-and-enable) | Update automatically again |
+| [`cloider completion`](#cloider-completion) | Generate the autocompletion script for bash, zsh, fish or PowerShell |
+| `cloider help [command]` | Help about any command, the same as `--help` |
+
+## cloider version
+
+Print the CLI's version.
+
+```text
+cloider version [flags]
+```
+
+```bash
+cloider version
+```
+
+```text title="Output"
+cloider 0.6.0
+```
+
+`cloider --version` and `cloider -v` print the same line.
+
+## cloider update
+
+Install the latest version now. The CLI also does this by itself once a day before a command runs, see [Updating the CLI](/cli/updating).
+
+```text
+cloider update [flags]
+cloider update <command>
+```
+
+```bash
+cloider update
+```
+
+```text title="Output"
+✓ Updated cloider 0.5.0 → 0.6.0
+```
+
+When you already have the latest version: `✓ cloider 0.6.0 is the latest version`. When the binary's directory isn't writable by you: `/usr/local/bin isn't writable by you, update with: sudo cloider update`. The download is checked against the release's SHA-256 checksums and run once before it replaces the binary.
+
+```bash
+CLOIDER_AUTO_UPDATE=0 cloider cluster list    # no automatic update for this command
+```
+
+### cloider update status
+
+Show the installed version, the latest version the last check found, and whether automatic updates are on, with the reason when they are off.
+
+```bash
+cloider update status
+```
+
+```text title="Output"
+Version:      0.6.0
+Latest:       0.6.0 (checked 3h ago)
+Auto-update:  on
+```
+
+`-o json` prints `version`, `latest`, `last_check`, `auto_update`, and `reason` and `error` when set.
+
+### cloider update disable and enable
+
+```bash
+cloider update disable
+```
+
+```text title="Output"
+✓ Auto-update is off, run `cloider update` to update by hand
+```
+
+```bash
+cloider update enable
+```
+
+```text title="Output"
+✓ Auto-update is on
+```
+
+The setting is saved in `~/.cloider/config.json`. `CLOIDER_AUTO_UPDATE=0` or `=1` overrides it, and the commands warn when the environment does (`It stays on while CLOIDER_AUTO_UPDATE=1 is set`, `It stays off here: ...`).
+
+## cloider completion
+
+Generate the autocompletion script for a shell.
+
+```text
+cloider completion <bash|zsh|fish|powershell> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--no-descriptions` | bool | `false` | Disable completion descriptions |
+
+```bash
+source <(cloider completion bash)                                    # bash, this session
+source <(cloider completion zsh)                                     # zsh, this session
+cloider completion fish > ~/.config/fish/completions/cloider.fish    # fish, for good
+cloider completion powershell | Out-String | Invoke-Expression       # PowerShell, this session
+```
+
+Installing it permanently for each shell is described in [Shell completion](/cli/shell-completion). `completion` and the hidden commands shells call on each Tab press never trigger the daily update check.
+
+## Related
+
+- [Install](/cli/install)
+- [Updating the CLI](/cli/updating)
+- [Shell completion](/cli/shell-completion)
+
+<FAQ items={[
+  {q: 'How do I check which version of the Cloider CLI I have?', a: 'Run cloider version (or cloider --version). cloider update status also shows the latest version available and whether automatic updates are on.'},
+  {q: 'How do I update the Cloider CLI?', a: 'Run cloider update. It downloads the latest release, verifies its checksum and replaces the binary. Use sudo cloider update if the CLI is installed in a directory only root can write to.'},
+  {q: 'How do I stop the CLI from updating itself?', a: 'Run cloider update disable, or set CLOIDER_AUTO_UPDATE=0 in the environment.'}
+]} />

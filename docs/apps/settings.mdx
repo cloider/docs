@@ -1,0 +1,215 @@
+---
+title: Change a Cloider app's port, start command and branch
+sidebar_label: Settings
+sidebar_position: 12
+description: What the Settings tab of a Cloider app changes, the port, the start command and a git app's branch and auto deploy, and how each change reaches the running app.
+keywords: [cloider app settings, change app port, start command, procfile, auto deploy, change branch, cloider app update]
+---
+
+The **Settings** tab holds what an app is run with: the **Port** it listens on and its **Start command**, plus, for an
+app created from a repository, the **Branch** it deploys from and **Auto deploy on push**. Saving applies the change to
+the running app in the cheapest way that can carry it. This page explains each setting, what saving does, and how to
+change them from every tool.
+
+## At a glance
+
+| Setting | Applies to | Saving does |
+| --- | --- | --- |
+| **Port** | Every app | Redeploys the running version on the new port, no rebuild |
+| **Start command** | Apps built by buildpacks | Rebuilds the source the app is serving, as a new version |
+| **Branch** | Git apps | Nothing until the next push or **Deploy latest commit** |
+| **Auto deploy on push** | Git apps | Turns deploys on push on or off |
+
+- Port and start command changes are refused while a build is running or the app is paused (the **Save changes** button
+  says why: **A build is already running** or **Resume the app to change its settings**).
+- On an app that has never deployed, the new values are saved and used by its next build.
+- The app's name, environment variables and domains are elsewhere: see
+  [Environment variables](/apps/environment-variables) and [Domains](/apps/domains). An app can't be renamed.
+
+<Screenshot
+  src="/img/screenshots/apps/detail-settings.webp"
+  url="/dashboard/apps/api-k3m9tw"
+  alt="The Settings tab of the api app with Port 8080, an empty Start command, and the Repository section with branch main and Auto deploy on push switched on"
+  caption="The Settings tab of a git app."
+/>
+
+## Change the port
+
+The port is where Cloider sends the app's traffic, and the container receives it as the `PORT` environment variable.
+Change it when your app listens on a different port than the one detected, for example a Dockerfile image that always
+listens on `80`.
+
+Saving a new port redeploys the image the app is already running: the container restarts with the new `PORT`, and
+traffic moves to the new port. The app goes `Deploying`, then `Starting`, then `Ready` once something answers on the new
+port. No new build or version is created.
+
+:::warning[A wrong port takes the app down]
+If nothing listens on the new port within 5 minutes, the app goes `Failed` and stops answering, since traffic now goes
+to a port nobody serves. Put the right port back on **Settings** to recover. An app that reads `$PORT` (every buildpack
+app, and Dockerfile apps written to) follows the change on its own.
+:::
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the app and go to the **Settings** tab.
+2. Change **Port** (1 to 65535).
+3. Click **Save changes**. The toast says **Your app is redeploying on its new port.**
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider app update web --port 80 --wait
+```
+
+```text title="Output"
+✓ Saved, redeploying web
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider can't change app settings. Use the dashboard, the CLI or the API.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Send both settings; `start_command` is optional and empty means the project decides:
+
+```bash
+curl -X PUT https://cloider.com/api/apps/w4d8hz/settings \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"port": 80, "start_command": ""}'
+```
+
+```json title="Response"
+{"applied": "redeploy"}
+```
+
+`applied` says what happened: `redeploy` (new port), `build` (new start command, which also carries a new port), or
+`none` (nothing changed, or the app hasn't deployed yet).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+The web app listens on port 80. Update its port and wait until it is back up.
+```
+
+```json title="Tool call: update_app_settings"
+{"app": "web", "port": 80, "wait": true}
+```
+
+</TabItem>
+</Tabs>
+
+## Change the start command
+
+The start command tells a **buildpack** build how to start your app. Cloider writes it into the source as a `Procfile`
+line, `web: <command>`, so it becomes part of the image. That is why saving a new start command **rebuilds** the source
+the app is serving: a new version is built and deployed, and the **Builds** tab opens on it.
+
+- Leave it empty to let the project decide, through its own `Procfile` or its language's convention (such as the
+  `start` script of `package.json`).
+- One line, at most 1000 characters. Use `$PORT` for the port: `gunicorn app:app --bind 0.0.0.0:$PORT`.
+- A project with its own `Dockerfile` ignores it and runs its `CMD`. A static site has no command; setting one makes
+  Cloider build the source with buildpacks instead.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the app and go to the **Settings** tab.
+2. Type the command in **Start command**, for example `node dist/server.js`, or clear it.
+3. Click **Save changes**. The toast says **Your app is rebuilding to start on the new command.**
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider app update api --start-command "gunicorn app:app --bind 0.0.0.0:\$PORT" --wait
+```
+
+```text title="Output"
+✓ Saved, building api again
+```
+
+Clear it with `--start-command ""`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider can't change app settings. Use the dashboard, the CLI or the API.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X PUT https://cloider.com/api/apps/k3m9tw/settings \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"port": 8080, "start_command": "gunicorn app:app --bind 0.0.0.0:$PORT"}'
+```
+
+```json title="Response"
+{"applied": "build"}
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```json title="Tool call: update_app_settings"
+{"app": "api", "start_command": "gunicorn app:app --bind 0.0.0.0:$PORT", "wait": true}
+```
+
+</TabItem>
+</Tabs>
+
+## Change the branch or auto deploy
+
+A git app has a **Repository** section with the **Branch** every deploy is taken from and the **Auto deploy on push**
+switch. Neither deploys anything by itself: the next push, or **Deploy latest commit** on the **Builds** tab, uses them.
+A branch that doesn't exist isn't checked when you save; the next deploy fails with a message naming it.
+
+```bash
+cloider app git api --branch release
+cloider app git api --auto-deploy=false
+```
+
+On GitLab and Bitbucket, turning auto deploy on also adds the webhook that delivers pushes, which needs the Maintainer
+role (GitLab) or admin access (Bitbucket); without it, auto deploy switches itself back off. If the connection behind
+the repository is gone or suspended, the section says so and the app can't deploy from git. See
+[Deploy from git](/apps/deploy-from-git#change-the-branch-or-turn-auto-deploy-off) for every tool.
+
+## Where are pause and delete?
+
+**Pause**, **Resume** and **Delete** are in the actions menu (the three dots) of each app on the **Apps** list, and in
+the CLI as `cloider app pause`, `resume` and `delete`. See [Pause, resume and delete](/apps/pause-resume-and-delete).
+
+## Troubleshooting
+
+| Message | Cause and fix |
+| --- | --- |
+| `App port must not be empty` / `App port must be between 1 and 65535` | Enter a valid port |
+| `Start command must be a single line` | Remove line breaks; chain commands with `&&` or move them into a script |
+| `Start command must be at most 1000 characters` | Move the command into a script in your source and run that |
+| **This app is building, wait for that build to finish before changing its settings!** | Wait for the running build |
+| **This app is paused. Resume it before deploying a new version!** | Resume the app, then save |
+| **The settings were saved but the app could not be redeployed!** | The values are saved; save again or deploy a new version to apply them |
+| The app went `Failed` after a port change | Nothing answers on the new port. Set the port your app listens on |
+| A new start command has no effect | The app has a `Dockerfile`, which uses its own `CMD`. Change the `CMD` instead |
+| `nothing to change, give --port or --start-command` (CLI) | Pass at least one of the two flags |
+
+## Next steps
+
+- [Build configuration](/apps/build-configuration): how the port and start command are used during builds.
+- [Builds and deployments](/apps/builds-and-deployments): follow the rebuild a start command change starts.
+- [Pause, resume and delete](/apps/pause-resume-and-delete).
+
+<FAQ items={[
+  {q: 'How do I change the port of a Cloider app?', a: 'Change Port on the app\'s Settings tab and save, run cloider app update <app> --port <port>, or PUT /api/apps/<id>/settings. The running version is redeployed on the new port without a rebuild.'},
+  {q: 'Does changing the start command rebuild the app?', a: 'Yes. The start command is written into the image as a Procfile line, so saving a new one rebuilds the source the app is serving as a new version. Apps with a Dockerfile ignore the start command.'},
+  {q: 'Can I rename a Cloider app?', a: 'No. An app keeps the name it was created with. Create a new app with the new name and move its domains and variables over if you need a different name.'},
+  {q: 'What happens if I set the wrong port?', a: 'The app is redeployed on the new port and, if nothing answers there within 5 minutes, it goes Failed and stops serving. Set the correct port again to bring it back.'},
+]} />

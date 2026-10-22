@@ -1,0 +1,448 @@
+---
+title: Push images to the Cloider registry from CI/CD
+sidebar_label: CI/CD pipelines
+sidebar_position: 6
+description: Build and push images to registry.cloider.com from GitHub Actions, GitLab CI and other CI systems, with complete pipelines, tagging, caching and deploy steps.
+keywords: [github actions docker push, gitlab ci docker push, ci push private registry, docker build-push-action, buildx ci cache, registry.cloider.com ci]
+---
+
+A CI/CD pipeline builds your image on every push to git, tags it, pushes it to the [Cloider Container Registry](/container-registry/overview), and optionally deploys it. This page gives complete, working pipelines for **GitHub Actions** and **GitLab CI**, plus the pieces you need for any other CI system.
+
+## Before you begin
+
+- A project, for example `acme`. See [Create a project](/container-registry/create-a-project).
+- A [registry token](/container-registry/tokens) for the pipeline with **Pull & push** permission, scoped to the projects it pushes to. Create one per pipeline, so you can revoke it alone.
+- Your account's **registry username** (shown with the token).
+
+## Step 1: Create a token for the pipeline
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Registry**, then the **Tokens** tab, and click **Create Token**.
+2. **Name**: `ci-deploy`. **Projects**: **Only specific projects**, `acme`. **Permission**: **Pull & push**. **Expires**: **1 year**.
+3. Click **Create token** and copy the **Username** and **Secret**.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider registry token create --label ci-deploy --project acme --expires-days 365
+```
+
+Copy the `Username` and `Secret` lines from the output.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="main.tf"
+resource "cloider_registry_token" "ci" {
+  label           = "ci-deploy"
+  projects        = [cloider_registry.acme.id]
+  expires_in_days = 365
+}
+
+# Straight into GitHub Actions secrets, with the integrations/github provider
+resource "github_actions_secret" "registry_username" {
+  repository      = "api"
+  secret_name     = "CLOIDER_REGISTRY_USERNAME"
+  plaintext_value = cloider_registry_token.ci.username
+}
+
+resource "github_actions_secret" "registry_password" {
+  repository      = "api"
+  secret_name     = "CLOIDER_REGISTRY_PASSWORD"
+  plaintext_value = cloider_registry_token.ci.secret
+}
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X POST https://cloider.com/api/registry/tokens \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "ci-deploy", "all_projects": false, "projects": ["r4t6yu"], "read_only": false, "expires_in_days": 365}'
+```
+
+The response holds `token.username` and `secret`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Create a registry token called ci-deploy that can push to the acme project and expires in 365 days.
+```
+
+It calls the `create_registry_token` tool:
+
+```json title="Tool call: create_registry_token"
+{"label": "ci-deploy", "projects": ["acme"], "expires_days": 365}
+```
+
+</TabItem>
+</Tabs>
+
+## Step 2: Store the login as CI secrets
+
+Store the username and secret as masked secrets in your CI system, never in the repository:
+
+| CI system | Where | Names used on this page |
+| --- | --- | --- |
+| GitHub Actions | Repository **Settings**, **Secrets and variables**, **Actions** | `CLOIDER_REGISTRY_USERNAME`, `CLOIDER_REGISTRY_PASSWORD` |
+| GitLab CI | Project **Settings**, **CI/CD**, **Variables** (masked, protected) | `CLOIDER_REGISTRY_USERNAME`, `CLOIDER_REGISTRY_PASSWORD` |
+
+With the GitHub CLI:
+
+```bash
+gh secret set CLOIDER_REGISTRY_USERNAME --body "acme"
+gh secret set CLOIDER_REGISTRY_PASSWORD   # paste the secret when asked
+```
+
+## GitHub Actions
+
+This workflow builds a multi-platform image on every push to `main` and on version tags, tags it with the commit SHA, the branch and the version, caches layers in the registry, and pushes it.
+
+```yaml title=".github/workflows/image.yml"
+name: Build and push image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+env:
+  REGISTRY: registry.cloider.com
+  IMAGE: registry.cloider.com/acme/api
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for arm64 builds)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Cloider registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.CLOIDER_REGISTRY_USERNAME }}
+          password: ${{ secrets.CLOIDER_REGISTRY_PASSWORD }}
+
+      - name: Work out tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:buildcache,mode=max', env.IMAGE) || '' }}
+```
+
+What each part does:
+
+- **Pull requests** build the image to check it compiles but don't log in or push.
+- **`docker/metadata-action`** turns the git event into tags: `sha-4f2a9c1` for every commit, `main` for the branch, and `1.4.0` and `1.4` for a `v1.4.0` git tag.
+- **`cache-to` / `cache-from`** keep the build cache in `registry.cloider.com/acme/api:buildcache`, so later builds reuse unchanged layers. The cache counts toward the project's storage.
+- For amd64 only, drop the QEMU step and set `platforms: linux/amd64`. Single platform builds are much faster.
+
+:::tip[Immutable tags and CI]
+If the project has **Immutable tags** turned on, pushing the `main` or `buildcache` tag a second time fails. Either push only unique tags (commit SHA and versions), or use an [immutability rule](/container-registry/immutable-tags) that protects only version tags such as `[0-9]*`.
+:::
+
+### Deploy to a Cloider Kubernetes cluster from GitHub Actions
+
+Add a job that points `kubectl` at the cluster with the Cloider CLI and rolls out the new image. It needs a Cloider [API token](/account/api-tokens) with write access, stored as the `CLOIDER_TOKEN` secret, and the cluster must already have a [pull secret](/container-registry/use-with-kubernetes).
+
+```yaml title=".github/workflows/image.yml (continued)"
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      CLOIDER_TOKEN: ${{ secrets.CLOIDER_TOKEN }}
+    steps:
+      - name: Install the Cloider CLI
+        run: curl -fsSL https://cloider.com/install.sh | sh
+
+      - name: Get the kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          cloider cluster kubeconfig production -f "$HOME/.kube/config"
+
+      - name: Roll out the new image
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          kubectl set image deployment/api api=registry.cloider.com/acme/api:sha-$SHORT_SHA -n shop
+          kubectl rollout status deployment/api -n shop --timeout=5m
+```
+
+The full tutorial, with tests and environments, is in [CI/CD with GitHub Actions](/guides/ci-cd-with-github-actions).
+
+## GitLab CI
+
+This pipeline builds with Docker in Docker, tags the image with the commit SHA (and `latest` on the default branch, and the version on git tags), and pushes it.
+
+```yaml title=".gitlab-ci.yml"
+stages:
+  - build
+  - deploy
+
+variables:
+  REGISTRY: registry.cloider.com
+  IMAGE: registry.cloider.com/acme/api
+  DOCKER_TLS_CERTDIR: "/certs"
+
+build:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  before_script:
+    - echo "$CLOIDER_REGISTRY_PASSWORD" | docker login "$REGISTRY" -u "$CLOIDER_REGISTRY_USERNAME" --password-stdin
+  script:
+    - docker pull "$IMAGE:latest" || true
+    - docker build --cache-from "$IMAGE:latest" -t "$IMAGE:$CI_COMMIT_SHORT_SHA" .
+    - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:latest"
+        docker push "$IMAGE:latest"
+      fi
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:${CI_COMMIT_TAG#v}"
+        docker push "$IMAGE:${CI_COMMIT_TAG#v}"
+      fi
+  rules:
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+deploy:
+  stage: deploy
+  image: alpine:3.20
+  needs: [build]
+  before_script:
+    - apk add --no-cache curl kubectl
+    - curl -fsSL https://cloider.com/install.sh | sh
+  script:
+    - mkdir -p "$HOME/.kube"
+    - cloider cluster kubeconfig production -f "$HOME/.kube/config"
+    - kubectl set image deployment/api api="$IMAGE:$CI_COMMIT_SHORT_SHA" -n shop
+    - kubectl rollout status deployment/api -n shop --timeout=5m
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+```
+
+Set `CLOIDER_REGISTRY_USERNAME`, `CLOIDER_REGISTRY_PASSWORD` and, for the deploy job, `CLOIDER_TOKEN` (a Cloider [API token](/account/api-tokens)) as masked CI/CD variables. The `docker:dind` service needs a runner that allows privileged containers.
+
+### Multi-platform builds with buildx on GitLab
+
+Replace the `script` of the `build` job with a buildx build:
+
+```yaml title=".gitlab-ci.yml (build job)"
+  script:
+    - docker run --privileged --rm tonistiigi/binfmt --install arm64
+    - docker buildx create --use --name ci
+    - >
+      docker buildx build
+      --platform linux/amd64,linux/arm64
+      --cache-from type=registry,ref=$IMAGE:buildcache
+      --cache-to type=registry,ref=$IMAGE:buildcache,mode=max
+      -t "$IMAGE:$CI_COMMIT_SHORT_SHA"
+      --push .
+```
+
+### Without Docker in Docker: Buildah
+
+On runners that don't allow privileged containers, Buildah builds and pushes without a Docker daemon:
+
+```yaml title=".gitlab-ci.yml (Buildah build job)"
+build:
+  stage: build
+  image: quay.io/buildah/stable:latest
+  variables:
+    STORAGE_DRIVER: vfs
+    BUILDAH_FORMAT: docker
+  script:
+    - echo "$CLOIDER_REGISTRY_PASSWORD" | buildah login -u "$CLOIDER_REGISTRY_USERNAME" --password-stdin "$REGISTRY"
+    - buildah build -t "$IMAGE:$CI_COMMIT_SHORT_SHA" .
+    - buildah push "$IMAGE:$CI_COMMIT_SHORT_SHA"
+```
+
+### Use a private image as a job image
+
+To run a CI job inside an image from your Cloider project, give the runner a pull login with the `DOCKER_AUTH_CONFIG` variable. Its value is Docker's `config.json`, which a token's **Download JSON** button gives you:
+
+```json title="DOCKER_AUTH_CONFIG"
+{
+  "auths": {
+    "registry.cloider.com": {
+      "auth": "YWNtZTp4eHh4eHh4eHh4eHh4eHh4"
+    }
+  }
+}
+```
+
+`auth` is `base64("<username>:<secret>")`. Use a **Pull only** token for this. Then:
+
+```yaml
+test:
+  image: registry.cloider.com/acme/ci-tools:1.2
+  script:
+    - make test
+```
+
+The full tutorial is in [CI/CD with GitLab](/guides/ci-cd-with-gitlab).
+
+## Other CI systems
+
+Every CI system follows the same three steps: log in with the token, build, push.
+
+```bash
+echo "$CLOIDER_REGISTRY_PASSWORD" | docker login registry.cloider.com -u "$CLOIDER_REGISTRY_USERNAME" --password-stdin
+docker build -t "registry.cloider.com/acme/api:$GIT_SHA" .
+docker push "registry.cloider.com/acme/api:$GIT_SHA"
+```
+
+<Tabs groupId="ci" queryString>
+<TabItem value="bitbucket" label="Bitbucket Pipelines" default>
+
+```yaml title="bitbucket-pipelines.yml"
+image: atlassian/default-image:4
+
+pipelines:
+  branches:
+    main:
+      - step:
+          name: Build and push
+          services:
+            - docker
+          script:
+            - echo "$CLOIDER_REGISTRY_PASSWORD" | docker login registry.cloider.com -u "$CLOIDER_REGISTRY_USERNAME" --password-stdin
+            - docker build -t registry.cloider.com/acme/api:${BITBUCKET_COMMIT:0:7} .
+            - docker push registry.cloider.com/acme/api:${BITBUCKET_COMMIT:0:7}
+```
+
+</TabItem>
+<TabItem value="circleci" label="CircleCI">
+
+```yaml title=".circleci/config.yml"
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: cimg/base:current
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: echo "$CLOIDER_REGISTRY_PASSWORD" | docker login registry.cloider.com -u "$CLOIDER_REGISTRY_USERNAME" --password-stdin
+      - run: docker build -t registry.cloider.com/acme/api:${CIRCLE_SHA1:0:7} .
+      - run: docker push registry.cloider.com/acme/api:${CIRCLE_SHA1:0:7}
+
+workflows:
+  main:
+    jobs:
+      - build
+```
+
+</TabItem>
+<TabItem value="jenkins" label="Jenkins">
+
+Store the token as a **Username with password** credential called `cloider-registry`:
+
+```groovy title="Jenkinsfile"
+pipeline {
+  agent any
+  environment {
+    IMAGE = "registry.cloider.com/acme/api:${env.GIT_COMMIT.take(7)}"
+  }
+  stages {
+    stage('Build and push') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'cloider-registry',
+                                          usernameVariable: 'REG_USER',
+                                          passwordVariable: 'REG_PASS')]) {
+          sh 'echo "$REG_PASS" | docker login registry.cloider.com -u "$REG_USER" --password-stdin'
+          sh 'docker build -t "$IMAGE" .'
+          sh 'docker push "$IMAGE"'
+        }
+      }
+    }
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Keep CI images under control
+
+A pipeline that pushes on every commit fills a project quickly. Two features keep it in check:
+
+- A [retention policy](/container-registry/retention-policies) that keeps, for example, the 20 most recently pushed `sha-*` images and every version tag, run daily.
+- The nightly cleanup, which removes images left without any tag. When CI moves `latest` or `main` to a new image, the old image keeps its `sha-*` tag, so it stays until retention removes it.
+
+Example retention rules for a CI project:
+
+```bash
+cat > rules.json <<'EOF'
+[
+  {"repositories": {"match": "matching", "patterns": ["**"]},
+   "tags": {"match": "matching", "patterns": ["sha-*"]},
+   "keep": "latest_pushed", "count": 20, "untagged": true},
+  {"repositories": {"match": "matching", "patterns": ["**"]},
+   "tags": {"match": "excluding", "patterns": ["sha-*"]},
+   "keep": "always"}
+]
+EOF
+cloider registry retention set acme -f rules.json
+cloider registry retention schedule acme --every daily --hour 3
+```
+
+## Troubleshooting
+
+| Error in the pipeline | Cause and fix |
+| --- | --- |
+| `unauthorized` on `docker login` | Wrong username or secret, or the token expired or was deleted. Check the CI variables; the username is your registry username, not your email |
+| `denied: requested access to the resource is denied` on push | The token is **Pull only**, or doesn't cover the project in the image name |
+| Push fails because the tag is immutable | The project or a rule makes the tag immutable. Push a unique tag (commit SHA) or change the rule |
+| Push fails with a quota error | The project is at its storage limit. Add a retention policy or raise the limit |
+| `Cannot connect to the Docker daemon` (GitLab) | The `docker:dind` service is missing or the runner doesn't allow privileged mode. Use Buildah instead |
+| Multi-platform build is slow | arm64 is emulated with QEMU on amd64 runners. Build amd64 only, or use native arm64 runners |
+
+More on [Troubleshooting](/container-registry/troubleshooting).
+
+## Next steps
+
+- [CI/CD with GitHub Actions, end to end](/guides/ci-cd-with-github-actions).
+- [CI/CD with GitLab, end to end](/guides/ci-cd-with-gitlab).
+- [Retention policies](/container-registry/retention-policies).
+- [Terraform in CI](/terraform/guides/ci-cd).

@@ -1,0 +1,287 @@
+---
+title: Support API endpoints
+sidebar_label: Support
+sidebar_position: 15
+description: Cloider API reference for support requests, list and read tickets, open a request, reply, upload attachments with presigned URLs and download attachments.
+keywords: [cloider support api, open support ticket api, support request attachments, presigned upload, ticket replies api, cloider help desk]
+---
+
+These endpoints are the API side of the dashboard's **Support** page: list your support requests (tickets), read a conversation, open a new request, reply, and upload or download attachments. `cloider support` uses them, so scripts and AI agents can open a request with the logs that go with it.
+
+All paths are relative to `https://cloider.com/api`. See [Support](/account/support) for response times and what to include in a request.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/support`](#list-support-requests) | Read |
+| GET | [`/support/tickets/:hashed_id`](#get-a-request-and-its-replies) | Read |
+| POST | [`/support/tickets`](#open-a-support-request) | Write |
+| POST | [`/support/tickets/:hashed_id/reply`](#reply-to-a-request) | Write |
+| POST | [`/support/attachments-uploaded`](#step-3-confirm-the-uploads) | Write |
+| GET | [`/support/attachments/:hashed_id`](#download-an-attachment) | Read |
+
+Support request ids and attachment ids are short upper case codes, such as `K7Q2M`.
+
+## The request object
+
+```json
+{
+  "hashed_id": "K7Q2M",
+  "subject": "Database connection timeouts from the api app",
+  "description": "Since 09:00 UTC the api app gets connection timeouts to orders-db about once a minute.",
+  "ticket_type": "QuestionOrIssue",
+  "ticket_status": "WaitingForReply",
+  "business_impact": "PartiallyBlocked",
+  "service": "Database",
+  "attachments": [
+    {"hashed_id": "P3X8D", "filename": "api-logs.txt", "uploaded": true}
+  ],
+  "user": {"first_name": "Jane", "last_name": "Doe", "picture": ""},
+  "agent": {"first_name": "Sam", "last_name": "Lee", "picture": ""},
+  "created_at": "2026-10-20T09:42:17.118204Z",
+  "updated_at": "2026-10-20T11:05:52.660931Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The request's id |
+| `subject`, `description` | string | What the request is about |
+| `ticket_type` | string | `QuestionOrIssue`, `FeatureRequest`, `DocumentationIssue`, `Feedback`, `Billing` or `NotListed` |
+| `ticket_status` | string | `Open`, `Pending`, `InProgress`, `OnHold`, `WaitingForReply`, `Resolved`, `Cancelled`, `Closed` or `Reopened` |
+| `business_impact` | string | `Question`, `Issue`, `PartiallyBlocked` or `CompletelyBlocked` |
+| `service` | string | The product it is about: `App`, `Kubernetes`, `Database`, `Bucket`, `Registry`, `Volume`, `LoadBalancer`, `Domain` or `Other`. Older requests can show a database engine instead, such as `PostgreSQL` |
+| `attachments` | object list | Files attached to the request itself, each with its `hashed_id`, `filename` and whether it was `uploaded` |
+| `user` | object | Who opened it: `first_name`, `last_name`, `picture` |
+| `agent` | object or null | The support agent handling it, or `null` |
+| `created_at`, `updated_at` | string | When it was opened and last changed |
+
+## List support requests
+
+```http
+GET /support
+```
+
+Returns the account's support requests, oldest first. The list is a summary: `user` and `agent` aren't filled in and `attachments` is empty. Get a single request for the full conversation.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/support \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "hashed_id": "K7Q2M",
+    "subject": "Database connection timeouts from the api app",
+    "description": "Since 09:00 UTC the api app gets connection timeouts to orders-db about once a minute.",
+    "ticket_type": "QuestionOrIssue",
+    "ticket_status": "WaitingForReply",
+    "business_impact": "PartiallyBlocked",
+    "service": "Database",
+    "attachments": [],
+    "user": {"first_name": "", "last_name": "", "picture": ""},
+    "agent": null,
+    "created_at": "2026-10-20T09:42:17.118204Z",
+    "updated_at": "2026-10-20T11:05:52.660931Z"
+  }
+]
+```
+
+## Get a request and its replies
+
+```http
+GET /support/tickets/:hashed_id
+```
+
+Returns one request with every reply, newest reply first.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/support/tickets/K7Q2M \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "ticket": {
+    "hashed_id": "K7Q2M",
+    "subject": "Database connection timeouts from the api app",
+    "ticket_status": "WaitingForReply",
+    "attachments": [{"hashed_id": "P3X8D", "filename": "api-logs.txt", "uploaded": true}],
+    "user": {"first_name": "Jane", "last_name": "Doe", "picture": ""},
+    "agent": {"first_name": "Sam", "last_name": "Lee", "picture": ""},
+    "created_at": "2026-10-20T09:42:17.118204Z",
+    "updated_at": "2026-10-20T11:05:52.660931Z"
+  },
+  "replies": [
+    {
+      "reply_text": "Thanks, we see the connection limit being reached. Could you share the pool size your app uses?",
+      "attachments": [],
+      "user": {"first_name": "Sam", "last_name": "Lee", "picture": ""},
+      "created_at": "2026-10-20T11:05:52.660931Z",
+      "updated_at": "2026-10-20T11:05:52.660931Z"
+    }
+  ]
+}
+```
+
+The `ticket` has all the fields of the [request object](#the-request-object); some are left out above for brevity. A request that doesn't exist or belongs to another account answers `404` with `Support request not found!`.
+
+## Open a support request
+
+Opening a request with attachments takes three steps: create the request, which returns a presigned upload URL for each attachment, upload the files to those URLs, then tell the API which uploads succeeded. Without attachments, step 1 is all there is.
+
+### Step 1: create the request
+
+```http
+POST /support/tickets
+```
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `subject` | string | Yes | At least 4 characters |
+| `description` | string | Yes | At least 20 characters. Include ids, times and error messages |
+| `ticket_type` | string | Yes | One of the [ticket types](#the-request-object) |
+| `business_impact` | string | Yes | `Question`, `Issue`, `PartiallyBlocked` or `CompletelyBlocked` |
+| `service` | string | Yes | One of the [services](#the-request-object) |
+| `attachments` | object list | No | Up to 5 files, each `{"name", "type", "size"}`: the file name, its MIME type and its size in bytes, up to 10 MB each |
+
+Allowed attachment types are `text/plain`, `application/pdf`, `application/zip`, `application/msword` and any `image/...` type. Zip other files first.
+
+```bash
+curl -X POST https://cloider.com/api/support/tickets \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"subject\": \"Database connection timeouts from the api app\",
+    \"description\": \"Since 09:00 UTC the api app gets connection timeouts to orders-db about once a minute.\",
+    \"ticket_type\": \"QuestionOrIssue\",
+    \"business_impact\": \"PartiallyBlocked\",
+    \"service\": \"Database\",
+    \"attachments\": [{\"name\": \"api-logs.txt\", \"type\": \"text/plain\", \"size\": $(wc -c < api-logs.txt)}]
+  }"
+```
+
+```json title="Response"
+{
+  "request_id": "K7Q2M",
+  "presigned_urls": [
+    {"id": "P3X8D", "url": "https://s3.eu-central-2.cloider.com/...api-logs?X-Amz-Signature=..."}
+  ]
+}
+```
+
+`presigned_urls` has one entry per attachment, in the order you listed them, and is absent when there are none. The request is created and the support team is notified at this point, whether or not attachments follow.
+
+### Step 2: upload the files
+
+`PUT` each file to its URL with the `Content-Type` and size you declared. Don't send your API token to the storage URL.
+
+```bash
+curl -X PUT "$ATTACHMENT_URL" \
+  -H "Content-Type: text/plain" \
+  --data-binary @api-logs.txt
+```
+
+### Step 3: confirm the uploads
+
+```http
+POST /support/attachments-uploaded
+```
+
+Marks the attachments that uploaded successfully, so support can open them.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `resource_type` | string | Yes | `request` for attachments of a new request, `reply` for those of a reply |
+| `hashed_id` | string | Yes | The `request_id` from step 1, or the reply's `hashed_id` |
+| `uploaded_list` | string list | Yes | The `id`s of the attachments whose upload succeeded |
+
+```bash
+curl -X POST https://cloider.com/api/support/attachments-uploaded \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resource_type": "request", "hashed_id": "K7Q2M", "uploaded_list": ["P3X8D"]}'
+```
+
+It answers `200` when every attachment is confirmed. When some are missing from the list, it answers `400` with `(1) attachments did not upload successfully!`. An unknown request or reply answers `404` with `request not found!` or `reply not found!`.
+
+### Errors of step 1
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `subject` | `Subject is required!`, `Subject must not be shorter than 4 characters!` |
+| `400` | `description` | `Description is required!`, `Description must not be shorter than 20 characters!` |
+| `400` | `ticket_type` | `Invalid type!` |
+| `400` | `business_impact` | `Invalid value!` |
+| `400` | `service` | `Invalid service!` |
+| `400` | `attachments` | `Only maximum of 5 files are allowed per submission, zip the files if you need more!`, `File (dump.sql) exceeded the allowed size of 10MB!`, `File (dump.sql) type is not allowed, you can zip it before uploading!` |
+| `400` | `_` | `Operation failed, Couldn't submit the request!` |
+| `400` | `_` | `Request submitted but attachments did not upload successfully!`, with `data` holding the `request_id`: the request exists, only the attachments failed |
+| `403` | `_` | `This API token is read only!` |
+
+## Reply to a request
+
+```http
+POST /support/tickets/:hashed_id/reply
+```
+
+Adds a reply to a request, optionally with attachments. Attachments follow the same three steps as for a new request, with `resource_type` `reply` and the reply's `hashed_id` in step 3.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `reply_text` | string | Yes | The reply |
+| `attachments` | object list | No | Up to 5 files, as for a new request |
+
+```bash
+curl -X POST https://cloider.com/api/support/tickets/K7Q2M/reply \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"reply_text": "We use a pool of 50 connections per instance and run 3 instances."}'
+```
+
+```json title="Response"
+{"hashed_id": "R9N4T", "created_at": "2026-10-20T11:31:04.290117Z"}
+```
+
+With attachments, the response also has `presigned_urls`. Errors: `400 Reply text is required!` (on `reply_text`), the attachment errors above, `Reply submitted but attachments did not upload successfully!`, and `404 Not Found` (plain text) for a request that isn't the account's.
+
+## Download an attachment
+
+```http
+GET /support/attachments/:hashed_id
+```
+
+Redirects (`302`) to a short lived presigned URL for the file. Follow the redirect to get the bytes.
+
+**Access:** any token.
+
+```bash
+curl -L -o api-logs.txt https://cloider.com/api/support/attachments/P3X8D \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+To get the URL instead of the file, don't follow the redirect and read the `Location` header:
+
+```bash
+curl -s -o /dev/null -w "%{redirect_url}\n" https://cloider.com/api/support/attachments/P3X8D \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+An attachment of another account's request answers `404 Not Found` (plain text).
+
+## Related
+
+- [Support](/account/support) in the dashboard
+- [cloider support](/cli/commands/support) commands

@@ -1,0 +1,133 @@
+---
+title: cloider mcp command reference
+sidebar_label: mcp
+sidebar_position: 16
+description: Reference for cloider mcp, the MCP server that offers the Cloider CLI to AI agents, with --read-only, --toolsets, profiles, tool safety hints and how tools run.
+keywords: [cloider mcp, mcp server, model context protocol, claude code mcp, cursor mcp, ai agent cloud, cloider mcp --read-only, toolsets]
+---
+
+`cloider mcp` turns the CLI into a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server, so AI agents such as Claude Code, Claude Desktop, Cursor and VS Code can manage your Cloider resources. The agent's MCP client starts the command and talks to it over stdin and stdout. Every tool runs a `cloider` command as the profile and token the CLI uses, so log in first.
+
+```text
+cloider mcp [flags]
+```
+
+This page is the command reference. Setting it up in each AI client is covered in [MCP setup](/mcp/setup), the full tool list in [MCP tools](/mcp/tools), and how to keep an agent safe in [Safety and permissions](/mcp/safety-and-permissions).
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Transport** | stdio (the client starts `cloider mcp` and talks over stdin and stdout) |
+| **Authentication** | The CLI's own login: the current profile, `--profile`, `CLOIDER_TOKEN` or `--token-file` |
+| **Tools** | 119 tools in 8 toolsets, 51 of them read only |
+| **Restrict** | `--read-only` for read only tools, `--toolsets` for some toolsets |
+| **Not offered** | Interactive and local commands (`shell`, `db connect`, `login`, `logout`, `profile`, `update`, `app open`, `app link`, `registry login`), and managing members and API tokens |
+
+## Flags
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--read-only` | bool | `false` | Offer only the tools that change nothing |
+| `--toolsets` | strings | all | Offer only these toolsets, comma separated: `account`, `clusters`, `databases`, `buckets`, `registry`, `apps`, `domains`, `support` |
+
+The global flags `--profile`, `--api-url` and `--token-file` given to `cloider mcp` are passed on to every tool, so the whole server acts as that profile or token. Put them before `mcp`:
+
+```bash
+cloider mcp
+cloider mcp --read-only
+cloider mcp --toolsets apps,databases,domains
+cloider --profile acme mcp --read-only
+```
+
+An unknown toolset fails at start with `unknown toolset "dns", pick from account, clusters, databases, buckets, registry, apps, domains, support` (exit code `2`).
+
+## Toolsets
+
+| Toolset | Tools | Read only | Covers |
+| --- | --- | --- | --- |
+| `account` | 6 | 6 | whoami, usage, billing, pricing, members and API tokens (read only) |
+| `clusters` | 9 | 4 | Kubernetes clusters, kubeconfig, services, `cluster_exec` |
+| `databases` | 16 | 6 | Databases, passwords, certificates, backups, restore, resize, SSL, trusted sources, insights, `database_exec` |
+| `buckets` | 25 | 10 | Buckets, settings, policies, lifecycle, files, versions, access keys |
+| `registry` | 23 | 8 | Registry projects, repositories, images, tokens, retention, immutability |
+| `apps` | 23 | 10 | Apps, deploys, logs, variables, builds, git connections, `app_exec` |
+| `domains` | 12 | 4 | Domains, DNS records, targets |
+| `support` | 5 | 3 | Support requests and attachments |
+
+Some clients work better with fewer tools; `--toolsets` keeps the list short. Every tool and its arguments are listed in [MCP tools](/mcp/tools).
+
+## Add it to an AI client
+
+For Claude Code:
+
+```bash
+claude mcp add cloider -- cloider mcp
+claude mcp add cloider-acme -- cloider --profile acme mcp --read-only    # another account, read only
+```
+
+Claude Desktop, Cursor and other clients take the same command in their configuration file:
+
+```json title="MCP client configuration"
+{
+  "mcpServers": {
+    "cloider": {
+      "command": "cloider",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Run in a terminal by hand, `cloider mcp` only prints a hint, because it waits for an MCP client on stdin:
+
+```text title="Output"
+cloider mcp talks MCP on stdin and stdout, for an AI client to start. Add it to Claude Code with:
+  claude mcp add cloider -- cloider mcp
+```
+
+Client by client instructions are in [MCP setup](/mcp/setup).
+
+## How do the tools run?
+
+Each tool call runs the matching `cloider` command again as a child process, with `--output=json`, `--yes` and `--no-color`, automatic updates off, and the server's global flags. So a tool behaves exactly like the command in a script: the same name, label or id resolution, the same waits, uploads and error messages.
+
+- **Answers** are the command's JSON output (trimmed to 1 MiB), plus anything it printed to stderr as notes. A failed command answers with its error message, marked as an error.
+- **Waiting**: tools that create, pause, resume or delete take a `wait` argument, which waits up to 15 minutes. Without it they return while the change is under way.
+- **exec tools** (`app_exec`, `cluster_exec`, `database_exec`) answer `{exit_code, stdout, stderr, timed_out}` even when the command fails, take `stdin` (up to 2 MiB) and `timeout_seconds` (1 to 3600, default 600).
+- **Concurrency**: at most 4 commands run at once, to stay within the API's rate limit.
+- Tools that would ask for confirmation in a terminal run without asking, because the server passes `--yes`. Your MCP client is what asks you, see below.
+
+## Tool safety hints
+
+Every tool tells the client what it does, through the standard MCP annotations, so a client can run reads without asking and ask before anything destructive:
+
+| Annotation | Set on |
+| --- | --- |
+| `readOnlyHint: true` | Tools that change nothing: `list_*`, `get_*`, `whoami`, downloads |
+| `destructiveHint: true` | Tools that delete or replace something, and the exec tools, since a command can change anything |
+| `idempotentHint: true` | Read tools, and changes that do nothing more when repeated, such as `pause_cluster` |
+| `openWorldHint: false` | Every tool: they only reach your Cloider account |
+
+`--read-only` removes every tool that isn't `readOnlyHint`, including the exec tools. Pair it with a [read only API token](/cli/authentication#ask-for-a-read-only-token) to be sure an agent can't change anything, whatever its client allows:
+
+```bash
+cloider login --profile agent --read-only
+claude mcp add cloider-readonly -- cloider --profile agent mcp --read-only
+```
+
+See [Safety and permissions](/mcp/safety-and-permissions).
+
+## Related
+
+- [MCP overview](/mcp/overview) and [MCP setup](/mcp/setup)
+- [MCP tools](/mcp/tools) and [Example prompts](/mcp/example-prompts)
+- [Manage Cloider with an AI agent](/guides/manage-cloider-with-an-ai-agent)
+
+<FAQ items={[
+  {q: 'How do I connect an AI agent to Cloider?', a: 'Install the CLI, log in with cloider login, then add cloider mcp as an MCP server in your client, for example claude mcp add cloider -- cloider mcp for Claude Code.'},
+  {q: 'How do I make the MCP server read only?', a: 'Start it with cloider mcp --read-only, which only offers tools that change nothing. For a hard guarantee, also log the profile it uses in with cloider login --read-only.'},
+  {q: 'Which account does cloider mcp use?', a: 'The same as the CLI: the current profile, or the one passed with cloider --profile <name> mcp, or the token in CLOIDER_TOKEN. whoami tells the agent which account it is in.'},
+  {q: 'Can the MCP server manage members or API tokens?', a: 'No. Like the CLI, it can list them, but adding members, changing roles and creating or revoking tokens stay in the dashboard.'},
+  {q: 'How do I give an agent fewer tools?', a: 'Use --toolsets, for example cloider mcp --toolsets apps,databases,domains. The toolsets are account, clusters, databases, buckets, registry, apps, domains and support.'}
+]} />

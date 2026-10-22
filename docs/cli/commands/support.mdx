@@ -1,0 +1,188 @@
+---
+title: cloider support command reference
+sidebar_label: support
+sidebar_position: 12
+description: Reference for cloider support, to open Cloider support requests from the terminal, read replies, reply with attachments and download attachments.
+keywords: [cloider support, support request cli, open support ticket, cloider support create, contact cloider support, attach logs]
+---
+
+`cloider support` opens and follows [support requests](/account/support) from the terminal, the same requests you see under **Support** in the dashboard. You can attach logs and screenshots, read the whole conversation, reply, and download what the support team attached.
+
+```text
+cloider support <command> [flags]
+```
+
+Requests are named by their id, which `cloider support list -o wide` shows.
+
+## Subcommands
+
+| Command | Description |
+| --- | --- |
+| [`cloider support list`](#cloider-support-list) | List your support requests |
+| [`cloider support get`](#cloider-support-get) | Show a support request and its replies |
+| [`cloider support create`](#cloider-support-create) | Open a support request |
+| [`cloider support reply`](#cloider-support-reply) | Reply to a support request |
+| [`cloider support attachment`](#cloider-support-attachment) | Download an attachment of a support request |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## cloider support list
+
+List your support requests.
+
+```text
+cloider support list [flags]
+```
+
+**Alias:** `cloider support ls`.
+
+```bash
+cloider support list -o wide
+```
+
+```text title="Output"
+ID     SUBJECT                             STATUS       SERVICE    IMPACT     UPDATED
+K7QM   Deploys of blog stuck in Building   InProgress   App        Issue      2026-10-20 09:41
+R3X8   Increase registry storage limit     Resolved     Registry   Question   2026-10-02 15:10
+```
+
+Without `-o wide` the **ID** column is hidden; `-q` prints the ids. A request's status is one of `Open`, `Pending`, `InProgress`, `OnHold`, `WaitingForReply`, `Resolved`, `Cancelled`, `Closed` or `Reopened`. MCP tool: `list_support_tickets`.
+
+## cloider support get
+
+Show a support request and the whole conversation, oldest message first.
+
+```text
+cloider support get <request-id> [flags]
+```
+
+```bash
+cloider support get K7QM
+```
+
+```text title="Output"
+Subject:  Deploys of blog stuck in Building
+Status:   InProgress
+Type:     QuestionOrIssue
+Impact:   Issue
+Service:  App
+Agent:    Alex Morgan
+Opened:   2026-10-20 09:12
+
+Jane Doe 2026-10-20 09:12
+Since this morning every deploy of the blog app stays in Building for over 20 minutes.
+  attachment build.log
+
+Alex Morgan 2026-10-20 09:41
+Thanks, we are looking into it. Could you share your Dockerfile?
+```
+
+`-o wide` adds the request id and each attachment's id, which [`support attachment`](#cloider-support-attachment) takes:
+
+```text
+  attachment build.log (b8f2k)
+```
+
+`-o json` prints `{"ticket": {...}, "replies": [...]}`. MCP tool: `get_support_ticket`.
+
+## cloider support create
+
+Open a support request.
+
+```text
+cloider support create [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-s, --subject` | string | (required) | What it is about, in a line |
+| `-d, --description` | string | | The details, at least 20 characters |
+| `--description-file` | string | | Read the details from a file, `-` for stdin. Can't be combined with `--description` |
+| `-t, --type` | string | `QuestionOrIssue` | Request type: `QuestionOrIssue`, `FeatureRequest`, `DocumentationIssue`, `Feedback`, `Billing`, `NotListed` |
+| `--impact` | string | `Question` | Business impact: `Question`, `Issue`, `PartiallyBlocked`, `CompletelyBlocked` |
+| `--service` | string | `App` | Service: `App`, `Kubernetes`, `Database`, `Bucket`, `Registry`, `Volume`, `LoadBalancer`, `Domain`, `Other` |
+| `-a, --attach` | string, repeatable | | Attach a file, up to 5 files of 10 MB each |
+
+The values of `--type`, `--impact` and `--service` are matched without regard to case. Attachments can be text, PDF, Word (`.doc`), images or a zip; zip a directory or more than five files to attach them.
+
+```bash
+cloider support create --subject "Deploys stuck" --service App --impact Issue \
+  --description-file notes.txt --attach build.log
+```
+
+```text title="Output"
+✓ Opened support request K7QM
+```
+
+```bash
+# Details from stdin
+cloider app build logs blog | cloider support create -s "Build fails on npm install" \
+  --service App --impact PartiallyBlocked --description-file -
+
+# A billing question
+cloider support create -s "Invoice for September" -t Billing \
+  -d "Please add our VAT number DE123456789 to the September invoice."
+```
+
+`-o json` prints `{"request_id": "..."}`. If an attachment can't be uploaded, the request is still opened and the command says which attachment failed. MCP tool: `create_support_ticket`.
+
+## cloider support reply
+
+Reply to a support request.
+
+```text
+cloider support reply <request-id> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-m, --message` | string | | The reply |
+| `--message-file` | string | | Read the reply from a file, `-` for stdin. Can't be combined with `--message` |
+| `-a, --attach` | string, repeatable | | Attach a file, up to 5 files of 10 MB each |
+
+```bash
+cloider support reply K7QM --message "It started after I changed the Dockerfile." --attach Dockerfile
+```
+
+```text title="Output"
+✓ Replied to K7QM
+```
+
+MCP tool: `reply_support_ticket`.
+
+## cloider support attachment
+
+Download an attachment of a support request. Attachment ids are shown by `cloider support get <request-id> -o wide`.
+
+```text
+cloider support attachment <attachment-id> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --output-file` | string | the file's own name | Where to save it, `-` for stdout |
+
+```bash
+cloider support attachment b8f2k
+```
+
+```text title="Output"
+✓ Saved build.log
+```
+
+```bash
+cloider support attachment b8f2k -f - | less
+```
+
+MCP tool: `download_support_attachment`.
+
+## Related
+
+- [Support](/account/support)
+- [Troubleshooting](/reference/troubleshooting)
+
+<FAQ items={[
+  {q: 'How do I contact Cloider support from the terminal?', a: 'Run cloider support create --subject "..." --description "..." with --service and --impact describing the problem. Attach logs with --attach. Follow the conversation with cloider support get <request-id>.'},
+  {q: 'What can I attach to a support request?', a: 'Up to 5 files of 10 MB each: text, PDF, Word documents, images or a zip archive.'},
+  {q: 'Where do I find a support request id?', a: 'cloider support list -o wide shows the ID column; cloider support create prints the id of the new request.'}
+]} />

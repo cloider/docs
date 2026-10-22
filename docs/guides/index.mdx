@@ -1,0 +1,111 @@
+---
+title: Cloider guides, end to end tutorials
+sidebar_label: All guides
+sidebar_position: 1
+description: Step by step Cloider tutorials that build complete projects with apps, Kubernetes, databases, buckets, the registry, domains, Terraform, CI/CD and AI agents.
+keywords: [cloider tutorial, cloider guide, deploy node app with postgresql, wordpress kubernetes, github actions kubernetes, terraform cloider, database backup to s3, mcp ai agent]
+---
+
+The guides are complete, realistic projects that you build from start to finish on Cloider. Each one ties several
+products together (an app and its database, a cluster and its registry, a pipeline and its domain), explains every
+step for someone who has never done it before, and gives you complete files to copy. Every guide ends with cleanup
+steps, so you only pay for what you keep.
+
+If you are new to Cloider, do the [quick start](/quick-start) first: it takes five minutes and gets you an account,
+the CLI and a first app. The product sections ([Apps](/apps/overview), [Kubernetes](/kubernetes/overview),
+[Databases](/databases/overview), [Object Storage](/object-storage/overview),
+[Container Registry](/container-registry/overview), [Domains and DNS](/domains/overview)) are the reference the guides
+link to for details.
+
+## Choose a guide
+
+<Cards cols={2}>
+  <Card title="Full stack app with PostgreSQL" href="/guides/full-stack-app-with-postgresql" icon="rocket-launch-outline">
+    An Express app and a managed PostgreSQL database, deployed from GitHub on every push, with the connection string as a secret, a migration run with cloider db exec, and HTTPS on your own domain. Beginner, about 45 minutes.
+  </Card>
+  <Card title="WordPress on Kubernetes" href="/guides/wordpress-on-kubernetes" icon="kubernetes">
+    WordPress on a Cloider cluster with a managed MySQL database, a persistent volume for uploads and a domain target with automatic HTTPS. Intermediate, about 40 minutes.
+  </Card>
+  <Card title="CI/CD with GitHub Actions" href="/guides/ci-cd-with-github-actions" icon="github">
+    Build an image, push it to the Cloider registry with a registry token and roll it out to a cluster with kubectl, or deploy an app with cloider deploy. Intermediate, about 40 minutes.
+  </Card>
+  <Card title="CI/CD with GitLab" href="/guides/ci-cd-with-gitlab" icon="gitlab">
+    The same pipelines as a .gitlab-ci.yml: Docker in Docker or Buildah, protected variables, environments and a manual production gate. Intermediate, about 40 minutes.
+  </Card>
+  <Card title="Infrastructure as code with Terraform" href="/guides/infrastructure-as-code-with-terraform" icon="terraform">
+    A whole environment in Terraform: cluster, database, bucket with a key, registry project and token, domain with records and a target, state in a Cloider bucket, and workloads with the Kubernetes provider. Advanced, about 60 minutes.
+  </Card>
+  <Card title="Back up a database to a bucket" href="/guides/back-up-a-database-to-a-bucket" icon="backup-restore">
+    A nightly pg_dump or mysqldump that runs as a Kubernetes CronJob on a Cloider cluster and uploads to a Cloider bucket, with retention and tested restore steps. Intermediate, about 45 minutes.
+  </Card>
+  <Card title="Static assets on object storage" href="/guides/static-assets-on-object-storage" icon="bucket-outline">
+    Serve images, CSS and JavaScript from a public bucket with cache headers, and let users upload files straight to a bucket with presigned URLs. Beginner, about 30 minutes.
+  </Card>
+  <Card title="Manage Cloider with an AI agent" href="/guides/manage-cloider-with-an-ai-agent" icon="robot-outline">
+    Connect cloider mcp to Claude Code and other agents, build and deploy an app with a database and a domain by asking for it, and keep the agent safe with read only tokens and toolsets. Beginner, about 30 minutes.
+  </Card>
+  <Card title="Migrate to Cloider" href="/guides/migrate-to-cloider" icon="cloud-outline">
+    Move an app, a database (dump and restore), files (rclone or aws s3 sync) and container images (skopeo or docker) from another provider, with a cutover checklist. Intermediate, 1 to 3 hours.
+  </Card>
+</Cards>
+
+## Guides at a glance
+
+| Guide | Difficulty | Time | Products used | Tools used |
+| --- | --- | --- | --- | --- |
+| [Full stack app with PostgreSQL](/guides/full-stack-app-with-postgresql) | Beginner | 45 minutes | Apps, Databases, Domains | CLI, dashboard, GitHub |
+| [WordPress on Kubernetes](/guides/wordpress-on-kubernetes) | Intermediate | 40 minutes | Kubernetes, Databases, Domains | CLI, kubectl |
+| [CI/CD with GitHub Actions](/guides/ci-cd-with-github-actions) | Intermediate | 40 minutes | Container Registry, Kubernetes, Apps | GitHub Actions, CLI, kubectl |
+| [CI/CD with GitLab](/guides/ci-cd-with-gitlab) | Intermediate | 40 minutes | Container Registry, Kubernetes, Apps | GitLab CI, CLI, kubectl |
+| [Infrastructure as code with Terraform](/guides/infrastructure-as-code-with-terraform) | Advanced | 60 minutes | Kubernetes, Databases, Object Storage, Container Registry, Domains | Terraform, kubectl |
+| [Back up a database to a bucket](/guides/back-up-a-database-to-a-bucket) | Intermediate | 45 minutes | Databases, Kubernetes, Object Storage | CLI, kubectl, rclone |
+| [Static assets on object storage](/guides/static-assets-on-object-storage) | Beginner | 30 minutes | Object Storage, Apps | CLI, AWS CLI, AWS SDK |
+| [Manage Cloider with an AI agent](/guides/manage-cloider-with-an-ai-agent) | Beginner | 30 minutes | Apps, Databases, Domains | MCP, Claude Code |
+| [Migrate to Cloider](/guides/migrate-to-cloider) | Intermediate | 1 to 3 hours | Apps, Databases, Object Storage, Container Registry, Domains | CLI, pg_dump, rclone, skopeo |
+
+## What every guide includes
+
+Every guide follows the same structure, so you always know where to look:
+
+1. **What you'll build**, with an architecture diagram, so you see the end result before you start.
+2. **Before you begin**: the accounts, tools and knowledge you need, with links to install them.
+3. **Numbered parts**, each ending with a **Verify** step that tells you how to check it worked before you move on.
+4. **What it costs**: how each resource in the guide is billed. Prices aren't repeated in the guides; see
+   [Pricing](/reference/pricing) and the [billing model](/concepts/billing-model).
+5. **Clean up**: the commands that delete everything the guide created.
+6. **Troubleshooting** for the errors people actually hit, and **Next steps**.
+
+## Before you start any guide
+
+Most guides use the `cloider` command line tool, because a command is easier to follow and to repeat than a series of
+clicks. The dashboard can do every step too, and the guides point to it where it is the natural choice.
+
+```bash
+# Install the CLI (macOS and Linux) and log in through your browser
+curl -fsSL https://cloider.com/install.sh | sh
+cloider login
+cloider whoami
+```
+
+See [Install the CLI](/get-started/install-the-cli) for Windows and other options, and [Choose a tool](/get-started/choose-a-tool)
+for when to use the dashboard, the CLI, Terraform, the API or an AI agent.
+
+:::note[Free trial limits]
+A new account starts on a 14-day trial with free credit, and can hold one Kubernetes cluster, one database, one bucket
+and one registry project at a time. Most guides fit in that. The guides that need more say so at the start, and the
+cleanup steps free the slots again. See [the billing model](/concepts/billing-model).
+:::
+
+## Next steps
+
+- [Quick start](/quick-start): an account, a first app and a first cluster in five minutes.
+- [How Cloider works](/concepts/how-cloider-works): the platform behind the guides.
+- [CLI overview](/cli/overview): every command the guides use.
+- [Troubleshooting](/reference/troubleshooting): problems across all products.
+
+<FAQ items={[
+  {q: 'Which Cloider guide should I start with?', a: 'If you build web apps, start with Full stack app with PostgreSQL: it covers apps, databases, secrets, git deploys and custom domains. If you already use Kubernetes, start with WordPress on Kubernetes or CI/CD with GitHub Actions.'},
+  {q: 'Can I follow the guides on the free trial?', a: 'Yes, most of them. The trial allows one cluster, one database, one bucket and one registry project at a time, and each guide says at the start if it needs more. Run the cleanup steps at the end of a guide to free those slots for the next one.'},
+  {q: 'Do the guides cost money?', a: 'Resources are billed while they exist, by the second, at the rates on the pricing page. A guide followed and cleaned up within an hour or two costs little, and on the trial it is paid from the free credit. Each guide has a What it costs section explaining how its resources are billed.'},
+  {q: 'Can I follow the guides with the dashboard instead of the CLI?', a: 'Yes. Every Cloider resource can be created in the dashboard, and the guides mention the dashboard steps where they are the natural choice. The product pages linked from each step show every tool in tabs.'},
+]} />

@@ -1,0 +1,15 @@
+{
+  "name": "cloider-docs-screenshots",
+  "private": true,
+  "type": "module",
+  "description": "Captures the dashboard screenshots used by the docs, against a mock API with demo data",
+  "scripts": {
+    "shots": "node capture.mjs",
+    "mock": "node mock/server.mjs"
+  },
+  "dependencies": {
+    "@xterm/xterm": "5.5.0",
+    "playwright-core": "1.48.2",
+    "sharp": "0.33.5"
+  }
+}

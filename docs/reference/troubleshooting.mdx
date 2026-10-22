@@ -1,0 +1,168 @@
+---
+title: Troubleshoot Cloider sign in, tokens, API errors and the CLI
+sidebar_label: Troubleshooting
+sidebar_position: 7
+description: "Fix common Cloider problems: sign in and sessions, API tokens, HTTP 401, 403, 404 and 429 errors, CLI exit codes, trial limits and product fixes."
+keywords: [cloider troubleshooting, cloider login problem, invalid or revoked api token, 403 forbidden, 429 too many requests, cli exit codes, account suspended]
+---
+
+This page covers problems that aren't specific to one product: signing in, sessions and accounts, API tokens, HTTP errors, CLI exit codes and account limits. Product specific problems have their own pages, listed at the end.
+
+## Quick diagnosis
+
+| You see | Most likely cause | Go to |
+| --- | --- | --- |
+| **Login session lost!** in the dashboard | The 24 hour session expired | [Sessions](#login-session-lost) |
+| An empty account after signing in | You signed in with a different email address | [Signing in](#signing-in) |
+| `Invalid or revoked API token!` (401) | The token was deleted, or its creator removed or deactivated | [API tokens](#api-token-errors) |
+| `This API token is read only!` (403) | A Read token tried to change something | [API tokens](#api-token-errors) |
+| `This endpoint can't be used with an API token!` (403) | Members, tokens, account switching and Git connections need the dashboard | [API tokens](#api-token-errors) |
+| `You have read-only access to this account, ...` | Your role in the account is Restricted | [Roles](#permission-errors) |
+| `Free plan users can not create more than one ...` | The trial allows one of each | [Account limits](#trial-and-suspension) |
+| `Your account is suspended. ...` | The trial ended without an upgrade | [Account limits](#trial-and-suspension) |
+| `404 Not Found` | Wrong id, or the resource is in another account | [HTTP errors](#http-errors) |
+| `429 Too Many Requests` | Over the rate limit | [HTTP errors](#http-errors) |
+
+## Signing in
+
+### I signed in and my resources are gone
+
+Cloider identifies users by email address. If you signed in with GitHub this time and Google last time (or the other way round), and the two use different addresses, you are now a different user with an empty account. Sign out (account menu, **Logout**) and sign in with the provider and address you used before.
+
+### Signing in with GitHub doesn't work
+
+Cloider uses your GitHub account's **primary, verified** email address. Check in GitHub's email settings that your primary address is verified, then try again.
+
+### After signing in I land on "Select an account"
+
+You are a member of at least one other account, so the dashboard asks which account to open. Pick one. See [Switch accounts](/account/switch-accounts).
+
+### An account I was invited to is missing
+
+The invitation is for one email address. Sign in with that exact address, or ask the account's Owner or an Admin to invite the address you use. If the membership was deactivated, it doesn't appear until it is activated again.
+
+## Login session lost
+
+A dashboard session lasts 24 hours. When it expires, or when you log out in another tab, the dashboard shows **Login session lost!** with a **Reload page** button. Click it and sign in again. Unsaved changes in open forms are lost, so save often during long sessions.
+
+The CLI, Terraform, the MCP server and your scripts aren't affected: they use API tokens, which don't expire.
+
+## Permission errors
+
+These errors come from your **role** in the account, not from a token:
+
+| Message | Meaning | Fix |
+| --- | --- | --- |
+| `You have read-only access to this account, you can not create clusters!` (and the same for other resources) | Your role is Restricted | Ask the Owner or an Admin to make you an Admin, or to do it for you |
+| `You are not authorized to do this action!` | Only the Owner and Admins can manage members | Ask the Owner or an Admin |
+| `You don't have access to this account billing page!` | Billing is for the Owner only | Ask the Owner. Everyone can see costs on [Usage](/account/usage) |
+
+See the [permission matrix](/concepts/accounts-and-roles#permission-matrix).
+
+## API token errors
+
+| Message | HTTP | Cause | Fix |
+| --- | --- | --- | --- |
+| `Invalid or revoked API token!` | 401 | The token doesn't exist (deleted, mistyped, truncated) or its creator was removed or deactivated | Check the value of `CLOIDER_TOKEN`; generate a new token if needed |
+| `Login required!` | 401 | No `Authorization` header and no session | Send `Authorization: Bearer <token>` |
+| `This API token is read only!` | 403 | A **Read** token made a write request | Use a **Read & Write** token |
+| `This endpoint can't be used with an API token!` | 403 | Members, API tokens, account switching, sign out and Git connect flows are dashboard only | Do it in the dashboard |
+| `Terminals need a Read & Write API token!` | 403 | A **Read** token asked for a terminal | Use a **Read & Write** token |
+| `Only an API token can revoke itself, manage tokens from the dashboard!` | 403 | `DELETE /api/api-tokens/current` was called from a dashboard session | Delete tokens in **Access Control**, **API Tokens** |
+
+A token is only recognized if it has the exact `cldr_` + 40 character format; anything else, including stray quotes or whitespace inside the value, is treated as no valid token. See [API tokens](/account/api-tokens).
+
+## HTTP errors
+
+API errors are JSON with an `errors` object. The key `_` holds messages about the request as a whole, other keys name the field that failed:
+
+```json title="Error response"
+{
+  "errors": {
+    "cluster_name": ["Cluster name can not be upper case"],
+    "_": ["Operation failed, Couldn't create the cluster!"]
+  },
+  "data": null
+}
+```
+
+| Status | Meaning | What to do |
+| --- | --- | --- |
+| `400 Bad Request` | Validation failed, a limit was reached, or the action isn't allowed right now. Some refusals because of a Restricted role also answer 400 | Read the messages in `errors` |
+| `401 Unauthorized` | No valid session or token | See [API token errors](#api-token-errors) |
+| `403 Forbidden` | The role or token isn't allowed to do this | See [Permission errors](#permission-errors) |
+| `404 Not Found` | The id doesn't exist **in this account**. Resources of other accounts always answer 404. Some 404s are plain text (`Not Found`) rather than JSON | Check the id and which account the token is for (`GET /api/whoami`) |
+| `409 Conflict` | The resource is in a state that doesn't allow it, for example a command for an app that isn't running | Wait for the resource to be **Ready** |
+| `429 Too Many Requests` | Over 10 requests a second or 100 a minute | Back off and retry after `Retry-After` seconds |
+| `502`, `503`, `504` | A temporary problem on Cloider's side. `503` can also mean the rate limit | Retry reads after a pause. Check before retrying a write: it may have gone through |
+
+See [API errors](/api/errors) and [Rate limits](/api/rate-limits).
+
+## CLI exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | An error, for example a validation error from the API |
+| `2` | A usage error: a wrong flag or argument, a name that matches several resources, or a confirmation needed without a terminal |
+| `3` | Not logged in, or the token was revoked |
+| `4` | Not found |
+| `5` | Forbidden, for example a Read token |
+| `124` | `exec` was stopped by `--timeout` |
+
+`exec` commands exit with the remote command's own code, so `1` to `5` can come from the command too. With `-o json`, a result is only printed when the command actually ran, which tells the two apart. See [Output and scripting](/cli/output-and-scripting).
+
+### Common CLI messages
+
+| Message | Fix |
+| --- | --- |
+| `deleting cluster staging needs --yes when not running in a terminal` | In scripts and CI, add `--yes` to confirm. |
+| `2 clusters are named "staging", pick one by id:` | Use the id the message lists, or `-o wide` to see ids. |
+| `no cluster named "stagin"` | Check the name with `cloider cluster list`. |
+| `CLOIDER_TOKEN or CLOIDER_TOKEN_FILE is set, and takes precedence over this login.` | Unset the variable to use the saved login. |
+| `can't reach https://cloider.com/api: ...` | Check your network and proxy. `--debug` logs every request (never the token). |
+
+Run any command with `--debug` to see each API request and its status on stderr.
+
+## Trial and suspension
+
+| Message | Meaning | Fix |
+| --- | --- | --- |
+| `Free plan users can not create more than one cluster. UPGRADE NOW!` | The trial allows one cluster at a time (same for databases, buckets and registry projects) | Delete the existing one, or upgrade |
+| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | The trial ended without an upgrade | The Owner upgrades, or contacts support@cloider.com |
+
+See [Create an account](/get-started/create-an-account#the-free-trial) and [Limits and quotas](/reference/limits-and-quotas).
+
+## A change didn't happen
+
+Creating, pausing, resuming and deleting are asynchronous: the API accepts the request and the work happens in the background.
+
+1. Check the status: in the dashboard, with `cloider <product> status <name>`, or `GET /api/<product>/<id>/status`.
+2. Use `--wait` with the CLI, or the `wait` argument with MCP, to block until it is done.
+3. If a resource stays in a transitional status (**Creating**, **Pausing**, **Terminating**) for much longer than usual, open a [support request](/account/support) with its name.
+
+See [Status values](/reference/status-values).
+
+## Product troubleshooting
+
+<Cards cols={3}>
+  <Card title="Apps" href="/apps/troubleshooting" icon="rocket-launch-outline">Builds, start up, ports, logs.</Card>
+  <Card title="Kubernetes" href="/kubernetes/troubleshooting" icon="kubernetes">kubectl, pods, services, volumes.</Card>
+  <Card title="Databases" href="/databases/troubleshooting" icon="database-outline">Connections, trusted sources, SSL.</Card>
+  <Card title="Object Storage" href="/object-storage/troubleshooting" icon="pail-outline">S3 tools, access keys, policies.</Card>
+  <Card title="Container Registry" href="/container-registry/troubleshooting" icon="docker">docker login, push, pull.</Card>
+  <Card title="Domains and DNS" href="/domains/troubleshooting" icon="web">Nameservers, records, HTTPS.</Card>
+</Cards>
+
+## Still stuck?
+
+Open a [support request](/account/support) with the resource's name, the exact message, the time it happened and what you tried. For the CLI, include the output of the failing command run with `--debug`.
+
+<FAQ items={[
+  {q: 'Why does the Cloider API answer Invalid or revoked API token?', a: 'The token in the Authorization header does not exist any more, is mistyped, or belongs to a member who was removed or deactivated. Generate a new token in Access Control, API Tokens.'},
+  {q: 'Why do I get This API token is read only?', a: 'The request changes something and the token has Read access. Use a Read & Write token, or log the CLI in again choosing Read and write.'},
+  {q: 'Why does the API answer 404 for a resource I can see in the dashboard?', a: 'The token belongs to a different account than the one you are looking at in the dashboard. Check GET /api/whoami and use a token generated in the right account.'},
+  {q: 'What does CLI exit code 3 mean?', a: 'The CLI is not logged in, or its token was revoked. Run cloider login again.'},
+  {q: 'How do I see what the CLI sends to the API?', a: 'Add --debug to the command. It logs every API request and its status to stderr, without the token.'},
+  {q: 'Why was I logged out of the dashboard?', a: 'Dashboard sessions last 24 hours. Click Reload page on the Login session lost! message and sign in again.'}
+]} />

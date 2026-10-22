@@ -1,0 +1,353 @@
+---
+title: Persistent volumes on Cloider Kubernetes
+sidebar_label: Persistent volumes
+sidebar_position: 8
+description: Keep data across pod restarts on Cloider Kubernetes with PersistentVolumeClaims, use them in Deployments and StatefulSets, and see how GiB billing works.
+keywords: [persistent volume, persistentvolumeclaim, pvc, kubernetes storage, storage class, statefulset, kubernetes volume pricing]
+---
+
+A persistent volume is disk space for your pods that outlives them: when a pod restarts, moves or is replaced, its data is still there. On Cloider you get one by creating a standard Kubernetes **PersistentVolumeClaim** (PVC); the cluster provisions a volume of the requested size and binds it to the claim. Volumes are billed per GiB of provisioned size per month. This page shows how to create claims, use them from Deployments and StatefulSets, and manage their cost.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **How to get a volume** | Create a PersistentVolumeClaim; the volume is provisioned for you |
+| **Storage classes** | Provided by Cloider and visible with `kubectl get storageclass`. A claim without `storageClassName` uses the default class |
+| **Billing** | Per GiB of the volume's provisioned capacity, per month, prorated. A 10 GiB claim is billed as 10 GiB however full it is |
+| **While paused** | Volumes and their data are kept, and still billed |
+| **Where to see usage** | **Usage** in the dashboard, **Persistent Volumes** in each cluster's average usage |
+
+## Concepts for beginners
+
+A container's own filesystem is temporary: everything written to it disappears when the container restarts. To keep data, a pod mounts a volume:
+
+- A **PersistentVolumeClaim** (PVC) is your request: "I need 10 GiB of storage". You create it in a namespace, like a Deployment.
+- A **PersistentVolume** (PV) is the actual disk. On Cloider it is created automatically when you create a claim, and bound to it.
+- A **StorageClass** says what kind of disk to provision. You pick one with `storageClassName`, or leave it out to use the default.
+- A pod uses the claim by listing it under `volumes` and mounting it with `volumeMounts`.
+
+Deleting a pod or a Deployment doesn't delete its claims. The data stays until you delete the PVC.
+
+## See the available storage classes
+
+```bash
+kubectl get storageclass
+```
+
+The output lists each class, which one is marked `(default)`, its `RECLAIMPOLICY` (what happens to the volume when the claim is deleted) and `ALLOWVOLUMEEXPANSION` (whether claims of that class can grow). Use the default class unless you have a reason to choose another one.
+
+## Create a volume
+
+This claim asks for 10 GiB from the default storage class:
+
+```yaml title="uploads-pvc.yaml"
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads
+  namespace: shop
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+```
+
+`ReadWriteOnce` means the volume is mounted read-write by pods on one node at a time, the mode every storage class supports. Use the `Gi` suffix (gibibytes), as volumes are measured and billed in GiB.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Kubernetes** in the sidebar and click the cluster's name to open its terminal.
+2. Create the file with `cat > uploads-pvc.yaml <<'EOF'`, paste the manifest and end with `EOF`.
+3. Apply it:
+
+```bash
+kubectl create namespace shop --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f uploads-pvc.yaml
+kubectl get pvc -n shop
+```
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+kubectl apply -f uploads-pvc.yaml
+kubectl get pvc -n shop
+```
+
+Or through the cluster's terminal:
+
+```bash
+cloider cluster exec -i staging -- kubectl apply -f - < uploads-pvc.yaml
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+With the `kubernetes` provider configured from the cluster's `kube_config`:
+
+```hcl title="main.tf"
+resource "kubernetes_persistent_volume_claim_v1" "uploads" {
+  metadata {
+    name      = "uploads"
+    namespace = "shop"
+  }
+
+  spec {
+    access_modes = ["ReadWriteOnce"]
+
+    resources {
+      requests = {
+        storage = "10Gi"
+      }
+    }
+  }
+
+  # Some storage classes only bind once a pod uses the claim
+  wait_until_bound = false
+}
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Apply the manifest through the cluster's exec endpoint, base64 encoded as `stdin`:
+
+```bash
+curl -N -X POST https://cloider.com/api/clusters/x8f2kq/exec \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"command\": [\"kubectl\", \"apply\", \"-f\", \"-\"], \"stdin\": \"$(base64 < uploads-pvc.yaml | tr -d '\n')\"}"
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Create a 10Gi PersistentVolumeClaim called uploads in the shop namespace of the staging cluster.
+```
+
+It calls `cluster_exec` with the manifest on stdin:
+
+```json title="Tool call: cluster_exec"
+{"cluster": "staging", "command": "kubectl apply -f -", "stdin": "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: uploads\n  namespace: shop\nspec:\n  accessModes: [ReadWriteOnce]\n  resources:\n    requests:\n      storage: 10Gi\n"}
+```
+
+</TabItem>
+</Tabs>
+
+Check the claim:
+
+```bash
+kubectl get pvc -n shop -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,CAPACITY:.status.capacity.storage,MODES:.status.accessModes
+```
+
+```text title="Output"
+NAME      STATUS   CAPACITY   MODES
+uploads   Bound    10Gi       [ReadWriteOnce]
+```
+
+A claim can show `Pending` until a pod uses it, when its storage class provisions volumes on first use. `kubectl describe pvc uploads -n shop` shows why it is waiting.
+
+## Use the volume in a Deployment
+
+Mount the claim in the pod template. With a `ReadWriteOnce` volume, use the `Recreate` strategy so the old pod releases the volume before the new one starts:
+
+```yaml title="web-with-uploads.yaml"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: shop
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: uploads
+              mountPath: /usr/share/nginx/html
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: uploads
+```
+
+Write a file to the volume, delete the pod, and check that the file is still there in the new pod:
+
+```bash
+kubectl apply -f web-with-uploads.yaml
+kubectl exec -n shop deploy/web -- sh -c 'echo "<h1>stored on a volume</h1>" > /usr/share/nginx/html/index.html'
+kubectl delete pod -n shop -l app=web
+kubectl rollout status deploy/web -n shop
+kubectl exec -n shop deploy/web -- cat /usr/share/nginx/html/index.html
+```
+
+```text title="Output"
+<h1>stored on a volume</h1>
+```
+
+## Use volumes in a StatefulSet
+
+For databases, queues and other stateful software that runs several replicas, each with its own data, use a **StatefulSet** with `volumeClaimTemplates`. Each replica gets its own claim (`data-cache-0`, `data-cache-1`, ...), which follows it across restarts.
+
+```yaml title="cache-statefulset.yaml"
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache
+  namespace: shop
+spec:
+  clusterIP: None
+  selector:
+    app: cache
+  ports:
+    - name: redis
+      port: 6379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cache
+  namespace: shop
+spec:
+  serviceName: cache
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    metadata:
+      labels:
+        app: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          args: ["--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+```
+
+```bash
+kubectl apply -f cache-statefulset.yaml
+kubectl get statefulset,pvc -n shop
+```
+
+Scaling a StatefulSet down doesn't delete the claims of the removed replicas, so their volumes stay billed until you delete them.
+
+:::tip[Consider a managed database]
+For PostgreSQL, MySQL, MongoDB or Redis, a [Cloider managed database](/databases/overview) gives you backups, SSL and restores without running them in your cluster. Your pods connect to it like any other client. See [Connect to a database](/databases/connect).
+:::
+
+## Grow a volume
+
+If the claim's storage class allows expansion (`ALLOWVOLUMEEXPANSION` is `true` in `kubectl get storageclass`), raise the request in place:
+
+```bash
+kubectl patch pvc uploads -n shop -p '{"spec": {"resources": {"requests": {"storage": "20Gi"}}}}'
+kubectl get pvc uploads -n shop -w
+```
+
+Billing follows the new capacity from the moment the volume has grown. Kubernetes doesn't shrink volumes: to make one smaller, create a new claim, copy the data, and delete the old claim.
+
+## How are volumes billed?
+
+Volumes are billed per GiB of **provisioned capacity** per month, prorated over time, with a month counted as 30 days. Every few seconds Cloider adds up the capacity of all the volumes bound to your cluster's claims; the daily average is what you pay for.
+
+- **Capacity, not content.** A 10 GiB claim with 200 MiB of data is billed as 10 GiB. Size claims for what you need now and grow them later if the class allows it.
+- **Claims are billed while they exist**, whether or not a pod uses them, and also while the cluster is [paused](/kubernetes/pause-and-resume).
+- **Only your own claims are billed**, not the storage the cluster's control plane uses.
+- **Deleting a cluster deletes its volumes**, and their billing stops.
+
+See the current price per GiB on the [pricing page](https://cloider.com/#pricing) or with `cloider pricing`, and your clusters' average volume use under **Usage** in the dashboard, where **Persistent Volumes** shows the average GiB for today and for this month.
+
+## Delete a volume
+
+Find claims you no longer need, including ones left behind by Helm releases and scaled-down StatefulSets:
+
+```bash
+kubectl get pvc -A
+kubectl delete pvc uploads -n shop
+```
+
+Then check that the volume is gone:
+
+```bash
+kubectl get pv
+```
+
+What happens to the volume depends on the storage class's reclaim policy. With `Delete`, the volume and its data are deleted with the claim and billing stops. With `Retain`, the volume stays as `Released` and keeps being billed; delete it with `kubectl delete pv <name>` once you are sure you don't need the data.
+
+:::danger[Deleting a claim deletes its data]
+With the `Delete` reclaim policy, deleting a PersistentVolumeClaim permanently deletes the data on it. Copy anything you need first, for example to a [bucket](/object-storage/overview).
+:::
+
+## Back up a volume
+
+Cloider has no snapshot or restore feature for the volumes in your cluster, so back up the data that matters yourself. A simple approach is a CronJob that archives the volume to a [Cloider bucket](/object-storage/overview) with an S3 client. See [S3 tools](/object-storage/s3-tools) for the clients and [Access keys](/object-storage/access-keys) for credentials, and [Back up a database to a bucket](/guides/back-up-a-database-to-a-bucket) for a complete example of the pattern.
+
+## Troubleshooting
+
+**PVC stays `Pending`**: run `kubectl describe pvc <name> -n <namespace>`. `waiting for first consumer to be created before binding` means the class binds on first use; it binds when a pod mounts it. A misspelled `storageClassName` never binds; remove the field to use the default class.
+
+**Pod stays `ContainerCreating` with `Multi-Attach error`**: a `ReadWriteOnce` volume is still attached to another pod. Use `strategy: Recreate` in Deployments that mount one, or a StatefulSet.
+
+**Pod can't write to the volume (`Permission denied`)**: the container runs as a user that doesn't own the mount. Set `securityContext.fsGroup` in the pod spec to the container's group id.
+
+**The bill shows more volume GiB than expected**: list every claim with `kubectl get pvc -A` and every volume with `kubectl get pv`. Look for claims from uninstalled Helm charts, scaled-down StatefulSets, and `Released` volumes with a `Retain` policy.
+
+More cases are in [Kubernetes troubleshooting](/kubernetes/troubleshooting).
+
+## Next steps
+
+- [Helm](/kubernetes/helm): charts with `persistence.enabled` create claims for you.
+- [Pause and resume](/kubernetes/pause-and-resume): what happens to volumes while paused.
+- [Limits and compatibility](/kubernetes/limits-and-compatibility).
+
+<FAQ items={[
+  {q: 'Does Cloider Kubernetes support persistent volumes?', a: 'Yes. Create a standard PersistentVolumeClaim and the cluster provisions a volume of the requested size and binds it. Pods mount the claim like on any Kubernetes cluster.'},
+  {q: 'How are persistent volumes billed on Cloider?', a: 'Per GiB of provisioned capacity per month, prorated over time. A 10 GiB claim is billed as 10 GiB however much data it holds, for as long as the claim exists.'},
+  {q: 'Are volumes kept when I pause a cluster?', a: 'Yes. Pausing a cluster keeps its PersistentVolumeClaims and their data, and they keep being billed per GiB while the cluster is paused.'},
+  {q: 'Which storage classes are available?', a: 'Run kubectl get storageclass in your cluster. It lists the classes Cloider provides, marks the default one, and shows whether each class allows volume expansion.'},
+  {q: 'Are volumes deleted when I delete a Helm release or a StatefulSet?', a: 'Not necessarily. Many Helm charts and every StatefulSet leave their PersistentVolumeClaims behind, and those keep being billed until you delete them with kubectl delete pvc.'},
+]} />

@@ -1,0 +1,394 @@
+---
+title: Managed Redis on Cloider
+sidebar_label: Redis
+sidebar_position: 7
+description: Use managed Redis 8 on Cloider for caching, sessions and queues. Connect with redis-cli, Node.js, Python, Go, PHP, Java and Ruby, with or without TLS.
+keywords: [managed redis, redis hosting, redis 8, redis-cli, ioredis, node-redis, redis-py, go-redis, predis, rediss, redis acl, redis tls, sidekiq, celery, bullmq]
+---
+
+Cloider runs managed **Redis 8**, the in-memory key-value store used for caching, sessions, rate limiting, job queues, leaderboards and pub/sub. Each Redis database is its own server with its own memory and storage, an ACL user created for you, daily snapshots and optional TLS.
+
+<Logos items={[{src: '/img/logos/redis.svg', alt: 'Redis'}]} />
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Version** | Redis 8 |
+| **Topology** | A standalone server (no replicas, no cluster mode) |
+| **Port** | Assigned per database (not 6379) |
+| **User** | An ACL user you chose (for example `cache_user`) with access to all keys, channels and commands |
+| **Logical databases** | 16, numbered 0 to 15. Clients use database `0` by default |
+| **SSL** | **Off** by default. When on, the server accepts **only** TLS connections |
+| **Client** | `redis-cli` |
+| **Plans** | Hobby (0.25 vCPU, 0.25 GB RAM, 1 GB storage) to Pro (2 vCPU, 8 GB RAM, 32 GB storage), see [plans](/databases/overview#redis-plans) |
+| **Backups** | A daily snapshot of the whole server, restored into a new database |
+
+## Create a Redis database
+
+```bash
+cloider db create cache --engine redis --plan starter --wait
+```
+
+Or in the dashboard, choose **Redis v8** under **Database Engine**. SSL Mode starts off for Redis; turn it on if clients connect over the internet. See [create a database](/databases/create-a-database).
+
+## Connection details
+
+| Detail | Example |
+| --- | --- |
+| Public host | `cache-c5n1qa.db.cloider.com` |
+| Private host (Cloider apps and clusters) | `cache-c5n1qa.db.cloider.internal` |
+| Port | `26742` |
+| User | `cache_user` |
+| Password | `cloider db password cache` |
+| Database number | `0` (0 to 15 available) |
+
+The connection string:
+
+```text
+# SSL off
+redis://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0
+
+# SSL on (TLS only)
+rediss://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0
+```
+
+:::warning[Always send the user name]
+Authenticate as your user, with both the user name and the password: `AUTH cache_user PASSWORD`, or `cache_user:PASSWORD@` in a URL. A password alone (`AUTH PASSWORD`, or `redis://:PASSWORD@...`) logs in as Redis's `default` user, which has a different password reserved for Cloider, and fails with `WRONGPASS`.
+:::
+
+## Connect with redis-cli
+
+With SSL off (the default for Redis):
+
+```bash
+REDISCLI_AUTH="$(cloider db password cache)" \
+  redis-cli -h cache-c5n1qa.db.cloider.com -p 26742 --user cache_user
+```
+
+With SSL on, add `--tls` and the CA certificate:
+
+```bash
+cloider db cert cache -f ca.crt
+REDISCLI_AUTH="$(cloider db password cache)" \
+  redis-cli -h cache-c5n1qa.db.cloider.com -p 26742 --user cache_user --tls --cacert ca.crt
+```
+
+`REDISCLI_AUTH` keeps the password out of your shell history and the process list. The CLI can do all of this for you, or run `redis-cli` inside Cloider without anything installed:
+
+```bash
+cloider db connect cache                      # runs redis-cli with the right flags
+cloider db shell cache                        # interactive redis-cli, nothing to install
+cloider db exec cache SET greeting "hello"    # one command
+cloider db exec cache GET greeting
+```
+
+```text title="Output"
+"hello"
+```
+
+## Connect from code
+
+From a Cloider app or cluster, use the **private** host, see [connect from a Cloider app or cluster](/databases/connect#connect-from-a-cloider-app-or-kubernetes-cluster). The examples use `rediss://` with the CA certificate from `cloider db cert cache -f ca.crt`. With SSL off, use `redis://` and drop the TLS options.
+
+<Tabs groupId="language">
+<TabItem value="node" label="Node.js" default>
+
+With [ioredis](https://github.com/redis/ioredis) (`npm install ioredis`):
+
+```js title="redis.js"
+import fs from "node:fs";
+import Redis from "ioredis";
+
+// rediss://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0
+const redis = new Redis(process.env.REDIS_URL, {
+  tls: { ca: fs.readFileSync("ca.crt") },
+});
+
+await redis.set("session:9f2c", JSON.stringify({ userId: 42 }), "EX", 3600);
+console.log(await redis.get("session:9f2c"));
+```
+
+With [node-redis](https://github.com/redis/node-redis) (`npm install redis`):
+
+```js title="redis.js"
+import fs from "node:fs";
+import { createClient } from "redis";
+
+const client = createClient({
+  url: process.env.REDIS_URL,
+  socket: { tls: true, ca: fs.readFileSync("ca.crt") },
+});
+client.on("error", (err) => console.error(err));
+await client.connect();
+
+await client.set("greeting", "hello", { EX: 60 });
+console.log(await client.get("greeting"));
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+With [redis-py](https://redis.readthedocs.io/) (`pip install redis`):
+
+```python title="cache.py"
+import os
+import redis
+
+# rediss://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0
+r = redis.Redis.from_url(os.environ["REDIS_URL"], ssl_ca_certs="ca.crt", decode_responses=True)
+
+r.set("greeting", "hello", ex=60)
+print(r.get("greeting"))
+```
+
+</TabItem>
+<TabItem value="go" label="Go">
+
+With [go-redis](https://redis.uptrace.dev/) (`go get github.com/redis/go-redis/v9`):
+
+```go title="main.go"
+package main
+
+import (
+	"context"
+	"crypto/x509"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// rediss://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0
+	opt, err := redis.ParseURL(os.Getenv("REDIS_URL"))
+	if err != nil {
+		panic(err)
+	}
+
+	// rediss:// turns TLS on, add Cloider's CA to it
+	pem, err := os.ReadFile("ca.crt")
+	if err != nil {
+		panic(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(pem)
+	opt.TLSConfig.RootCAs = roots
+
+	rdb := redis.NewClient(opt)
+	if err := rdb.Set(ctx, "greeting", "hello", time.Minute).Err(); err != nil {
+		panic(err)
+	}
+	fmt.Println(rdb.Get(ctx, "greeting").Val())
+}
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+With [Predis](https://github.com/predis/predis) (`composer require predis/predis`):
+
+```php title="cache.php"
+<?php
+require 'vendor/autoload.php';
+
+$redis = new Predis\Client([
+    'scheme'   => 'tls',
+    'host'     => 'cache-c5n1qa.db.cloider.com',
+    'port'     => 26742,
+    'username' => 'cache_user',
+    'password' => getenv('REDIS_PASSWORD'),
+    'ssl'      => ['cafile' => __DIR__ . '/ca.crt', 'verify_peer' => true],
+]);
+
+$redis->set('greeting', 'hello', 'EX', 60);
+echo $redis->get('greeting');
+```
+
+With SSL off, use `'scheme' => 'tcp'` and drop `ssl`.
+
+</TabItem>
+<TabItem value="java" label="Java">
+
+With [Lettuce](https://lettuce.io/):
+
+```java title="Main.java"
+import io.lettuce.core.*;
+import io.lettuce.core.api.sync.RedisCommands;
+import java.io.File;
+
+public class Main {
+    public static void main(String[] args) {
+        // rediss://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0
+        RedisClient client = RedisClient.create(RedisURI.create(System.getenv("REDIS_URL")));
+        client.setOptions(ClientOptions.builder()
+                .sslOptions(SslOptions.builder().trustManager(new File("ca.crt")).build())
+                .build());
+
+        try (var connection = client.connect()) {
+            RedisCommands<String, String> redis = connection.sync();
+            redis.setex("greeting", 60, "hello");
+            System.out.println(redis.get("greeting"));
+        }
+        client.shutdown();
+    }
+}
+```
+
+</TabItem>
+<TabItem value="ruby" label="Ruby">
+
+With the [redis gem](https://github.com/redis/redis-rb) (`gem install redis`):
+
+```ruby title="cache.rb"
+require "redis"
+
+# rediss://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0
+redis = Redis.new(url: ENV.fetch("REDIS_URL"), ssl_params: { ca_file: "ca.crt" })
+
+redis.set("greeting", "hello", ex: 60)
+puts redis.get("greeting")
+```
+
+</TabItem>
+</Tabs>
+
+## Use Redis with frameworks and job queues
+
+<Tabs groupId="redis-framework">
+<TabItem value="bullmq" label="BullMQ" default>
+
+```js title="queue.js"
+import fs from "node:fs";
+import { Queue, Worker } from "bullmq";
+import IORedis from "ioredis";
+
+const connection = new IORedis(process.env.REDIS_URL, {
+  maxRetriesPerRequest: null, // required by BullMQ workers
+  tls: { ca: fs.readFileSync("ca.crt") },
+});
+
+const emails = new Queue("emails", { connection });
+await emails.add("welcome", { to: "ada@example.com" });
+
+new Worker("emails", async (job) => console.log("sending", job.data), { connection });
+```
+
+</TabItem>
+<TabItem value="celery" label="Celery">
+
+```python title="celery_app.py"
+import os
+import ssl
+from celery import Celery
+
+app = Celery("tasks", broker=os.environ["REDIS_URL"], backend=os.environ["REDIS_URL"])
+
+# Needed for rediss:// URLs
+tls = {"ssl_cert_reqs": ssl.CERT_REQUIRED, "ssl_ca_certs": "ca.crt"}
+app.conf.broker_use_ssl = tls
+app.conf.redis_backend_use_ssl = tls
+```
+
+</TabItem>
+<TabItem value="sidekiq" label="Sidekiq">
+
+```ruby title="config/initializers/sidekiq.rb"
+redis = { url: ENV.fetch("REDIS_URL"), ssl_params: { ca_file: "ca.crt" } }
+
+Sidekiq.configure_server { |config| config.redis = redis }
+Sidekiq.configure_client { |config| config.redis = redis }
+```
+
+</TabItem>
+<TabItem value="laravel" label="Laravel">
+
+For a Laravel app running on Cloider, connect over the private host with SSL off:
+
+```bash title=".env"
+REDIS_CLIENT=phpredis
+REDIS_HOST=cache-c5n1qa.db.cloider.internal
+REDIS_PORT=26742
+REDIS_USERNAME=cache_user
+REDIS_PASSWORD=PASSWORD
+
+CACHE_STORE=redis
+SESSION_DRIVER=redis
+QUEUE_CONNECTION=redis
+```
+
+`REDIS_USERNAME` is required, see [always send the user name](#connection-details).
+
+</TabItem>
+</Tabs>
+
+## Redis features and limits on Cloider
+
+### Your user and the default user
+
+Your database comes with one ACL user, the one you chose when creating it, with access to every key (`~*`), every pub/sub channel (`&*`) and every command (`+@all`). Redis's built-in `default` user exists too, with a separate password that Cloider keeps for itself. Check who you are with:
+
+```text
+ACL WHOAMI
+```
+
+### Changes made with ACL and CONFIG don't survive a restart
+
+Users you add with `ACL SETUSER` and settings you change with `CONFIG SET` take effect immediately, but they are lost when the server restarts, for example after a [resize](/databases/resize), an [SSL change](/databases/ssl-tls) or a [resume](/databases/pause-resume-and-delete). Re-apply them from your application at startup if you depend on them.
+
+### Memory is the limit
+
+Redis keeps the whole dataset in RAM, so the plan's RAM is the size of your data plus Redis's own overhead. Watch **Memory** in [Insights](/databases/insights) or with `INFO memory`, give cache keys an expiry (`SET key value EX 3600`), and [resize](/databases/resize) before memory runs out.
+
+```text
+INFO memory
+MEMORY USAGE session:9f2c
+DBSIZE
+```
+
+### TLS only when SSL is on
+
+Turning SSL on makes Redis serve TLS on its port and stop accepting plain connections. Every client then needs `rediss://` (or its TLS option) and the CA certificate. Turning it off does the reverse. Change both at the same time to avoid downtime, see [SSL/TLS](/databases/ssl-tls).
+
+### Logical databases
+
+Redis has 16 logical databases, `0` to `15`, selected with `SELECT 1` or `/1` at the end of the URL. They share the server's memory and are all included in backups. Separate apps are better kept in separate Cloider databases, so one can't fill the other's memory.
+
+### Single server
+
+A Redis database on Cloider is one server without replicas, Sentinel or cluster mode. Use a plain (non-cluster, non-Sentinel) client configuration, and let your client reconnect after restarts.
+
+### Backups and restore
+
+Every night, Cloider takes a snapshot of the whole server: all 16 logical databases, every key and its expiry time. A [restore](/databases/backups-and-restore) creates a new database from that snapshot. Treat Redis as a cache or for data your application can rebuild, and keep data you can't lose in [PostgreSQL](/databases/postgresql), [MySQL](/databases/mysql) or [MongoDB](/databases/mongodb).
+
+## Troubleshooting
+
+| Error | Cause and fix |
+| --- | --- |
+| `Could not connect to Redis at ...: Connection timed out` | Your IP isn't trusted. `cloider db trusted-sources cache --add-my-ip` |
+| `WRONGPASS invalid username-password pair or user is disabled.` | The user name is missing (password only logs in as `default`), or the password is wrong. Send `cache_user` and its password |
+| `Error: Connection reset by peer` or `Error: Server closed the connection` | SSL is on, so the server only speaks TLS, and the client connected without it. Use `rediss://` or `--tls` |
+| `SSL_connect failed` or `certificate verify failed` | The client doesn't trust Cloider's CA. Pass `--cacert ca.crt` or your client's CA option |
+| `Protocol error` with SSL off | The client uses TLS (`rediss://`) but SSL is off. Use `redis://` |
+| `MOVED` or `CLUSTERDOWN` errors, or the client waits for Sentinel | The client is configured for cluster or Sentinel mode. Use a single-node configuration |
+
+More in [database troubleshooting](/databases/troubleshooting).
+
+## Next steps
+
+- [SSL/TLS](/databases/ssl-tls)
+- [Trusted sources](/databases/trusted-sources)
+- [Insights](/databases/insights)
+
+<FAQ items={[
+  {q: 'Which Redis version does Cloider run?', a: 'Cloider runs Redis 8 as a standalone server, one per database.'},
+  {q: 'Why do I get WRONGPASS when connecting to Cloider Redis?', a: 'Redis needs your user name as well as the password. Use AUTH cache_user PASSWORD or a URL like redis://cache_user:PASSWORD@host:port/0. A password alone logs in as the default user, whose password is reserved for Cloider.'},
+  {q: 'Is SSL on by default for Redis?', a: 'No. Redis databases start with SSL off, because turning SSL on makes Redis accept only TLS connections. Turn it on in the Settings tab or with cloider db ssl <database> on, then switch clients to rediss://.'},
+  {q: 'What port does Cloider Redis use?', a: 'Each Redis database gets its own port when it is created, not 6379. The port is in the connection details.'},
+  {q: 'How much data can I store in Cloider Redis?', a: 'As much as fits in the plan\'s RAM, from 0.25 GB on Hobby to 8 GB on Pro. Resize to a larger plan when memory runs out.'},
+  {q: 'Does Cloider Redis support Redis Cluster or Sentinel?', a: 'No. Each Redis database is a single standalone server. Configure your client for a single node.'}
+]} />

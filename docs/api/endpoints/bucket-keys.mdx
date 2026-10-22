@@ -1,0 +1,205 @@
+---
+title: Bucket access keys API endpoints
+sidebar_label: Bucket keys
+sidebar_position: 6
+description: Cloider API reference for S3 access keys, list, create with a one time secret, scope to buckets or all buckets, read only or read and write, change and delete.
+keywords: [cloider s3 access key api, create access key, s3 credentials api, bucket key api, read only s3 key, secret key]
+---
+
+Bucket keys (access keys) are the S3 credentials your tools use to read and write a Cloider bucket: an access key id and a secret key, as with any S3 provider. A key can reach every bucket of the account or only the buckets you choose, read only or read and write. These endpoints list, create, change and delete them. The dashboard shows them under **Access Control**, **S3 Credentials**.
+
+All paths are relative to `https://cloider.com/api`. See [Access keys](/object-storage/access-keys) for how to use a key with S3 tools.
+
+## At a glance
+
+| Method | Path | Access |
+| --- | --- | --- |
+| GET | [`/bucket-keys`](#list-access-keys) | Read |
+| POST | [`/bucket-keys`](#create-an-access-key) | Write |
+| PUT | [`/bucket-keys/:hashed_id`](#change-an-access-key) | Write |
+| DELETE | [`/bucket-keys/:hashed_id`](#delete-an-access-key) | Write |
+
+An account can have up to **50** access keys.
+
+## The access key object
+
+```json
+{
+  "hashed_id": "y6p3s",
+  "label": "backup-job",
+  "access_key": "CLDR4N7TQ2WB9XK0HJ3E",
+  "all_buckets": false,
+  "buckets": ["k5t1v"],
+  "read_only": false,
+  "status": "Ready",
+  "created_at": "2026-10-05T10:31:27.004418Z"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `hashed_id` | string | The key's id in the API |
+| `label` | string | The name you gave it |
+| `access_key` | string | The S3 access key id, starting with `CLDR`. This is also how bucket policies name the key |
+| `all_buckets` | boolean | `true` when the key reaches every bucket of the account, including buckets created later |
+| `buckets` | string list | When `all_buckets` is `false`, the `hashed_id`s of the buckets it reaches. Deleted buckets drop out of the list |
+| `read_only` | boolean | `true` when the key can only read and list |
+| `status` | string | `Creating`, `Ready`, `Terminating` or `Failed` |
+| `created_at` | string | When the key was created |
+
+The secret key is never part of this object. It is returned once, when the key is created.
+
+## List access keys
+
+```http
+GET /bucket-keys
+```
+
+Returns the account's access keys, newest first.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/bucket-keys \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "hashed_id": "y6p3s",
+    "label": "backup-job",
+    "access_key": "CLDR4N7TQ2WB9XK0HJ3E",
+    "all_buckets": false,
+    "buckets": ["k5t1v"],
+    "read_only": false,
+    "status": "Ready",
+    "created_at": "2026-10-05T10:31:27.004418Z"
+  },
+  {
+    "hashed_id": "m2w9f",
+    "label": "website-reader",
+    "access_key": "CLDR8B1ZK5QM3TR7WN2D",
+    "all_buckets": true,
+    "buckets": [],
+    "read_only": true,
+    "status": "Ready",
+    "created_at": "2026-09-30T15:20:11.770312Z"
+  }
+]
+```
+
+## Create an access key
+
+```http
+POST /bucket-keys
+```
+
+Creates an access key and returns its secret. **The secret is shown only in this response**: store it right away, for example in your CI secrets. If you lose it, create a new key.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `label` | string | Yes | A name for the key, 1 to 64 characters |
+| `all_buckets` | boolean | No | `true` to reach every bucket of the account. Default `false` |
+| `buckets` | string list | When `all_buckets` is `false` | The `hashed_id`s of the buckets the key reaches, at least one |
+| `read_only` | boolean | No | `true` for a key that can only read and list. Default `false` |
+
+```bash
+curl -X POST https://cloider.com/api/bucket-keys \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "backup-job", "buckets": ["k5t1v"], "read_only": false}'
+```
+
+```json title="Response"
+{
+  "key": {
+    "hashed_id": "y6p3s",
+    "label": "backup-job",
+    "access_key": "CLDR4N7TQ2WB9XK0HJ3E",
+    "all_buckets": false,
+    "buckets": ["k5t1v"],
+    "read_only": false,
+    "status": "Ready",
+    "created_at": "2026-10-05T10:31:27.004418Z"
+  },
+  "secret_key": "q8XrT2vLp9WcZk4NbY7fHs3JdM6gRa1E..."
+}
+```
+
+The key works as soon as the request returns. Use it with any S3 client, the bucket's `endpoint` and its `region`:
+
+```bash
+export AWS_ACCESS_KEY_ID=CLDR4N7TQ2WB9XK0HJ3E
+export AWS_SECRET_ACCESS_KEY='<secret_key from the response>'
+aws s3 ls s3://acme-backups --endpoint-url https://s3.eu-central-2.cloider.com --region eu-central-2
+```
+
+### Errors
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `label` | `Name must not be empty`, `Name must not exceed 64 characters` |
+| `400` | `buckets` | `Choose at least one bucket`, `One of the buckets doesn't exist any more, reload and try again` |
+| `400` | `_` | `An account can have up to 50 access keys, delete one you no longer use!` |
+| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
+| `400` | `_` | `Operation failed, Couldn't create the access key!` |
+| `403` | `_` | `This API token is read only!`, `You have read-only access to this account, you can not create access keys!` |
+
+## Change an access key
+
+```http
+PUT /bucket-keys/:hashed_id
+```
+
+Changes a key's label, the buckets it reaches and whether it is read only. The access key id and the secret stay the same, and the new permissions apply to the next request made with the key. Send the full form: fields you leave out take their defaults.
+
+**Access:** Read & Write token. The key must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `label` | string | Yes | 1 to 64 characters |
+| `all_buckets` | boolean | No | `true` for every bucket |
+| `buckets` | string list | When `all_buckets` is `false` | The bucket ids |
+| `read_only` | boolean | No | `true` for read only |
+
+```bash
+curl -X PUT https://cloider.com/api/bucket-keys/y6p3s \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "backup-job", "buckets": ["k5t1v", "b7r2x"], "read_only": true}'
+```
+
+The response is the updated list of access keys. Besides the validation errors of create, it can answer `400` with `The access key must be ready to be changed.` or `Couldn't change the access key, try again in a moment!`, in which case the key keeps its previous settings.
+
+## Delete an access key
+
+```http
+DELETE /bucket-keys/:hashed_id
+```
+
+Deletes an access key. Every tool using it is refused from then on.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X DELETE https://cloider.com/api/bucket-keys/y6p3s \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the updated list of access keys.
+
+| Status | Message |
+| --- | --- |
+| `400` | `The access key is busy, try again in a moment!` (still being created or already being deleted) |
+| `400` | `Couldn't delete the access key, try again in a moment!` |
+| `403` | `This API token is read only!`, `You have read-only access to this account, you can not delete access keys!` |
+| `404` | `Not Found` (plain text) |
+
+## Related
+
+- [Access keys](/object-storage/access-keys) in the dashboard, CLI and Terraform
+- [Bucket policies](/object-storage/bucket-policies), which name keys by their access key id
+- [cloider_bucket_key](/terraform/resources/bucket-key) Terraform resource

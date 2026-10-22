@@ -1,0 +1,676 @@
+---
+title: cloider registry command reference
+sidebar_label: registry
+sidebar_position: 5
+description: Reference for cloider registry, to manage container registry projects, log docker in, list and delete images, create pull and push tokens, and set retention and immutability.
+keywords: [cloider registry, cloider registry login, docker login, container registry cli, registry token, retention policy, immutable tags, cloider registry images]
+---
+
+`cloider registry` manages the [Cloider Container Registry](/container-registry/overview): your private and public **projects**, the repositories and images in them, the tokens docker, CI and clusters log in with, and the policies that delete old images (retention) and protect tags (immutability).
+
+```text
+cloider registry <command> [flags]
+```
+
+**Alias:** `cloider registries`. Projects are named by their name or id. Images live at `registry.cloider.com/<project>/<repository>:<tag>`; commands that take a repository accept its short name (`api`, `team/api`) or its full name (`registry.cloider.com/acme/api`).
+
+A typical first session:
+
+```bash
+cloider registry create acme
+cloider registry login
+docker build -t registry.cloider.com/acme/api:1.0 .
+docker push registry.cloider.com/acme/api:1.0
+cloider registry images acme api
+```
+
+## Subcommands
+
+**Projects**
+
+| Command | Description |
+| --- | --- |
+| [`cloider registry list`](#cloider-registry-list) | List projects |
+| [`cloider registry get`](#cloider-registry-get) | Show a project, its address and storage |
+| [`cloider registry create`](#cloider-registry-create) | Create a project |
+| [`cloider registry delete`](#cloider-registry-delete) | Delete a project and every image in it |
+| [`cloider registry status`](#cloider-registry-status) | Print a project's status |
+| [`cloider registry usage`](#cloider-registry-usage) | Show a project's storage use and cost this month |
+| [`cloider registry set`](#cloider-registry-set) | Change who can pull from a project, how much it may store, or whether its tags are immutable |
+| [`cloider registry login`](#cloider-registry-login) | Log docker in to every project of the account |
+
+**Repositories and images**
+
+| Command | Description |
+| --- | --- |
+| [`cloider registry repos`](#cloider-registry-repos) | List a project's repositories, most recently pushed first |
+| [`cloider registry images`](#cloider-registry-images) | List the images in a repository and their tags, newest first |
+| [`cloider registry rm`](#cloider-registry-rm) | Delete an image, and every tag on it |
+| [`cloider registry untag`](#cloider-registry-untag) | Take a tag off an image, the image stays |
+| [`cloider registry rm-repo`](#cloider-registry-rm-repo) | Delete a repository and every image in it |
+
+**Tokens and policies**
+
+| Command | Description |
+| --- | --- |
+| [`cloider registry token list`, `create`, `update`, `delete`](#cloider-registry-token) | Manage the tokens docker logs in to projects with |
+| [`cloider registry retention get`, `set`, `schedule`, `run`, `runs`](#cloider-registry-retention) | Delete old images automatically, with rules for what to keep |
+| [`cloider registry immutability list`, `add`, `update`, `delete`](#cloider-registry-immutability) | Protect tags from being deleted or pushed over |
+
+All subcommands also take the [global flags](/cli/configuration#global-flags).
+
+## cloider registry list
+
+List the account's projects with their status, access, size and storage limit.
+
+```text
+cloider registry list [flags]
+```
+
+```bash
+cloider registry list
+```
+
+```text title="Output"
+NAME          STATUS   ACCESS    SIZE        LIMIT    CREATED
+acme          Ready    private   1.4 GiB     5 GiB    2026-09-03 12:10
+acme-public   Ready    public    212.6 MiB   20 GiB   2026-09-20 15:44
+```
+
+The project that holds your apps' images is marked `(apps)` after its name; it is managed by Cloider. `-o wide` adds the **ID** and **URL** (`registry.cloider.com/<project>`) columns, and `-q` prints the project names. MCP tool: `list_registry_projects`.
+
+## cloider registry get
+
+Show one project: its access, tag immutability, host, image address, live storage use and number of repositories.
+
+```text
+cloider registry get <project> [flags]
+```
+
+```bash
+cloider registry get acme
+```
+
+```text title="Output"
+Name:          acme
+Status:        Ready
+Access:        private
+Tags:          mutable
+Host:          registry.cloider.com
+Images:        registry.cloider.com/acme/<repository>:<tag>
+Storage:       1.4 GiB of 5 GiB
+Repositories:  3
+Created:       2026-09-03 12:10
+```
+
+MCP tool: `get_registry_project`.
+
+## cloider registry create
+
+Create a project. Its name is the path its images live under, `registry.cloider.com/<name>/<repository>:<tag>`. It is global across Cloider and can't be changed later: 3 to 63 lowercase letters, digits and dashes.
+
+```text
+cloider registry create <name> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--public` | bool | `false` | Let anyone pull its images without a token. Pushing always needs a token |
+| `--storage-limit` | int | `5` | The most GiB it may store, from 1 to 20. Pushes past it are refused |
+| `--immutable-tags` | bool | `false` | Refuse pushing over or deleting any tag, `latest` included |
+| `-w, --wait` | bool | `false` | Wait until the project is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider registry create acme
+```
+
+```text title="Output"
+✓ Created project acme
+Push images to registry.cloider.com/acme/<repository>:<tag>, after `cloider registry login`.
+```
+
+```bash
+cloider registry create acme-public --public --storage-limit 20 --wait
+cloider registry create acme-releases --immutable-tags
+```
+
+`-q` prints the project's name and `-o json` the project object. You are billed for the storage your images use, not for the limit. See [Create a project](/container-registry/create-a-project). MCP tool: `create_registry_project`.
+
+## cloider registry delete
+
+Delete a project and every image in it.
+
+```text
+cloider registry delete <project> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the project is gone |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+The command asks you to type the project's name; pass `--yes` to skip it.
+
+```bash
+cloider registry delete acme-old --yes --wait
+```
+
+```text title="Output"
+✓ Deleting project acme-old
+✓ Project acme-old is deleted
+```
+
+The apps project can't be deleted. See [Delete a project](/container-registry/delete-a-project). MCP tool: `delete_registry_project`.
+
+## cloider registry status
+
+Print a project's status and nothing else (`{"status": "..."}` with `-o json`).
+
+```text
+cloider registry status <project> [flags]
+```
+
+```bash
+cloider registry status acme
+```
+
+```text title="Output"
+Ready
+```
+
+## cloider registry usage
+
+Show a project's average storage this month, cost so far, forecasts and daily use.
+
+```text
+cloider registry usage <project> [flags]
+```
+
+```bash
+cloider registry usage acme
+```
+
+```text title="Output"
+Project:              acme
+Month:                2026-10
+Average storage:      1.38 GiB
+Cost so far:          $0.01
+Forecast this month:  $0.03
+Forecast next month:  $0.03
+
+DATE         STORAGE    COST
+2026-10-01   1.31 GiB   $0.00
+2026-10-02   1.33 GiB   $0.00
+```
+
+See [Usage and billing](/container-registry/usage-and-billing).
+
+## cloider registry set
+
+Change who can pull from a project, how much it may store, or whether its tags are immutable. Only what you pass changes.
+
+```text
+cloider registry set <project> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--public` | bool | | Let anyone pull its images without a token |
+| `--private` | bool | | Only tokens can pull its images |
+| `--storage-limit` | int | | The most GiB it may store, from 1 to 20 |
+| `--immutable-tags` | bool | | Refuse pushing over or deleting any tag, `latest` included |
+| `--mutable-tags` | bool | | Let tags be pushed over and deleted again |
+
+```bash
+cloider registry set acme --storage-limit 20
+```
+
+```text title="Output"
+✓ Project acme is private, with a 20 GiB storage limit
+```
+
+```bash
+cloider registry set acme --immutable-tags
+```
+
+```text title="Output"
+✓ Project acme has immutable tags
+```
+
+Making a project public asks `Anyone will be able to pull every image in ... without a token. Continue? [y/N]`; pass `--yes` to skip it. `--public` and `--private`, and `--immutable-tags` and `--mutable-tags`, can't be combined. See [Immutable tags](/container-registry/immutable-tags). MCP tool: `update_registry_project`.
+
+## cloider registry login
+
+Log docker in to every project of the account. The CLI creates a registry token for this machine, labelled `cloider cli (<hostname>)`, and passes its secret to `docker login` on stdin, so it never shows on screen or in your shell history. Logging in again replaces that token, so they don't pile up.
+
+```text
+cloider registry login [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--read-only` | bool | `false` | Only pull, never push or delete |
+| `--expires-days` | int | `30` | Days the login lasts, `0` for never, up to 3650 |
+
+```bash
+cloider registry login
+```
+
+```text title="Output"
+Login Succeeded
+✓ Logged docker in to registry.cloider.com as acme, until 2026-11-19 09:30
+```
+
+```bash
+cloider registry login --read-only --expires-days 7
+```
+
+Without `docker` on your `PATH`, the token is still created, and the `docker login` command is printed for you to run by hand or adapt for podman. The command then exits with an error (`docker isn't on the PATH, log in with the command above`):
+
+```text title="Output"
+echo 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | docker login registry.cloider.com -u 'acme' --password-stdin
+! The secret is not shown again, keep it now.
+```
+
+If `docker login` fails, the new token is deleted again and the command exits with docker's exit code. `-o json` prints `{"host", "username", "read_only", "expires_at"}`. See [Push and pull images](/container-registry/push-and-pull-images). There is no MCP tool for `login`, since it changes the local docker configuration.
+
+## cloider registry repos
+
+List a project's repositories, most recently pushed first, 25 per page.
+
+```text
+cloider registry repos <project> [flags]
+```
+
+**Alias:** `cloider registry repositories`.
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--filter` | string | | Only repositories whose name contains this |
+| `--page` | int | `1` | Page to show, 25 repositories each |
+
+```bash
+cloider registry repos acme
+```
+
+```text title="Output"
+NAME          IMAGES   PULLS   UPDATED
+api           14       1203    2026-10-20 08:12
+web           9        877     2026-10-18 17:30
+team/worker   3        41      2026-10-02 11:05
+```
+
+When there are more, the CLI says `Showing 1-25 of 31, --page 2 for more.` `-o wide` adds the **FULL NAME** column. See [Repositories and tags](/container-registry/repositories-and-tags). MCP tool: `list_registry_repositories`.
+
+## cloider registry images
+
+List the images in a repository, newest first, with their tags, 25 per page. An image built for several platforms is one entry that lists them all.
+
+```text
+cloider registry images <project> <repository> [flags]
+```
+
+**Alias:** `cloider registry tags`.
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--page` | int | `1` | Page to show, 25 images each |
+
+```bash
+cloider registry images acme api
+```
+
+```text title="Output"
+DIGEST         TAGS            PLATFORMS                  SIZE       PUSHED             PULLED
+4f1c2b3a9d0e   1.4.0, latest   linux/amd64, linux/arm64   48.2 MiB   2026-10-20 08:12   5m ago
+9a7e5d1c3b2f   1.3.2           linux/amd64                47.9 MiB   2026-10-11 14:40   2d ago
+c0d4e8f2a6b1   -               linux/amd64                47.6 MiB   2026-10-02 09:15   never
+```
+
+The digest is shortened to 12 characters; `-o wide` shows the whole `sha256:` digest and a **TYPE** column, and `-q` prints whole digests. An image without any tag (`-`) is removed by the registry's nightly cleanup. MCP tool: `list_registry_images`.
+
+## cloider registry rm
+
+Delete an image, named by one of its tags or by its digest. Every tag on the image goes with it. The digest may be shortened to the 12 characters `registry images` shows (at least 7).
+
+```text
+cloider registry rm <project> <repository> <tag|digest> [flags]
+```
+
+**Alias:** `cloider registry rm-image`.
+
+The command asks `Delete image ... of ..., tagged ...? [y/N]`; pass `--yes` to skip it.
+
+```bash
+cloider registry rm acme api 1.3.2
+```
+
+```text title="Output"
+Delete image 9a7e5d1c3b2f of api, tagged 1.3.2? [y/N] y
+✓ Deleted image 9a7e5d1c3b2f of api
+```
+
+```bash
+cloider registry rm acme api c0d4e8f2a6b1 --yes
+```
+
+To take one tag off and keep the image, use [`registry untag`](#cloider-registry-untag). A tag protected by immutability can't be deleted. MCP tool: `delete_registry_image`.
+
+## cloider registry untag
+
+Take a tag off an image. The image stays under its other tags and its digest.
+
+```text
+cloider registry untag <project> <repository> <tag> [flags]
+```
+
+```bash
+cloider registry untag acme api latest
+```
+
+```text title="Output"
+✓ Removed tag latest from api
+```
+
+If that was the image's last tag, the CLI warns that the nightly cleanup removes it unless it is tagged again. MCP tool: `untag_registry_image`.
+
+## cloider registry rm-repo
+
+Delete a repository and every image in it.
+
+```text
+cloider registry rm-repo <project> <repository> [flags]
+```
+
+The command asks you to type the repository name; pass `--yes` to skip it.
+
+```bash
+cloider registry rm-repo acme team/worker --yes
+```
+
+```text title="Output"
+✓ Deleted repository team/worker
+```
+
+MCP tool: `delete_registry_repository`.
+
+## cloider registry token
+
+Manage registry tokens, which docker, CI pipelines and Kubernetes clusters log in to the account's projects with. Docker logs in with the account's **registry username** and a token's **secret**. Docker keeps one login per host and every project shares it, so one token reaches every project it is given. Tokens are named by their label or id.
+
+**Alias:** `cloider registry tokens`.
+
+| Command | Description |
+| --- | --- |
+| `cloider registry token list` | List registry tokens |
+| `cloider registry token create --label <label>` | Create a registry token, its secret is shown once |
+| `cloider registry token update <token>` | Change a registry token's label, projects or permission |
+| `cloider registry token delete <token>` | Delete a registry token, anything logged in with it loses access. Alias: `rm` |
+
+### cloider registry token list
+
+```bash
+cloider registry token list
+```
+
+```text title="Output"
+USERNAME   LABEL                         PROJECTS       PERMISSION    EXPIRES            STATUS   CREATED
+acme       ci-deploy                     acme           Pull & Push   2027-10-20 09:55   Ready    2026-10-20 09:55
+acme       prod-cluster                  acme           Pull          never              Ready    2026-10-12 14:20
+acme       cloider cli (janes-macbook)   all projects   Pull & Push   2026-11-19 09:30   Ready    2026-10-20 09:30
+```
+
+An expired token shows `expired <date>` in red. `-o wide` adds the **ID**. MCP tool: `list_registry_tokens`.
+
+### cloider registry token create
+
+```text
+cloider registry token create --label <label> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--label` | string | (required) | What the token is for |
+| `--project` | string, repeatable | | Project the token opens. Without it, every project |
+| `--all` | bool | `false` | Open every project of the account, including ones created later. Can't be combined with `--project` |
+| `--read-only` | bool | `false` | Only pull, never push or delete |
+| `--expires-days` | int | `0` | Days until the token stops working, `0` for never, up to 3650 |
+
+The secret is shown once, together with the `docker login` command and the `kubectl` command that creates a Kubernetes pull secret with it:
+
+```bash
+cloider registry token create --label prod-cluster --project acme --read-only --expires-days 365
+```
+
+```text title="Output"
+✓ Created registry token prod-cluster
+Username:    acme
+Secret:      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Host:        registry.cloider.com
+Projects:    acme
+Permission:  Pull
+Expires:     2027-10-20 09:55
+
+Docker:
+  echo 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' | docker login registry.cloider.com -u 'acme' --password-stdin
+Kubernetes pull secret:
+  kubectl create secret docker-registry cloider-registry --docker-server=registry.cloider.com --docker-username='acme' --docker-password='xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+! The secret is not shown again, keep it now.
+```
+
+`-q` prints the username and the secret on two lines; `-o json` prints the API's answer (`{"token": {...}, "secret": "..."}`). To log in this machine's docker, use [`registry login`](#cloider-registry-login) instead. See [Tokens](/container-registry/tokens) and [Use with Kubernetes](/container-registry/use-with-kubernetes). MCP tool: `create_registry_token`.
+
+### cloider registry token update
+
+Change a token's label, projects or permission. Only the flags you pass change. Its expiry can't be changed: create a new token instead.
+
+```text
+cloider registry token update <token> [flags]
+```
+
+Flags: `--label`, `--project` (repeatable), `--all`, `--read-only` (use `--read-only=false` to allow pushing again), with the same meaning as for `create`.
+
+```bash
+cloider registry token update ci-deploy --project acme --project acme-public
+cloider registry token update ci-deploy --all --read-only=false
+```
+
+```text title="Output"
+✓ Updated registry token ci-deploy
+```
+
+MCP tool: `update_registry_token`.
+
+### cloider registry token delete
+
+```bash
+cloider registry token delete prod-cluster --yes
+```
+
+```text title="Output"
+✓ Deleted registry token prod-cluster
+```
+
+Without `--yes` it asks you to type the token's label. MCP tool: `delete_registry_token`.
+
+## cloider registry retention
+
+A project's retention policy deletes old images automatically. When it runs, an image in a repository some rule covers is deleted **unless a rule keeps it**. Repositories no rule covers are left alone, and so are tags an [immutability rule](#cloider-registry-immutability) protects. A dry run shows what would be deleted first.
+
+| Command | Description |
+| --- | --- |
+| `cloider registry retention get <project>` | Show a project's retention rules and schedule |
+| `cloider registry retention set <project> -f <rules.json>` | Replace every retention rule of a project (`-f -` reads stdin) |
+| `cloider registry retention schedule <project> --every none\|hourly\|daily\|weekly` | Change when a project's retention runs, in UTC |
+| `cloider registry retention run <project>` | Run a project's retention now, or see what it would delete with `--dry-run` |
+| `cloider registry retention runs <project> [run-id [task-id]]` | List retention runs, what a run did per repository, or per image |
+
+### Retention rules file
+
+A rules file is a JSON array of rules, or `{"rules": [...]}`. A project holds at most 15 rules, each selector at most 20 patterns.
+
+```json title="rules.json"
+[
+  {
+    "repositories": {"match": "matching", "patterns": ["**"]},
+    "tags": {"match": "matching", "patterns": ["**"]},
+    "untagged": true,
+    "keep": "latest_pushed",
+    "count": 10,
+    "disabled": false
+  }
+]
+```
+
+| Field | Description |
+| --- | --- |
+| `repositories`, `tags` | Selectors: `match` is `matching` or `excluding`, `patterns` a list of patterns. A selector left out matches everything (`**`) |
+| `untagged` | Count images without a tag as matching the tags, so the rule can keep them |
+| `keep` | `always`, `latest_pushed` or `latest_pulled` (keep the `count` newest images), `pushed_within_days` or `pulled_within_days` (keep images from the last `count` days) |
+| `count` | Images for the `latest_*` kinds, days for the `*_within_days` kinds |
+| `disabled` | Keep the rule but don't apply it |
+
+Patterns are doublestar patterns: `api`, `team/*` or `**` for all. `*` stays within a path segment, `**` crosses them, `?` is any one character. Each rule is worked out on its own, and an image any rule keeps stays.
+
+### Set, show and schedule
+
+```bash
+cloider registry retention set acme -f rules.json
+echo '[{"keep": "latest_pushed", "count": 10, "untagged": true}]' | cloider registry retention set acme -f -
+```
+
+```text title="Output"
+✓ acme now has 1 retention rule(s)
+```
+
+```bash
+cloider registry retention get acme
+```
+
+```text title="Output"
+#   REPOSITORIES   TAGS           KEEPS                        ENABLED
+1   **             **, untagged   latest 10 pushed             yes
+2   api            v*             pulled in the last 90 days   yes
+
+Runs: daily at 03:00 UTC
+```
+
+`set` takes `-f, --file` (required): the rules file, `-` for stdin.
+
+`schedule` flags:
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--every` | string | (required) | `none`, `hourly`, `daily` or `weekly` |
+| `--minute` | int | `0` | Minute of the hour, 0 to 59 |
+| `--hour` | int | `0` | Hour of the day in UTC, 0 to 23 (daily and weekly) |
+| `--weekday` | int | `0` | Day of the week, 0 (Sunday) to 6 (weekly) |
+
+```bash
+cloider registry retention schedule acme --every daily --hour 3
+cloider registry retention schedule acme --every weekly --weekday 0 --hour 4 --minute 30
+cloider registry retention schedule acme --every none
+```
+
+```text title="Output"
+✓ Retention of acme runs daily at 03:00 UTC
+```
+
+### Run retention and follow it
+
+```bash
+cloider registry retention run acme --dry-run
+```
+
+```text title="Output"
+✓ Started a retention dry run of acme, nothing is deleted
+Follow it with `cloider registry retention runs acme`.
+```
+
+A real run asks `Run retention on ... now? Images no rule keeps are permanently deleted. [y/N]`; pass `--yes` to skip it.
+
+```bash
+cloider registry retention runs acme            # every run
+cloider registry retention runs acme 42         # what run 42 did per repository
+cloider registry retention runs acme 42 7       # what task 7 of run 42 did per image
+```
+
+```text title="Output"
+ID   STATUS      TRIGGER    DRY RUN   STARTED            FINISHED
+42   succeeded   manual     yes       2026-10-20 09:40   2026-10-20 09:41
+41   succeeded   schedule   no        2026-10-20 03:00   2026-10-20 03:02
+
+TASK   REPOSITORY   STATUS      IMAGES   KEPT
+7      api          succeeded   14       10
+8      web          succeeded   9        9
+
+DIGEST         TAGS            RESULT
+4f1c2b3a9d0e   1.4.0, latest   kept
+2b8d6f0e4c1a   1.0.1           deleted
+7e3a1c9b5d2f   v1.0.0          immutable
+```
+
+A run's status is `pending`, `running`, `stopped`, `failed` or `succeeded`, its trigger `manual` or `schedule`, and each image's result `kept`, `deleted`, `immutable` or `failed`. `runs` takes `--page` (25 per page). The apps project's policies are managed by Cloider. See [Retention policies](/container-registry/retention-policies). MCP tools: `get_registry_retention`, `set_registry_retention_rules`, `set_registry_retention_schedule`, `run_registry_retention`, `list_registry_retention_runs`.
+
+## cloider registry immutability
+
+Tag immutability rules protect tags: a tag a rule covers can't be pushed over or deleted, and retention leaves it alone. `cloider registry set --immutable-tags` is the rule that covers every tag. A project holds at most 15 rules.
+
+| Command | Description |
+| --- | --- |
+| `cloider registry immutability list <project>` | List a project's immutability rules. Alias: `ls` |
+| `cloider registry immutability add <project>` | Add an immutability rule |
+| `cloider registry immutability update <project> <rule-id>` | Change an immutability rule, keeping what isn't given |
+| `cloider registry immutability delete <project> <rule-id>` | Delete an immutability rule. Alias: `rm` |
+
+`add` and `update` flags:
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--repo` | string, repeatable | `**` | Repository pattern |
+| `--exclude-repos` | bool | `false` | The rule covers the repositories the patterns don't match |
+| `--tag` | string, repeatable | `**` | Tag pattern |
+| `--exclude-tags` | bool | `false` | The rule covers the tags the patterns don't match |
+| `--disabled` | bool | `false` | Keep the rule but don't apply it |
+
+```bash
+cloider registry immutability add acme --tag 'v*'
+```
+
+```text title="Output"
+✓ Tags v* in repositories ** of acme are immutable
+```
+
+```bash
+cloider registry immutability add acme --repo 'team/**' --tag latest --exclude-tags
+cloider registry immutability list acme
+```
+
+```text title="Output"
+ID   REPOSITORIES   TAGS             ENABLED
+12   **             v*               yes
+13   team/**        all but latest   yes
+```
+
+```bash
+cloider registry immutability update acme 12 --tag 'v*' --tag 'release-*'
+cloider registry immutability update acme 13 --disabled
+cloider registry immutability delete acme 13 --yes
+```
+
+`delete` asks for confirmation, because the tags it protects can then be deleted and pushed over again. See [Immutable tags](/container-registry/immutable-tags). MCP tools: `list_registry_immutability_rules`, `add_registry_immutability_rule`, `update_registry_immutability_rule`, `delete_registry_immutability_rule`.
+
+## Related
+
+- [Container registry overview](/container-registry/overview)
+- [Push and pull images](/container-registry/push-and-pull-images) and [CI/CD](/container-registry/ci-cd)
+- [Terraform `cloider_registry`](/terraform/resources/registry) and [`cloider_registry_token`](/terraform/resources/registry-token)
+
+<FAQ items={[
+  {q: 'How do I log docker in to the Cloider registry?', a: 'Run cloider registry login. It creates a registry token for your machine that reaches every project, valid for 30 days by default, and passes it to docker login on stdin. Running it again replaces the token.'},
+  {q: 'How do I create a token for CI or Kubernetes?', a: 'Run cloider registry token create --label prod-cluster --project acme --read-only. The secret is shown once, with the docker login command and the kubectl command that creates an image pull secret.'},
+  {q: 'How do I delete old images automatically?', a: 'Set retention rules with cloider registry retention set acme -f rules.json, schedule them with cloider registry retention schedule acme --every daily --hour 3, and check what they would delete with cloider registry retention run acme --dry-run.'},
+  {q: 'What is the difference between registry rm and registry untag?', a: 'cloider registry rm deletes the image and every tag on it. cloider registry untag removes one tag and keeps the image under its other tags; an image left without any tag is removed by the nightly cleanup.'},
+  {q: 'How do I make tags immutable?', a: 'cloider registry set acme --immutable-tags protects every tag. cloider registry immutability add acme --tag \'v*\' protects only matching tags.'}
+]} />

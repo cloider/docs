@@ -1,0 +1,231 @@
+---
+title: Use Cloider buckets with the Terraform AWS provider
+sidebar_label: Object storage with the AWS provider
+sidebar_position: 3
+description: Create a Cloider bucket and key with Terraform, then upload files with the AWS provider's aws_s3_object and use the AWS CLI, SDKs and rclone with the same credentials.
+keywords: [terraform aws provider s3 compatible, aws_s3_object custom endpoint, cloider bucket terraform, upload files terraform s3, s3 endpoint terraform, rclone cloider, aws cli cloider]
+---
+
+A [`cloider_bucket`](/terraform/resources/bucket) speaks the S3 API, so the HashiCorp [`aws`](https://registry.terraform.io/providers/hashicorp/aws/latest/docs) provider, the AWS CLI, every AWS SDK and rclone work with it. The Cloider provider creates the bucket and its access key. This guide shows how to then upload files from Terraform with `aws_s3_object`, and how to hand the same four settings to the AWS CLI, SDKs, rclone and workloads in a cluster.
+
+## At a glance
+
+Every S3 client needs four settings:
+
+| Setting | Value | From Terraform |
+| --- | --- | --- |
+| **Endpoint** | The region's S3 endpoint, such as `https://s3.eu-central-2.cloider.com` | `cloider_bucket.<name>.endpoint` |
+| **Region** | The bucket's region code, such as `eu-central-2` | `cloider_bucket.<name>.region` |
+| **Access key** | The key's access key id | `cloider_bucket_key.<name>.access_key` |
+| **Secret key** | The key's secret | `cloider_bucket_key.<name>.secret_key` (sensitive) |
+
+The regions and their endpoints are also listed by [`cloider_bucket_regions`](/terraform/data-sources/bucket-regions). See [S3 compatibility](/object-storage/s3-compatibility) for what the S3 API supports.
+
+## Step 1: Create a bucket and a key
+
+```hcl title="storage/main.tf"
+provider "cloider" {}
+
+resource "cloider_bucket" "assets" {
+  name   = "acme-assets"
+  public = true
+}
+
+resource "cloider_bucket_key" "deploy" {
+  label   = "assets deploy"
+  buckets = [cloider_bucket.assets.id]
+}
+```
+
+```hcl title="storage/outputs.tf"
+output "s3_endpoint" {
+  value = cloider_bucket.assets.endpoint
+}
+
+output "s3_region" {
+  value = cloider_bucket.assets.region
+}
+
+output "s3_access_key" {
+  value = cloider_bucket_key.deploy.access_key
+}
+
+output "s3_secret_key" {
+  value     = cloider_bucket_key.deploy.secret_key
+  sensitive = true
+}
+```
+
+```bash
+cd storage
+terraform init && terraform apply
+```
+
+:::note[The secret key is only shown once]
+Cloider shows a key's secret only when the key is created. Terraform keeps it in state, so `terraform output -raw s3_secret_key` keeps working. If the state is lost, create a new key.
+:::
+
+## Step 2: Upload files with the aws provider
+
+Keep the files in a **separate configuration** from the one that creates the key, with the key in that configuration's environment. A provider can't be configured from a key created in the same plan, and keeping them apart means a change to the site never touches the bucket.
+
+```bash
+export AWS_ACCESS_KEY_ID="$(terraform -chdir=storage output -raw s3_access_key)"
+export AWS_SECRET_ACCESS_KEY="$(terraform -chdir=storage output -raw s3_secret_key)"
+```
+
+```hcl title="site/main.tf"
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+    }
+  }
+}
+
+# The skip_ settings stop the provider from calling AWS's own account and
+# metadata APIs, which a Cloider key can't reach
+provider "aws" {
+  region = "eu-central-2"
+
+  skip_credentials_validation = true
+  skip_requesting_account_id  = true
+  skip_metadata_api_check     = true
+
+  endpoints {
+    s3 = "https://s3.eu-central-2.cloider.com"
+  }
+}
+
+# One file with inline content
+resource "aws_s3_object" "robots" {
+  bucket       = "acme-assets"
+  key          = "robots.txt"
+  content      = "User-agent: *\nDisallow:\n"
+  content_type = "text/plain"
+}
+
+# Every file under ./site, uploaded again when it changes
+locals {
+  content_types = {
+    html = "text/html"
+    css  = "text/css"
+    js   = "text/javascript"
+    png  = "image/png"
+    svg  = "image/svg+xml"
+  }
+}
+
+resource "aws_s3_object" "site" {
+  for_each = fileset("${path.module}/site", "**")
+
+  bucket       = "acme-assets"
+  key          = each.value
+  source       = "${path.module}/site/${each.value}"
+  source_hash  = filemd5("${path.module}/site/${each.value}")
+  content_type = lookup(local.content_types, reverse(split(".", each.value))[0], "application/octet-stream")
+}
+```
+
+```bash
+cd site
+terraform init && terraform apply
+```
+
+Because the bucket is public, each file is then readable at `https://acme-assets.s3.eu-central-2.cloider.com/<key>`, for example `https://acme-assets.s3.eu-central-2.cloider.com/robots.txt`. Listing the bucket and changing files still need a key.
+
+:::tip[Large sites]
+Terraform tracks every uploaded file in state, which gets slow with thousands of files. For large or frequently changing sites, sync with the AWS CLI or rclone from CI instead, see below and [Static assets on object storage](/guides/static-assets-on-object-storage).
+:::
+
+## Use the key with the AWS CLI
+
+Create a `cloider` profile from the outputs:
+
+```bash
+aws configure set aws_access_key_id "$(terraform output -raw s3_access_key)" --profile cloider
+aws configure set aws_secret_access_key "$(terraform output -raw s3_secret_key)" --profile cloider
+aws configure set region eu-central-2 --profile cloider
+aws configure set endpoint_url https://s3.eu-central-2.cloider.com --profile cloider
+
+aws s3 cp ./photo.jpg s3://acme-assets/ --profile cloider
+aws s3 ls s3://acme-assets --profile cloider
+```
+
+## Use the key with AWS SDKs and other clients
+
+The AWS SDKs read these environment variables, `AWS_ENDPOINT_URL_S3` included:
+
+```bash
+export AWS_ACCESS_KEY_ID="$(terraform output -raw s3_access_key)"
+export AWS_SECRET_ACCESS_KEY="$(terraform output -raw s3_secret_key)"
+export AWS_REGION=eu-central-2
+export AWS_ENDPOINT_URL_S3=https://s3.eu-central-2.cloider.com
+```
+
+See [SDKs](/object-storage/sdks) for code in JavaScript, Python, Go and other languages.
+
+## Use the key with rclone
+
+```ini title="~/.config/rclone/rclone.conf"
+[cloider]
+type = s3
+provider = Other
+access_key_id = <access key>
+secret_access_key = <secret key>
+endpoint = https://s3.eu-central-2.cloider.com
+region = eu-central-2
+```
+
+```bash
+rclone sync ./public cloider:acme-assets
+```
+
+Or have Terraform write the file with the `local` provider, from the same outputs. More tools are on [S3 tools](/object-storage/s3-tools).
+
+## Hand the key to a workload in a cluster
+
+With the `kubernetes` provider configured from a [`cloider_cluster`](/terraform/resources/cluster), store the settings in a Secret and load it with `envFrom`:
+
+```hcl title="main.tf"
+resource "kubernetes_secret_v1" "s3" {
+  metadata {
+    name      = "s3-credentials"
+    namespace = "default"
+  }
+
+  data = {
+    AWS_ACCESS_KEY_ID     = cloider_bucket_key.deploy.access_key
+    AWS_SECRET_ACCESS_KEY = cloider_bucket_key.deploy.secret_key
+    AWS_REGION            = cloider_bucket.assets.region
+    AWS_ENDPOINT_URL_S3   = cloider_bucket.assets.endpoint
+  }
+}
+```
+
+See [Use buckets with apps and clusters](/object-storage/use-with-apps-and-clusters).
+
+## Store Terraform's own state in a bucket
+
+The same kind of bucket and key can hold Terraform state, with the `s3` backend. See [Store state in a bucket](/terraform/guides/state-backend).
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The aws provider tries to reach `sts.amazonaws.com` or the metadata service | The `skip_` settings are missing | Add `skip_credentials_validation`, `skip_requesting_account_id` and `skip_metadata_api_check` |
+| `NoSuchBucket` | Wrong bucket name, or `endpoints.s3` missing so requests go to AWS | Set `endpoints { s3 = ... }` to the bucket's `endpoint` |
+| `AccessDenied` when uploading | The key is `read_only`, or doesn't list this bucket | Use a read and write key whose `buckets` includes the bucket, or `all_buckets = true` |
+| `s3_secret_key` output is null | The key was imported, not created by Terraform | Create a new key with Terraform |
+
+## Next steps
+
+- [`cloider_bucket`](/terraform/resources/bucket) and [`cloider_bucket_key`](/terraform/resources/bucket-key)
+- [Store state in a bucket](/terraform/guides/state-backend)
+- [Public and private buckets](/object-storage/public-and-private-buckets)
+
+<FAQ items={[
+  {q: 'Can I use the Terraform AWS provider with Cloider object storage?', a: 'Yes, for S3 objects. Configure the aws provider with endpoints { s3 = "https://s3.eu-central-2.cloider.com" }, the bucket\'s region, a Cloider bucket key in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, and the skip_credentials_validation, skip_requesting_account_id and skip_metadata_api_check settings.'},
+  {q: 'Should I create the Cloider bucket with the AWS provider?', a: 'No. Create buckets and keys with the Cloider provider\'s cloider_bucket and cloider_bucket_key, which also set the region, visibility and versioning. Use the aws provider only for objects in the bucket.'},
+  {q: 'What S3 endpoint does a Cloider bucket use?', a: 'The endpoint of its region, such as https://s3.eu-central-2.cloider.com, available as the cloider_bucket resource\'s endpoint attribute.'},
+]} />
