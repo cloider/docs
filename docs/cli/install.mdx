@@ -3,10 +3,10 @@ title: Install the Cloider CLI on macOS, Linux and Windows
 sidebar_label: Install
 sidebar_position: 2
 description: Install the cloider CLI with the install script or from a release archive, verify its SHA-256 checksum, pin a version, install it in CI or Docker, and uninstall it.
-keywords: [install cloider cli, cloider install.sh, cloider windows, cloider linux, cloider macos, cloider arm64, cloider checksum, uninstall cloider]
+keywords: [install cloider cli, cloider install.sh, cloider install.ps1, cloider windows, cloider powershell, cloider linux, cloider macos, cloider arm64, cloider checksum, uninstall cloider]
 ---
 
-The Cloider CLI is a single, self-contained binary called `cloider` (`cloider.exe` on Windows). You install it with a one-line script on macOS and Linux, or by unpacking a release archive on any platform. This page covers every way to install it, how to check the download, how to pin a version, and how to remove it again.
+The Cloider CLI is a single, self-contained binary called `cloider` (`cloider.exe` on Windows). You install it with a one-line script, `install.sh` on macOS and Linux or `install.ps1` in PowerShell on Windows, or by unpacking a release archive on any platform. This page covers every way to install it, how to check the download, how to pin a version, and how to remove it again.
 
 If you only want the short version, see [Install the CLI](/get-started/install-the-cli) in Get started.
 
@@ -16,6 +16,7 @@ If you only want the short version, see [Install the CLI](/get-started/install-t
 | --- | --- |
 | **Platforms** | macOS, Linux and Windows, each on `amd64` (x86-64) and `arm64` |
 | **Install script** | `curl -fsSL https://cloider.com/install.sh \| sh` (macOS and Linux) |
+| **Install script, Windows** | `irm https://cloider.com/install.ps1 \| iex` (PowerShell) |
 | **Release archives** | `https://cloider-cli.s3.eu-central-2.cloider.com/<version>/` |
 | **Latest version number** | `https://cloider-cli.s3.eu-central-2.cloider.com/latest.txt` |
 | **Integrity** | Every release has a `checksums.txt` with SHA-256 sums. The script checks it for you |
@@ -37,9 +38,9 @@ Cloider publishes a build of the CLI for six platforms with every release:
 
 Each archive holds one folder named like the archive (for example `cloider_0.6.0_linux_amd64/`) with the `cloider` binary (`cloider.exe` on Windows) and a `README.md`.
 
-## Install with the install script (macOS and Linux)
+## Install with the install script
 
-The install script is the fastest way to install the CLI on macOS and Linux, including WSL on Windows.
+The install script is the fastest way to install the CLI. On macOS, Linux and WSL it is a shell script you pipe to `sh`, on Windows a PowerShell script you pipe to `iex`.
 
 <Tabs groupId="os" queryString>
 <TabItem value="macos" label="macOS" default>
@@ -79,7 +80,20 @@ wget -qO- https://cloider.com/install.sh | sh
 </TabItem>
 <TabItem value="windows" label="Windows">
 
-The install script doesn't run in PowerShell or the Windows command prompt. Use the [manual install for Windows](#install-on-windows) below. Inside WSL (Windows Subsystem for Linux), use the Linux tab.
+Run this in PowerShell (no administrator rights needed):
+
+```powershell
+irm https://cloider.com/install.ps1 | iex
+```
+
+```text title="Output"
+Downloading cloider 0.6.0 for windows/amd64
+Installed cloider 0.6.0 to C:\Users\jane\AppData\Local\cloider\cloider.exe
+Added C:\Users\jane\AppData\Local\cloider to your Path
+Get started with: cloider login
+```
+
+See [Install on Windows](#install-on-windows) for what it does there. Inside WSL (Windows Subsystem for Linux), use the Linux tab.
 
 </TabItem>
 </Tabs>
@@ -102,7 +116,7 @@ Step by step, it:
 6. Unpacks the archive, moves `cloider` into the install directory and makes it executable.
 7. Prints the `export PATH=...` line to add if the install directory isn't on your `PATH`, then removes the temporary directory.
 
-The script never uses `sudo`, never edits your shell profile and doesn't log you in.
+The script never uses `sudo`, never edits your shell profile and doesn't log you in. The Windows script, `install.ps1`, is described in [Install on Windows](#install-on-windows).
 
 ### Install script options
 
@@ -122,6 +136,13 @@ curl -fsSL https://cloider.com/install.sh | CLOIDER_VERSION=0.6.0 sh
 
 # Install system wide when /usr/local/bin needs root
 curl -fsSL https://cloider.com/install.sh | sudo sh
+```
+
+On Windows, set them in PowerShell before running the script:
+
+```powershell title="PowerShell"
+$env:CLOIDER_VERSION = "0.6.0"
+irm https://cloider.com/install.ps1 | iex
 ```
 
 :::note[Installing with sudo]
@@ -145,41 +166,34 @@ fish_add_path ~/.local/bin
 
 ## Install on Windows
 
-On Windows you download the zip for your architecture, check it, unpack `cloider.exe` and put its folder on your `Path`. Most PCs are `amd64`; Windows on ARM devices (for example Surface Pro X or Snapdragon laptops) are `arm64`. You can check with `$env:PROCESSOR_ARCHITECTURE` in PowerShell, which prints `AMD64` or `ARM64`.
+Run the install script in PowerShell (no administrator rights needed):
 
-Run this in PowerShell (no administrator rights needed). It installs into `%LOCALAPPDATA%\cloider` and adds that folder to your user `Path`:
-
-```powershell title="PowerShell"
-$base = "https://cloider-cli.s3.eu-central-2.cloider.com"
-$version = (Invoke-RestMethod "$base/latest.txt").Trim()
-$arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "amd64" }
-$name = "cloider_${version}_windows_${arch}"
-
-# Download the zip and the checksums
-Invoke-WebRequest "$base/$version/$name.zip" -OutFile "$env:TEMP\$name.zip"
-Invoke-WebRequest "$base/$version/checksums.txt" -OutFile "$env:TEMP\cloider-checksums.txt"
-
-# Check the SHA-256
-$expected = (Select-String -Path "$env:TEMP\cloider-checksums.txt" -Pattern " $name.zip$").Line.Split(" ")[0]
-$actual = (Get-FileHash "$env:TEMP\$name.zip" -Algorithm SHA256).Hash.ToLower()
-if ($expected -ne $actual) { throw "checksum mismatch for $name.zip" }
-
-# Unpack and install
-$dir = "$env:LOCALAPPDATA\cloider"
-Expand-Archive "$env:TEMP\$name.zip" -DestinationPath "$env:TEMP\cloider-install" -Force
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-Move-Item "$env:TEMP\cloider-install\$name\cloider.exe" "$dir\cloider.exe" -Force
-
-# Add the folder to your user Path (once)
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$dir*") {
-  [Environment]::SetEnvironmentVariable("Path", "$userPath;$dir", "User")
-}
+```powershell
+irm https://cloider.com/install.ps1 | iex
 ```
 
-Open a new terminal so it picks up the new `Path`, then run `cloider version`.
+```text title="Output"
+Downloading cloider 0.6.0 for windows/amd64
+Installed cloider 0.6.0 to C:\Users\jane\AppData\Local\cloider\cloider.exe
+Added C:\Users\jane\AppData\Local\cloider to your Path
+Get started with: cloider login
+```
 
-If you prefer to click through it:
+The script:
+
+1. Picks the build for your architecture from `$env:PROCESSOR_ARCHITECTURE` (`AMD64` or `ARM64`). Most PCs are `amd64`; Windows on ARM devices (for example Surface Pro X or Snapdragon laptops) are `arm64`.
+2. Reads the latest stable version from `latest.txt`, unless you set `CLOIDER_VERSION`.
+3. Downloads `cloider_<version>_windows_<arch>.zip` and `checksums.txt`, and stops with `checksum mismatch` if the zip's SHA-256 differs.
+4. Unpacks `cloider.exe` into `%LOCALAPPDATA%\cloider`, or the folder in `CLOIDER_INSTALL_DIR`. A `cloider.exe` already there, even a running one, is renamed to `cloider.exe.old` first.
+5. Adds that folder to your user `Path` if it isn't on it yet, and to the current PowerShell window, so `cloider` runs right away.
+
+`CLOIDER_VERSION` and `CLOIDER_INSTALL_DIR` work as in [Install script options](#install-script-options). From the Windows command prompt, run it through PowerShell:
+
+```text title="Command prompt"
+powershell -c "irm https://cloider.com/install.ps1 | iex"
+```
+
+To install by hand instead:
 
 1. Open `https://cloider-cli.s3.eu-central-2.cloider.com/latest.txt` in your browser to see the latest version number, for example `0.6.0`.
 2. Download `https://cloider-cli.s3.eu-central-2.cloider.com/0.6.0/cloider_0.6.0_windows_amd64.zip` (replace both version numbers, and `amd64` with `arm64` on an ARM device).
@@ -384,7 +398,7 @@ Tokens you created yourself in the dashboard and passed with `CLOIDER_TOKEN` or 
 | Problem | Cause and fix |
 | --- | --- |
 | `cloider: command not found` | The install directory isn't on your `PATH`. Add the `export PATH=...` line the script printed to your shell profile and open a new terminal. |
-| `cloider install: MINGW64_NT-10.0 isn't supported by this script; on Windows download the zip from ...` | The script only runs on macOS and Linux. On Windows, follow [Install on Windows](#install-on-windows). |
+| `cloider install: MINGW64_NT-10.0 isn't supported by this script; on Windows run this in PowerShell: ...` | You ran `install.sh` in Git Bash. On Windows, run `irm https://cloider.com/install.ps1 \| iex` in PowerShell, see [Install on Windows](#install-on-windows). |
 | `cloider install: <arch> isn't a supported architecture` | Only `amd64` and `arm64` builds exist. 32-bit systems aren't supported. |
 | `cloider install: needs curl or wget` | Install one of them, for example `apt-get install curl`. |
 | `cloider install: checksum mismatch for cloider_..._.tar.gz` | The download was corrupted or altered on the way. Run the script again. If it keeps failing, check for a proxy that rewrites downloads. |
@@ -402,7 +416,7 @@ Tokens you created yourself in the dashboard and passed with `CLOIDER_TOKEN` or 
 
 <FAQ items={[
   {q: 'How do I install the Cloider CLI on macOS or Linux?', a: 'Run curl -fsSL https://cloider.com/install.sh | sh. The script downloads the latest release for your system, checks its SHA-256 checksum and installs the cloider binary into /usr/local/bin if you can write there, otherwise into ~/.local/bin.'},
-  {q: 'How do I install the Cloider CLI on Windows?', a: 'Download cloider_<version>_windows_amd64.zip (or windows_arm64 on ARM) from https://cloider-cli.s3.eu-central-2.cloider.com/<version>/, check it against checksums.txt, extract cloider.exe into a folder and add that folder to your Path. The latest version number is in latest.txt.'},
+  {q: 'How do I install the Cloider CLI on Windows?', a: 'Run irm https://cloider.com/install.ps1 | iex in PowerShell. The script downloads the zip for your architecture, checks its SHA-256 checksum, installs cloider.exe into %LOCALAPPDATA%\\cloider and adds that folder to your user Path.'},
   {q: 'How do I install a specific version of the CLI?', a: 'Set CLOIDER_VERSION for the install script: curl -fsSL https://cloider.com/install.sh | CLOIDER_VERSION=0.6.0 sh. Run cloider update disable afterwards if you want to stay on that version, because the CLI otherwise updates itself to the latest.'},
   {q: 'Does the install script need root?', a: 'No. Without root it installs into ~/.local/bin. It only installs into /usr/local/bin when you can already write there, and never calls sudo itself.'},
   {q: 'How can I check that the download is genuine?', a: 'Every release has a checksums.txt with the SHA-256 of each archive. The install script and the built-in updater check it automatically. For a manual install, run sha256sum --ignore-missing -c checksums.txt on Linux or shasum -a 256 on macOS.'},

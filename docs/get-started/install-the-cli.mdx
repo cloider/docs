@@ -12,8 +12,8 @@ The `cloider` CLI is a single binary that manages Cloider from a terminal: apps,
 
 | | |
 | --- | --- |
-| **Platforms** | macOS and Linux (amd64 and arm64) with the install script, Windows (amd64 and arm64) from a zip |
-| **Install** | `curl -fsSL https://cloider.com/install.sh \| sh` |
+| **Platforms** | macOS, Linux and Windows, each on amd64 and arm64 |
+| **Install** | `curl -fsSL https://cloider.com/install.sh \| sh`, on Windows `irm https://cloider.com/install.ps1 \| iex` in PowerShell |
 | **Log in** | `cloider login`, which creates an API token through the browser |
 | **Check** | `cloider whoami` |
 | **Updates** | Automatic, checked once a day. See [Updating](/cli/updating) |
@@ -48,13 +48,22 @@ The script needs `curl` or `wget`, and `sha256sum` or `shasum`.
 
 ## Install on Windows
 
-The install script doesn't run on Windows. Instead:
+Run the install script in PowerShell:
 
-1. Download the zip for your architecture (`amd64` for most PCs, `arm64` for ARM devices) from the Cloider CLI downloads at `https://cloider-cli.s3.eu-central-2.cloider.com/<version>/`. The latest version number is in `https://cloider-cli.s3.eu-central-2.cloider.com/latest.txt`.
-2. Extract `cloider.exe` into a folder of your choice, for example `C:\Tools\cloider`.
-3. Add that folder to your `Path` environment variable, then open a new terminal.
+```powershell
+irm https://cloider.com/install.ps1 | iex
+```
 
-More detail is in [CLI install](/cli/install).
+```text title="Output"
+Downloading cloider 1.4.0 for windows/amd64
+Installed cloider 1.4.0 to C:\Users\jane\AppData\Local\cloider\cloider.exe
+Added C:\Users\jane\AppData\Local\cloider to your Path
+Get started with: cloider login
+```
+
+The script downloads the latest release for your architecture, checks it against the release's SHA-256 checksums, installs `cloider.exe` into `%LOCALAPPDATA%\cloider` and adds that folder to your user `Path`. It takes the same `CLOIDER_INSTALL_DIR` and `CLOIDER_VERSION` variables, set with `$env:CLOIDER_VERSION = "1.3.0"` before you run it.
+
+More detail, including a manual install, is in [CLI install](/cli/install#install-on-windows).
 
 ## Check the installation
 
@@ -175,7 +184,7 @@ cloider logout
 - [Set up the MCP server](/mcp/setup) so an AI agent can use the CLI.
 
 <FAQ items={[
-  {q: 'How do I install the Cloider CLI?', a: 'On macOS or Linux, run curl -fsSL https://cloider.com/install.sh | sh. On Windows, download the zip for your architecture, extract cloider.exe and add its folder to your Path.'},
+  {q: 'How do I install the Cloider CLI?', a: 'On macOS or Linux, run curl -fsSL https://cloider.com/install.sh | sh. On Windows, run irm https://cloider.com/install.ps1 | iex in PowerShell.'},
   {q: 'How does cloider login work?', a: 'It opens the Authorize Cloider CLI page in your browser, where you pick the account and Read and write or Read only. Clicking Authorize CLI creates an API token for that account and hands it to the CLI, which saves it in ~/.cloider/token.'},
   {q: 'How do I use the CLI in CI?', a: 'Create an API token in Access Control, API Tokens, store it as a secret in your CI system and expose it as the CLOIDER_TOKEN environment variable. No login step is needed.'},
   {q: 'Where does the CLI store my token?', a: 'In plain text in ~/.cloider/token for the default profile and ~/.cloider/tokens/<profile> for other profiles. CLOIDER_CONFIG_DIR moves the whole directory.'},

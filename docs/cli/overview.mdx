@@ -13,7 +13,7 @@ The Cloider CLI, `cloider`, does from a terminal what the [Cloider dashboard](/g
 | | |
 | --- | --- |
 | **What it is** | The official command line tool for Cloider, a single binary named `cloider` |
-| **Install** | `curl -fsSL https://cloider.com/install.sh \| sh` on macOS and Linux, a zip on Windows. See [Install](/cli/install) |
+| **Install** | `curl -fsSL https://cloider.com/install.sh \| sh` on macOS and Linux, `irm https://cloider.com/install.ps1 \| iex` in PowerShell on Windows. See [Install](/cli/install) |
 | **Log in** | `cloider login` through the browser, or an API token in `CLOIDER_TOKEN`. See [Authentication](/cli/authentication) |
 | **Command shape** | `cloider <noun> <verb> [arguments] [flags]`, for example `cloider cluster create staging` |
 | **Output** | Tables for people, `-o json` or `-o yaml` for scripts, `-q` for ids only. See [Output and scripting](/cli/output-and-scripting) |
@@ -73,7 +73,7 @@ Connecting a git provider (`cloider git connect`) also finishes in the browser, 
 
 This walk through takes you from nothing to a running Kubernetes cluster and a deployed app. It takes about five minutes.
 
-**1. Install the CLI.** On Windows, see [Install](/cli/install#install-on-windows).
+**1. Install the CLI.** On Windows, run `irm https://cloider.com/install.ps1 | iex` in PowerShell instead, see [Install](/cli/install#install-on-windows).
 
 ```bash
 curl -fsSL https://cloider.com/install.sh | sh
@@ -257,7 +257,7 @@ These flags work on every command. The full list, with environment variables, is
 
 <Cards cols={2}>
   <Card title="Install the CLI" href="/cli/install" icon="download-outline">
-    The install script, Windows zips, checksums, CI and Docker.
+    The install scripts, release archives, checksums, CI and Docker.
   </Card>
   <Card title="Authentication" href="/cli/authentication" icon="key-variant">
     Browser login, API tokens, profiles and CI.
@@ -272,7 +272,7 @@ These flags work on every command. The full list, with environment variables, is
 
 <FAQ items={[
   {q: 'What is the Cloider CLI?', a: 'cloider is the official command line tool for Cloider. It manages Kubernetes clusters, databases, buckets, container registry projects, apps, domains, DNS records, support requests, usage and billing from a terminal, using the same REST API as the dashboard.'},
-  {q: 'How do I install the Cloider CLI?', a: 'On macOS and Linux run curl -fsSL https://cloider.com/install.sh | sh. On Windows download the zip for your architecture from https://cloider-cli.s3.eu-central-2.cloider.com/<version>/, extract cloider.exe and add its folder to your Path.'},
+  {q: 'How do I install the Cloider CLI?', a: 'On macOS and Linux run curl -fsSL https://cloider.com/install.sh | sh. On Windows run irm https://cloider.com/install.ps1 | iex in PowerShell.'},
   {q: 'Is the CLI free?', a: 'Yes. The CLI itself costs nothing. You pay only for the resources you create with it, exactly as if you created them in the dashboard.'},
   {q: 'Can I use the CLI in CI/CD pipelines?', a: 'Yes. Set the CLOIDER_TOKEN environment variable to an API token, use -o json for machine readable output, pass --yes to skip confirmations and --wait to wait for changes to finish. Commands never prompt without a terminal.'},
   {q: 'Can I manage members and API tokens with the CLI?', a: 'You can list them with cloider member list and cloider token list. Adding members, changing roles, creating and revoking tokens are done in the dashboard only, so a leaked token can\'t grant more access.'},

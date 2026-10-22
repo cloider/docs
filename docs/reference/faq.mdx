@@ -105,7 +105,7 @@ Read more: [Domains overview](/domains/overview).
 
 <FAQ title="" items={[
   {q: 'Which tools can manage Cloider?', a: 'The dashboard, the cloider CLI, the Terraform provider cloider/cloider, the REST API at https://cloider.com/api, and the MCP server for AI agents (cloider mcp).'},
-  {q: 'How do I install the CLI?', a: 'On macOS or Linux run curl -fsSL https://cloider.com/install.sh | sh, then cloider login. On Windows, download the zip for your architecture.'},
+  {q: 'How do I install the CLI?', a: 'On macOS or Linux run curl -fsSL https://cloider.com/install.sh | sh, then cloider login. On Windows, run irm https://cloider.com/install.ps1 | iex in PowerShell.'},
   {q: 'What is the API rate limit?', a: '10 requests a second and 100 a minute per client. Over the limit the API answers 429; the CLI retries automatically.'},
   {q: 'Can an AI agent manage my Cloider account?', a: 'Yes. Add cloider mcp to Claude Code, Claude Desktop, Cursor or another MCP client. Use cloider mcp --read-only if the agent should only look.'},
   {q: 'Can I manage members or API tokens with the API?', a: 'No. Members and API tokens are managed in the dashboard only. The API, CLI and MCP can list them.'}
