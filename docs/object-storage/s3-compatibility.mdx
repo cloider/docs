@@ -59,7 +59,6 @@ This keeps a leaked access key from making a bucket public, rewriting its policy
 | Static website hosting | A bucket serves files, not a website: no index or error documents. Host sites as [apps](/apps/overview) |
 | Custom domains for buckets | Files are served on the bucket's own address |
 | Bucket CORS configuration | Not available from Cloider's tools. Browser uploads with presigned URLs work, see [Troubleshooting](/object-storage/troubleshooting#browser-uploads-with-presigned-urls-fail) |
-| IP address conditions in bucket policies | `aws:SourceIp` isn't supported yet |
 | Default upload checksums of new AWS SDKs | Set checksum calculation to `when_required`, see below |
 
 ## Differences from Amazon S3

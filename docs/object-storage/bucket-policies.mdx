@@ -2,11 +2,11 @@
 title: S3 bucket policies on Cloider
 sidebar_label: Bucket policies
 sidebar_position: 8
-description: "Write S3 bucket policies for Cloider buckets: allow or deny actions per access key, folder and condition, with the supported fields and full JSON examples."
-keywords: [s3 bucket policy, bucket policy example, deny delete s3, s3 policy principal, s3:ListBucket, s3:GetObject, s3 policy condition, read only folder s3]
+description: "Write S3 bucket policies for Cloider buckets: allow or deny actions per access key, folder, IP address and condition, with the supported fields and full JSON examples."
+keywords: [s3 bucket policy, bucket policy example, deny delete s3, s3 policy principal, s3:ListBucket, s3:GetObject, s3 policy condition, read only folder s3, aws:SourceIp, s3 policy ip address, NotIpAddress]
 ---
 
-A bucket policy is a JSON document, in the same format as Amazon S3 bucket policies, that allows or denies specific S3 actions on a bucket to specific access keys or to everyone. Use it when an access key's scope (all or some buckets, read only or read and write) isn't fine enough: to stop a key from deleting, to make one folder read only, to give a key write access to a single folder, or to let anyone list a public bucket.
+A bucket policy is a JSON document, in the same format as Amazon S3 bucket policies, that allows or denies specific S3 actions on a bucket to specific access keys or to everyone. Use it when an access key's scope (all or some buckets, read only or read and write) isn't fine enough: to stop a key from deleting, to make one folder read only, to give a key write access to a single folder, to let a key work only from your network, or to let anyone list a public bucket.
 
 This page explains how policies are evaluated on Cloider, what they may contain, and gives complete examples you can paste.
 
@@ -273,7 +273,7 @@ Conditions limit a statement to requests that match. The format is AWS's: an ope
 }
 ```
 
-**Operators:** `StringEquals`, `StringNotEquals`, `StringLike`, `StringNotLike`, `StringEqualsIgnoreCase`, `StringNotEqualsIgnoreCase`, `NumericEquals`, `NumericNotEquals`, `NumericLessThan`, `NumericLessThanEquals`, `NumericGreaterThan`, `NumericGreaterThanEquals`, `DateEquals`, `DateNotEquals`, `DateLessThan`, `DateLessThanEquals`, `DateGreaterThan`, `DateGreaterThanEquals`, `Bool`, `Null`.
+**Operators:** `StringEquals`, `StringNotEquals`, `StringLike`, `StringNotLike`, `StringEqualsIgnoreCase`, `StringNotEqualsIgnoreCase`, `NumericEquals`, `NumericNotEquals`, `NumericLessThan`, `NumericLessThanEquals`, `NumericGreaterThan`, `NumericGreaterThanEquals`, `DateEquals`, `DateNotEquals`, `DateLessThan`, `DateLessThanEquals`, `DateGreaterThan`, `DateGreaterThanEquals`, `Bool`, `Null`, `IpAddress`, `NotIpAddress`.
 
 **Condition keys:**
 
@@ -282,15 +282,29 @@ Conditions limit a statement to requests that match. The format is AWS's: an ope
 | `aws:CurrentTime` | The time of the request, for `Date` operators |
 | `aws:Referer` | The request's `Referer` header |
 | `aws:UserAgent` | The request's `User-Agent` header |
+| `aws:SourceIp` | The IP address the request comes from, for `IpAddress` and `NotIpAddress`. See [IP addresses](#ip-addresses) |
 | `s3:prefix` | The `prefix` of a list request |
 | `s3:delimiter` | The `delimiter` of a list request |
 | `s3:max-keys` | The `max-keys` of a list request |
 | `s3:authType` | How the request was authenticated |
 | `s3:x-amz-<header>` | Any `x-amz-` request header, for example `s3:x-amz-acl` |
 
-**Value rules:** values are strings, numbers or booleans. They can't contain spaces (use a `StringLike` pattern with `*` or `?` instead) or `${...}` variables. `Numeric` operators need numbers, `Date` operators need dates like `2026-01-31T00:00:00Z`, `Bool` and `Null` need `true` or `false`.
+**Value rules:** values are strings, numbers or booleans. They can't contain spaces (use a `StringLike` pattern with `*` or `?` instead) or `${...}` variables. `Numeric` operators need numbers, `Date` operators need dates like `2026-01-31T00:00:00Z`, `Bool` and `Null` need `true` or `false`. `IpAddress` and `NotIpAddress` need IPv4 or IPv6 addresses (`198.51.100.7`) or CIDR ranges (`203.0.113.0/24`), and take only `aws:SourceIp`, which takes only them.
 
-**Not supported:** `IpAddress` and `NotIpAddress` with `aws:SourceIp` (not available yet), `aws:SecureTransport`, and `s3:ExistingObjectTag/<key>`. A policy that uses them is refused when you save it.
+**Not supported:** `aws:SecureTransport` and `s3:ExistingObjectTag/<key>`. A policy that uses them is refused when you save it.
+
+### IP addresses {#ip-addresses}
+
+`aws:SourceIp` is the public IPv4 address the request reaches Cloider from (the S3 endpoints have no IPv6 address). Behind a NAT, an office router or a VPN, that is the shared public address, not the machine's own.
+
+| Request | `aws:SourceIp` |
+| --- | --- |
+| S3 tools, SDKs and scripts with an access key | The public IP of the machine running them |
+| Uploads and downloads in the dashboard and with `cloider bucket upload` / `download` | Your public IP: they use presigned URLs, straight from your browser or machine |
+| Everything else the dashboard's **Files** tab and the other `cloider bucket` file commands do (listing, deleting, restoring, new folders), and settings changes such as versioning and lifecycle rules | An address inside Cloider, not yours |
+| Apps and Kubernetes clusters running on Cloider | An address inside Cloider that other accounts' workloads share |
+
+So name your access keys in a statement with an IP condition, rather than everyone: a Deny for everyone with `NotIpAddress` also refuses the dashboard's file listing and deleting, whatever your own IP is. And don't allow Cloider's internal addresses in a policy; give workloads on Cloider their own access key instead.
 
 ### Limits
 
@@ -415,6 +429,28 @@ A temporary key for a contractor or a migration: its writes are denied after the
 
 Deleting the key when the work is done is simpler still: see [Access keys](/object-storage/access-keys#delete-an-access-key).
 
+### Let a key work only from your network
+
+The key is refused from every other address, so a leaked copy of it is useless outside your office or CI runners:
+
+```json title="key-only-from-office.json"
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "KeyOnlyFromOffice",
+      "Effect": "Deny",
+      "Principal": {"AWS": ["CLDRZ8Q4M2X7KD1PLW0B"]},
+      "Action": ["s3:GetObject*", "s3:PutObject*", "s3:DeleteObject*", "s3:List*"],
+      "Resource": ["arn:aws:s3:::acme-assets", "arn:aws:s3:::acme-assets/*"],
+      "Condition": {"NotIpAddress": {"aws:SourceIp": ["203.0.113.0/24", "198.51.100.7"]}}
+    }
+  ]
+}
+```
+
+`s3:PutObject*` also covers multipart uploads, and presigned URLs made with this key only work from these addresses too. The statement names the key, so the dashboard keeps working; see [IP addresses](#ip-addresses) before denying everyone.
+
 ### Let anyone list a public bucket
 
 On a public bucket, add listing to public downloads:
@@ -479,7 +515,8 @@ Listing can be limited with the `s3:prefix` condition, here to `downloads/`:
 | `Action "s3:*" also covers s3:PutBucketPolicy, which the dashboard needs to change this policy, list the actions instead` | Use narrower patterns or list the actions |
 | `allowing everyone ("*") needs Public Read Access, turn it on in Settings or name access keys` | Make the bucket public, or allow named keys instead |
 | `Resource "..." isn't in this bucket, use "arn:aws:s3:::acme-assets" or "arn:aws:s3:::acme-assets/*"` | Resources must be this bucket's ARN or keys inside it |
-| `Condition IpAddress: IP conditions aren't supported yet` | Remove the IP condition |
+| `Condition NotIpAddress aws:SourceIp: "..." isn't an IP address or a range like "203.0.113.0/24"` | Use addresses like `198.51.100.7` or CIDR ranges like `203.0.113.0/24` |
+| `Condition StringEquals aws:SourceIp: aws:SourceIp takes IpAddress or NotIpAddress` | Compare `aws:SourceIp` with `IpAddress` or `NotIpAddress` |
 | `Condition ... : values can't contain spaces, use a StringLike pattern instead` | Replace spaces with `?` or `*` in a `StringLike` pattern |
 | `The bucket's policy denies this, change the policy first.` | A Deny for everyone blocks a dashboard action, such as changing lifecycle rules. Edit the policy |
 | `Storage rejected the policy (MalformedPolicy)` | The storage refused the policy after the checks. Simplify it and try again |
@@ -495,7 +532,7 @@ Listing can be limited with the `s3:prefix` condition, here to `downloads/`:
   {q: 'Does Cloider support S3 bucket policies?', a: 'Yes. Each bucket can have one policy in AWS bucket policy JSON (Version 2012-10-17) with Allow and Deny statements. Principals are your access keys by access key id, or everyone ("*"). Set it in the bucket\'s Policy tab, with cloider bucket policy set, or through the REST API.'},
   {q: 'How do I stop an access key from deleting files?', a: 'Add a Deny statement for that key\'s access key id with the actions s3:DeleteObject and s3:DeleteObjectVersion on the resource arn:aws:s3:::<bucket>/*. The key keeps its other permissions.'},
   {q: 'Can I set a bucket policy with aws s3api put-bucket-policy?', a: 'No. Bucket policies are managed with Cloider\'s tools only (the dashboard, the cloider CLI, the REST API and the MCP server), so an access key can never change or read its own bucket\'s policy.'},
-  {q: 'Can a bucket policy restrict access by IP address?', a: 'Not yet. aws:SourceIp and the IpAddress and NotIpAddress operators are refused when you save a policy. To limit who can reach files, scope access keys to the buckets they need and keep the bucket private.'},
+  {q: 'Can a bucket policy restrict access by IP address?', a: 'Yes. Use aws:SourceIp with IpAddress or NotIpAddress, for example a Deny for an access key with NotIpAddress and your office range, so the key only works from there. The dashboard\'s file listing and workloads running on Cloider reach storage from inside Cloider, not from your public IP, so restrict access keys rather than everyone.'},
   {q: 'Why can\'t I use s3:* in a Deny?', a: 's3:* also covers s3:PutBucketPolicy and s3:DeleteBucketPolicy, which Cloider needs to be able to change or remove the policy. List the actions you want to deny instead, or use a narrower pattern such as s3:DeleteObject*.'},
   {q: 'Does a policy affect the dashboard?', a: 'A Deny that names everyone ("*") does: it applies to every request on the bucket, including the dashboard\'s file browser and the cloider bucket file commands. A Deny naming specific access keys only affects those keys.'},
 ]} />
