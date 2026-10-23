@@ -7,7 +7,8 @@ keywords: [custom domain, add domain, connect domain, use my own domain, point d
 ---
 
 A custom domain is a domain you own, such as `example.com`, or a subdomain of it, such as `shop.example.com`, that you
-add to Cloider to serve an [app](/apps/overview) or a [Kubernetes Service](/kubernetes/expose-services) on it over HTTPS.
+add to Cloider to serve an [app](/apps/overview), a [Kubernetes Service](/kubernetes/expose-services) or a bucket's
+[static website](/object-storage/static-websites) on it over HTTPS.
 This page walks through the whole setup: adding the domain, moving its DNS to Cloider (or keeping your current DNS
 provider), pointing the host names at Cloider, routing them with targets, and checking that HTTPS works.
 
@@ -19,7 +20,7 @@ provider), pointing the host names at Cloider, routing them with targets, and ch
 | 2 | Recreate the records the domain already has, such as email records | Cloider |
 | 3 | Change the domain's nameservers to `ns1.cloider.com` to `ns4.cloider.com` | Your registrar |
 | 4 | Point the host names you serve at Cloider with a CNAME or A record | Cloider |
-| 5 | Add a target that routes the domain to an app or a Service | Cloider |
+| 5 | Add a target that routes the domain to an app, a Service or a bucket's website | Cloider |
 | 6 | Wait for DNS and the HTTPS certificate, then check | Your terminal |
 
 Plan for 10 minutes of work, then up to 48 hours of waiting for the nameserver change in the worst case. Most domains
@@ -29,8 +30,9 @@ are working within an hour or two.
 
 - **A registered domain.** Cloider doesn't sell domains. Buy one from any registrar, such as Namecheap, GoDaddy,
   Cloudflare, Squarespace Domains or Amazon Route 53, and keep the login: you change the nameservers there.
-- **Something to serve.** A deployed [app](/apps/overview) whose status is `Ready`, or a [cluster](/kubernetes/overview)
-  with a Service to route to. You can add the domain first and the target later.
+- **Something to serve.** A deployed [app](/apps/overview) whose status is `Ready`, a [cluster](/kubernetes/overview)
+  with a Service to route to, or a public bucket with its [static website](/object-storage/static-websites) on. You can
+  add the domain first and the target later.
 - **Write access.** A member with read-only access, or a read-only API token, can't add domains.
 - **A free subdomain you keep.** Step 4 points your host names at one of your free `cloider.app` subdomains, for example
   the one your app was created with. See [Free subdomains](/domains/free-subdomains).
@@ -321,15 +323,16 @@ name except the apex.
 
 ## Step 5: Route the domain with a target
 
-A target sends requests for a path of the domain to an app or a cluster Service. This is what makes the domain serve
-something, and it switches the domain's status from `Pending` to `Active`.
+A target sends requests for a path of the domain to an app or a cluster Service, or the whole domain to a bucket's
+static website. This is what makes the domain serve something, and it switches the domain's status from `Pending` to
+`Active`.
 
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
 1. On the **Connect your apps** step, or on the domain's page under **Domains**, click **Add target**.
-2. In **Add a new target**, choose the **Target type**: **App** to pick one of your apps, or **Cluster** to pick a
-   cluster, **Namespace**, **Service** and **Port**.
+2. In **Add a new target**, choose the **Target type**: **App** to pick one of your apps, **Cluster** to pick a
+   cluster, **Namespace**, **Service** and **Port**, or **Bucket** to pick a bucket whose website is on.
 3. Leave **Path** as `/` to route the whole domain, and leave **Target path** empty unless you need to
    [rewrite the path](/domains/targets#rewrite-the-path).
 4. Click **Save**.
@@ -357,6 +360,16 @@ cloider target create example.com --cluster production --service shop/web --port
 ✓ Routed example.com/ to production/shop/web:80
 ```
 
+To a bucket's static website:
+
+```bash
+cloider target create example.com --bucket acme-site
+```
+
+```text title="Output"
+✓ Routed example.com/ to the bucket's website
+```
+
 </TabItem>
 <TabItem value="terraform" label="Terraform">
 
@@ -376,6 +389,14 @@ resource "cloider_target" "shop" {
   namespace  = "shop"
   service    = "web"
   port       = 80
+}
+```
+
+```hcl title="main.tf"
+# Or to a bucket's static website
+resource "cloider_target" "site" {
+  domain    = cloider_domain.example.name
+  bucket_id = cloider_bucket.site.id
 }
 ```
 

@@ -58,6 +58,7 @@ When you delete a bucket, its name becomes free for anyone to take, including an
 | **Region** | `eu-central-2` | Where the bucket lives and which endpoint serves it | No, it is fixed for the bucket's life |
 | **Public read access** | Off | Anyone with a file's URL can download it without a key. Listing and changing files still need an access key. See [Public and private buckets](/object-storage/public-and-private-buckets) | Yes, in the **Settings** tab |
 | **Versioning** | Off | Keeps the earlier version of a file when it is overwritten or deleted, so it can be restored. Earlier versions use storage and are billed. See [Versioning](/object-storage/versioning) | Yes, but once on it can only be suspended, not turned fully off |
+| **Static website** | Off | Serves the bucket as a website with `index.html` as its index document. Needs public read access. See [Static websites](/object-storage/static-websites) | Yes, in the **Settings** tab |
 
 There is one region today:
 
@@ -78,8 +79,9 @@ When versioning is on at creation, Cloider enables it before any access key can 
 4. Pick the **Region**. `eu-central-2` (Europe) is selected.
 5. Turn on **Public read access** if anyone should be able to download the files by their link, for example for website images.
 6. Turn on **Versioning** if overwritten and deleted files should be kept so you can restore them.
-7. Check the **Connection** box, which shows the **Endpoint**, **Region** and **Bucket URL** the bucket will have. The line under it shows the storage price per GB per month.
-8. Click **Create bucket**.
+7. Turn on **Static website** to serve the bucket as a website. The switch is disabled until **Public read access** is on, since the website is read without a key.
+8. Check the **Connection** box, which shows the **Endpoint**, **Region** and **Bucket URL** the bucket will have. The line under it shows the storage price per GB per month.
+9. Click **Create bucket**.
 
 <Screenshot
   src="/img/screenshots/object-storage/create.webp"
@@ -109,6 +111,7 @@ The flags:
 | `--region <code>` | Region code, see `cloider bucket regions`. Defaults to the first region, `eu-central-2` |
 | `--public` | Let anyone read its files over HTTPS |
 | `--versioning` | Keep previous versions of overwritten and deleted files |
+| `--website` | Serve it as a [static website](/object-storage/static-websites), with `index.html` as its index document. Needs `--public` |
 | `--wait` | Wait until the bucket is ready before returning |
 
 A public, versioned bucket:
@@ -217,6 +220,7 @@ The body fields:
 | `region` | string | No | Region code. Defaults to `eu-central-2` |
 | `public` | boolean | No | Public read access. Defaults to `false` |
 | `versioning` | boolean | No | Turn versioning on from the start. Defaults to `false` |
+| `website` | boolean | No | Serve the bucket as a [static website](/object-storage/static-websites). Needs `public`. Defaults to `false` |
 
 The bucket is created before the request returns. Read it back with its id:
 

@@ -20,7 +20,7 @@ This page explains the concepts behind object storage for readers who are new to
 | **Billing** | Per GB of stored data per month, billed by the hour. No charges for requests or traffic. See [Usage and billing](/object-storage/usage-and-billing) |
 | **Credentials** | [Access keys](/object-storage/access-keys): an access key id (`CLDR...`) and a secret, for every bucket of the account or only the ones you pick, read and write or read only. Up to 50 per account |
 | **Visibility** | Private by default. A [public bucket](/object-storage/public-and-private-buckets) lets anyone download a file by its URL, while listing and changing files still need a key |
-| **Features** | [Versioning](/object-storage/versioning) with restore of earlier versions and deleted files, [lifecycle rules](/object-storage/lifecycle-rules), [bucket policies](/object-storage/bucket-policies), a [file browser](/object-storage/manage-files) in the dashboard, multipart uploads from S3 tools |
+| **Features** | [Versioning](/object-storage/versioning) with restore of earlier versions and deleted files, [lifecycle rules](/object-storage/lifecycle-rules), [bucket policies](/object-storage/bucket-policies), [static website hosting](/object-storage/static-websites) on the bucket's own address or your domain, a [file browser](/object-storage/manage-files) in the dashboard, multipart uploads from S3 tools |
 | **Plans** | The Free plan allows one bucket. Paid accounts can create more |
 | **Status in the dashboard** | **Buckets** in the sidebar, marked **Beta** |
 | **Tools** | [Dashboard](https://cloider.com/dashboard/buckets), [CLI](/cli/commands/bucket), [Terraform](/terraform/resources/bucket), [REST API](/api/endpoints/buckets), [MCP](/mcp/tools) |
@@ -39,7 +39,7 @@ Object storage is a way to store files as **objects** in flat containers called 
 Object storage is the usual home for:
 
 - user uploads (avatars, documents, attachments),
-- static assets of a website (images, CSS, JavaScript, downloads),
+- static assets of a website (images, CSS, JavaScript, downloads), or a whole static website,
 - backups and database dumps,
 - logs, exports and data files that grow without limit,
 - build artifacts and release binaries,
@@ -156,6 +156,8 @@ A new bucket is **private**: every request needs an access key or a presigned UR
 
 For finer control, a [bucket policy](/object-storage/bucket-policies) grants or denies specific S3 actions to specific access keys, optionally only for some prefixes or under conditions. See [Public and private buckets](/object-storage/public-and-private-buckets).
 
+A public bucket can also be served as a [static website](/object-storage/static-websites): its own HTTPS address at `https://<bucket>.s3-website.eu-central-2.cloider.com` serves index and error documents, and a target puts it on a free subdomain or your own domain.
+
 ## What does Cloider Object Storage support?
 
 Cloider buckets support the parts of the S3 API that applications and tools use day to day:
@@ -167,12 +169,14 @@ Cloider buckets support the parts of the S3 API that applications and tools use 
 - [versioning](/object-storage/versioning) (enable and suspend, read and delete specific versions),
 - [lifecycle rules](/object-storage/lifecycle-rules) that expire objects, earlier versions and unfinished uploads,
 - [bucket policies](/object-storage/bucket-policies) with Allow and Deny statements naming your access keys,
+- [static website hosting](/object-storage/static-websites) with index and error documents, on the bucket's own address or a domain,
 - Signature Version 4 authentication, as every current S3 client uses.
 
 Some things work differently than on Amazon S3:
 
 - **Buckets are created by Cloider, not by S3 clients.** Create and delete buckets in the dashboard, with the CLI, Terraform, the API or MCP. An access key can't create or delete buckets.
 - **Public access is a bucket setting.** Make a bucket public with its visibility setting rather than with ACLs.
+- **Static websites are a bucket setting too.** Turn one on with Cloider's tools rather than with the S3 website API. Redirect rules aren't offered.
 - **Object lock is not offered.** Retention periods and legal holds can't be set on Cloider buckets. See [Data protection](/object-storage/data-protection).
 - **Newer AWS CLIs and SDKs need one setting.** Since early 2025 they add a checksum to every upload by default, which Cloider's storage doesn't accept. Set `request_checksum_calculation = when_required` (or the `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` environment variable). Every example in these docs includes it. See [Troubleshooting](/object-storage/troubleshooting#checksum-errors).
 
@@ -271,5 +275,6 @@ It calls the `create_bucket` tool:
   {q: 'Can I use Cloider Object Storage on the Free plan?', a: 'Yes. A Free plan account can create one bucket. Paid accounts can create more.'},
   {q: 'Are buckets private by default?', a: 'Yes. A new bucket is private, so every request needs an access key or a presigned URL. You can turn on Public read access when you create the bucket or later in its Settings tab. A public bucket lets anyone download a file by its URL, but listing the bucket and changing files still need an access key.'},
   {q: 'Is there a size limit for files?', a: 'The dashboard and the cloider CLI upload files of up to 5 GB each. S3 tools such as the AWS CLI and rclone, and the SDKs\' upload managers, use multipart uploads for larger files automatically.'},
+  {q: 'Can a Cloider bucket host a static website?', a: 'Yes. Make the bucket public and turn on Static Website in its Settings tab. It is served at https://<bucket>.s3-website.eu-central-2.cloider.com with an index document and an optional error document, and a Bucket target serves it on a free cloider.app subdomain or your own domain. Website traffic is free like any bucket traffic.'},
   {q: 'Does Cloider support object lock, retention or legal hold?', a: 'No. Object lock is not offered on Cloider buckets. To protect data from accidental overwrites and deletes, turn on versioning, give tools read only access keys where they only need to read, and use bucket policies to deny deletes.'},
 ]} />

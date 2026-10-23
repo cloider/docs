@@ -2,11 +2,11 @@
 title: cloider bucket command reference
 sidebar_label: bucket
 sidebar_position: 4
-description: Reference for cloider bucket, to manage S3 compatible buckets, upload and download files, versions, policies, lifecycle rules and S3 access keys from the terminal.
-keywords: [cloider bucket, cloider bucket upload, cloider bucket download, cloider bucket key create, s3 cli, object storage cli, bucket policy, lifecycle rules]
+description: Reference for cloider bucket, to manage S3 compatible buckets, files, versions, static websites, policies, lifecycle rules and access keys from the terminal.
+keywords: [cloider bucket, cloider bucket upload, cloider bucket download, cloider bucket website, cloider bucket key create, s3 cli, object storage cli, bucket policy, lifecycle rules]
 ---
 
-`cloider bucket` manages your [S3 compatible object storage](/object-storage/overview): buckets and their settings, the files in them, previous versions of files, bucket policies, lifecycle rules, and the S3 access keys that let other tools reach your buckets.
+`cloider bucket` manages your [S3 compatible object storage](/object-storage/overview): buckets and their settings, static websites, the files in them, previous versions of files, bucket policies, lifecycle rules, and the S3 access keys that let other tools reach your buckets.
 
 ```text
 cloider bucket <command> [flags]
@@ -29,6 +29,7 @@ cloider bucket <command> [flags]
 | [`cloider bucket regions`](#cloider-bucket-regions) | List the regions a bucket can be created in |
 | [`cloider bucket visibility`](#cloider-bucket-visibility) | Show or change whether anyone can read a bucket's files |
 | [`cloider bucket versioning`](#cloider-bucket-versioning) | Show or change whether a bucket keeps previous versions of its files |
+| [`cloider bucket website`](#cloider-bucket-website) | Show or change a bucket's static website |
 | [`cloider bucket policy get`, `set`, `delete`](#cloider-bucket-policy) | Show, set or remove a bucket's S3 policy |
 | [`cloider bucket lifecycle get`, `set`, `clear`](#cloider-bucket-lifecycle) | Show or replace a bucket's lifecycle rules |
 
@@ -100,10 +101,11 @@ Size:      1.2 GiB (as of 2026-10-20 06:00)
 Endpoint:  https://s3.eu-central-2.cloider.com
 URL:       https://acme-assets.s3.eu-central-2.cloider.com
 Policy:    none
+Website:   off
 Created:   2026-09-05 10:20
 ```
 
-**Endpoint** is what S3 tools connect to; **URL** is where a public bucket's files can be read over HTTPS. **Policy** says `none`, or ``set, see `cloider bucket policy get acme-assets` ``. MCP tool: `get_bucket`.
+**Endpoint** is what S3 tools connect to; **URL** is where a public bucket's files can be read over HTTPS. **Policy** says `none`, or ``set, see `cloider bucket policy get acme-assets` ``. **Website** says `off`, or the website's address followed by the domains that serve it, such as `https://acme-site.s3-website.eu-central-2.cloider.com, https://docs.example.com`. MCP tool: `get_bucket`.
 
 ## cloider bucket create
 
@@ -118,6 +120,7 @@ cloider bucket create <name> [flags]
 | `--region` | string | the first region | Region code, see [`cloider bucket regions`](#cloider-bucket-regions) |
 | `--public` | bool | `false` | Let anyone read its files over HTTPS |
 | `--versioning` | bool | `false` | Keep previous versions of overwritten and deleted files |
+| `--website` | bool | `false` | Serve it as a static website, with `index.html` as its index document. Needs `--public` |
 | `-w, --wait` | bool | `false` | Wait until the bucket is `Ready` |
 | `--timeout` | duration | `15m0s` | How long `--wait` waits |
 
@@ -256,7 +259,7 @@ cloider bucket visibility acme-backups private
 ✓ Bucket acme-backups is now private
 ```
 
-Making a bucket public asks `Anyone will be able to read every file in ... Continue? [y/N]`; pass `--yes` to skip it. `-o json` on the read form prints `{"public": true}`. See [Public and private buckets](/object-storage/public-and-private-buckets). MCP tool: `set_bucket_visibility`.
+Making a bucket public asks `Anyone will be able to read every file in ... Continue? [y/N]`; pass `--yes` to skip it. A bucket whose [website](#cloider-bucket-website) is on can't be made private: `The bucket's website needs it public, turn the website off first.` `-o json` on the read form prints `{"public": true}`. See [Public and private buckets](/object-storage/public-and-private-buckets). MCP tool: `set_bucket_visibility`.
 
 ## cloider bucket versioning
 
@@ -283,6 +286,41 @@ cloider bucket versioning acme-backups on
 ```
 
 The state is `Enabled`, `Suspended`, or `Off` for a bucket that was never versioned. `on` and `off` also accept `true`, `yes`, `enable`, `enabled` and `false`, `no`, `disable`, `disabled`. See [Versioning](/object-storage/versioning). MCP tools: `get_bucket_versioning`, `set_bucket_versioning`.
+
+## cloider bucket website
+
+Show a bucket's static website, or turn it on or off and set its documents. The website serves the bucket at `https://<bucket>.s3-website.eu-central-2.cloider.com`: a path ending in a slash gets the index document, and anything missing gets the error document with a `404`. The bucket has to be public.
+
+```text
+cloider bucket website <bucket> [on|off] [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--index` | string | the current one, `index.html` at first | The index document, a file name such as `index.html` |
+| `--error` | string | the current one, the built-in page at first | The error document, a key in the bucket such as `404.html`. `""` goes back to the built-in page |
+
+```bash
+cloider bucket website acme-site on --error 404.html
+```
+
+```text title="Output"
+✓ Website of acme-site is on at https://acme-site.s3-website.eu-central-2.cloider.com
+```
+
+Without `on` or `off` and without flags, it shows the settings:
+
+```bash
+cloider bucket website acme-site
+```
+
+```text title="Output"
+Website:         https://acme-site.s3-website.eu-central-2.cloider.com
+Index document:  index.html
+Error document:  404.html
+```
+
+The flags change only what you give, so `cloider bucket website acme-site --error index.html` sets the error document and leaves the website on or off as it is. `off` is refused while a domain points at the website, with `Domains still point at this website, remove their targets first.` `on` and `off` accept the same words as [`versioning`](#cloider-bucket-versioning). To serve the website on a domain, run `cloider target create <domain> --bucket <bucket>`, see [`cloider target`](/cli/commands/target). See [Static websites](/object-storage/static-websites). MCP tools: `get_bucket_website`, `set_bucket_website`.
 
 ## cloider bucket policy
 
@@ -787,5 +825,6 @@ MCP tool: `delete_bucket_key`.
   {q: 'How do I download a file to stdout?', a: 'Use --dest -: cloider bucket download acme-backups dump.sql.gz --dest - | gunzip.'},
   {q: 'How do I get S3 credentials for the AWS CLI?', a: 'Run eval "$(cloider bucket key create --label sync --bucket acme-assets --print-env)". It exports AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_ENDPOINT_URL and AWS_REGION, which the AWS CLI and most SDKs read.'},
   {q: 'How do I restore a deleted file?', a: 'In a bucket with versioning on, list deleted files with cloider bucket deleted acme-assets, then run cloider bucket restore acme-assets <key> --version-id <marker version id>.'},
+  {q: 'How do I host a static website in a bucket?', a: 'Make the bucket public, upload the site with cloider bucket upload acme-site ./dist -r, and run cloider bucket website acme-site on. The site is then at https://acme-site.s3-website.eu-central-2.cloider.com, and cloider target create example.com --bucket acme-site serves it on your domain.'},
   {q: 'How do I delete a folder in a bucket?', a: 'Run cloider bucket rm acme-assets --prefix tmp/ --yes. It deletes everything under the folder.'}
 ]} />

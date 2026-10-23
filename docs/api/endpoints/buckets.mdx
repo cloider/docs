@@ -2,11 +2,11 @@
 title: Object storage buckets API endpoints
 sidebar_label: Buckets
 sidebar_position: 4
-description: Cloider API reference for S3 compatible buckets, create, list, delete, regions, usage, public or private visibility, bucket policies, versioning and lifecycle rules.
-keywords: [cloider bucket api, s3 bucket api, create bucket api, bucket policy api, bucket versioning api, lifecycle rules api, object storage rest api]
+description: Cloider API reference for S3 compatible buckets, create, list, delete, usage, visibility, static websites, bucket policies, versioning and lifecycle rules.
+keywords: [cloider bucket api, s3 bucket api, create bucket api, bucket website api, static website api, bucket policy api, bucket versioning api, lifecycle rules api, object storage rest api]
 ---
 
-These endpoints manage Cloider [object storage](/object-storage/overview) buckets: create and delete them, read their endpoint and usage, make them public or private, and set bucket policies, versioning and lifecycle rules. To read and write the files inside a bucket you normally use any S3 client with an [access key](/api/endpoints/bucket-keys); the API's own file endpoints are on [Bucket objects](/api/endpoints/bucket-objects).
+These endpoints manage Cloider [object storage](/object-storage/overview) buckets: create and delete them, read their endpoint and usage, make them public or private, serve them as static websites, and set bucket policies, versioning and lifecycle rules. To read and write the files inside a bucket you normally use any S3 client with an [access key](/api/endpoints/bucket-keys); the API's own file endpoints are on [Bucket objects](/api/endpoints/bucket-objects).
 
 All paths are relative to `https://cloider.com/api`. See [Authentication](/api/authentication) for the token header.
 
@@ -21,6 +21,8 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | GET | [`/buckets/:hashed_id/status`](#get-a-buckets-status) | Read |
 | GET | [`/buckets/:hashed_id/usage`](#get-a-buckets-usage) | Read |
 | PUT | [`/buckets/:hashed_id/visibility`](#make-a-bucket-public-or-private) | Write |
+| GET | [`/buckets/:hashed_id/website`](#get-a-buckets-website) | Read |
+| PUT | [`/buckets/:hashed_id/website`](#turn-the-website-on-or-off) | Write |
 | PUT | [`/buckets/:hashed_id/policy`](#set-a-bucket-policy) | Write |
 | DELETE | [`/buckets/:hashed_id/policy`](#remove-the-bucket-policy) | Write |
 | GET | [`/buckets/:hashed_id/versioning`](#get-the-versioning-status) | Read |
@@ -41,8 +43,12 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
   "status": "Ready",
   "size_bytes": 734003200,
   "size_sampled_at": "2026-10-20T09:00:04.118230Z",
+  "website": false,
+  "website_index": "index.html",
+  "website_error": "",
   "endpoint": "https://s3.eu-central-2.cloider.com",
   "url": "https://acme-assets.s3.eu-central-2.cloider.com",
+  "website_url": "",
   "created_at": "2026-09-30T15:12:48.551021Z"
 }
 ```
@@ -57,8 +63,12 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | `status` | string | `Creating`, `Ready`, `Terminating` or `Failed` |
 | `size_bytes` | integer | Bytes stored, as of the last usage sample |
 | `size_sampled_at` | string or null | When `size_bytes` was measured |
+| `website` | boolean | `true` when the bucket is served as a [static website](/object-storage/static-websites) |
+| `website_index`, `website_error` | string | The website's index document (`index.html` by default) and error document (empty for the built-in page) |
 | `endpoint` | string | The region's S3 endpoint, for S3 clients |
 | `url` | string | The bucket's own address, `https://<bucket>.<endpoint host>`. Public objects are at `<url>/<key>` |
+| `website_url` | string | The website's address, `https://<bucket>.s3-website.eu-central-2.cloider.com`, while `website` is on, otherwise empty |
+| `domains` | object list | Only from [`GET /buckets/:hashed_id`](#get-a-bucket), and only when domains serve the website: each `{"domain_name", "domain_type"}` with a Bucket target pointing at it. `domain_type` is `Subdomain` or `CustomDomain` |
 | `created_at` | string | When the bucket was created |
 
 ## List buckets
@@ -87,8 +97,12 @@ curl https://cloider.com/api/buckets \
     "status": "Ready",
     "size_bytes": 734003200,
     "size_sampled_at": "2026-10-20T09:00:04.118230Z",
+    "website": false,
+    "website_index": "index.html",
+    "website_error": "",
     "endpoint": "https://s3.eu-central-2.cloider.com",
     "url": "https://acme-assets.s3.eu-central-2.cloider.com",
+    "website_url": "",
     "created_at": "2026-09-30T15:12:48.551021Z"
   }
 ]
@@ -133,6 +147,7 @@ Creates a bucket. Unlike clusters and databases, a bucket is created while the r
 | `region` | string | No | A region code from `GET /buckets/regions`. Default `eu-central-2` |
 | `public` | boolean | No | `true` to let anyone read objects by URL. Default `false` |
 | `versioning` | boolean | No | `true` to keep every version of every object from the start. Default `false` |
+| `website` | boolean | No | `true` to serve the bucket as a static website from the start, with `index.html` as its index document. Needs `public`, or the request fails with an error under `website`. Default `false` |
 
 ```bash
 curl -X POST https://cloider.com/api/buckets \
@@ -166,13 +181,30 @@ These names are reserved: names starting with `xn--`, `sthree-` or `amzn-s3-demo
 GET /buckets/:hashed_id
 ```
 
-Returns one bucket, in the shape [above](#the-bucket-object).
+Returns one bucket, in the shape [above](#the-bucket-object). For a website bucket served on domains, it also has `domains`.
 
 **Access:** any token.
 
 ```bash
-curl https://cloider.com/api/buckets/b7r2x \
+curl https://cloider.com/api/buckets/s3w8q \
   -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response (trimmed)"
+{
+  "hashed_id": "s3w8q",
+  "bucket_name": "acme-site",
+  "public": true,
+  "status": "Ready",
+  "website": true,
+  "website_index": "index.html",
+  "website_error": "404.html",
+  "url": "https://acme-site.s3.eu-central-2.cloider.com",
+  "website_url": "https://acme-site.s3-website.eu-central-2.cloider.com",
+  "domains": [
+    {"domain_name": "docs.example.com", "domain_type": "CustomDomain"}
+  ]
+}
 ```
 
 A deleted bucket, or an id of another account, answers `404 Not Found` (plain text).
@@ -272,11 +304,77 @@ curl -X PUT https://cloider.com/api/buckets/b7r2x/visibility \
 | --- | --- |
 | `400` | `The bucket must be ready to change its visibility.` |
 | `400` | `The bucket's policy allows everyone ("*"), remove those statements first.` (making it private while the policy grants everyone access) |
+| `400` | `The bucket's website needs it public, turn the website off first.` (making it private while its [website](#turn-the-website-on-or-off) is on) |
 | `400` | `Another change to this bucket is in progress, try again in a moment!` |
 | `400` | `Couldn't change the bucket's visibility, try again in a moment!` |
 | `403` | `This API token is read only!`, `You have read-only access to this account, you can not change buckets!` |
 
 See [Public and private buckets](/object-storage/public-and-private-buckets).
+
+## Get a bucket's website
+
+```http
+GET /buckets/:hashed_id/website
+```
+
+Returns the bucket's [static website](/object-storage/static-websites) settings.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/buckets/s3w8q/website \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "enabled": true,
+  "index_document": "index.html",
+  "error_document": "404.html",
+  "url": "https://acme-site.s3-website.eu-central-2.cloider.com"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `enabled` | boolean | Whether the bucket is served as a website |
+| `index_document` | string | The file served for `/` and every path ending in `/`, `index.html` by default |
+| `error_document` | string | The key served with a `404` for anything missing. Empty for the built-in page |
+| `url` | string | The website's address while `enabled`, otherwise empty |
+
+## Turn the website on or off
+
+```http
+PUT /buckets/:hashed_id/website
+```
+
+Turns the bucket's static website on or off and sets its documents. Every field is applied, so send the ones you want to keep too. Changes take up to about 30 seconds to show on the website. To serve the website on a domain, create a [Bucket target](/api/endpoints/targets#create-a-target).
+
+**Access:** Read & Write token. The bucket must be `Ready`, and public to turn the website on.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `enabled` | boolean | Yes | `true` to serve the bucket as a website, `false` to stop |
+| `index_document` | string | No | A file name without `/`, up to 255 characters. Empty means `index.html` |
+| `error_document` | string | No | A key in the bucket, up to 1024 characters, not starting with `/` and without `.` or `..` segments. Empty means the built-in page |
+
+```bash
+curl -X PUT https://cloider.com/api/buckets/s3w8q/website \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "index_document": "index.html", "error_document": "404.html"}'
+```
+
+The response has the shape of [`GET /buckets/:hashed_id/website`](#get-a-buckets-website).
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `index_document` | `The index document is a file name without a slash, like index.html` |
+| `400` | `error_document` | `The error document is a key in the bucket, like 404.html, not starting with a slash` |
+| `400` | `_` | `Make the bucket public first, its website is read without a key.` |
+| `400` | `_` | `Domains still point at this website, remove their targets first.` (turning it off while Bucket targets point at it) |
+| `400` | `_` | `The bucket must be ready to change its settings.`, `Another change to this bucket is in progress, try again in a moment!` |
+| `403` | `_` | `This API token is read only!`, `You have read-only access to this account, you can not change buckets!` |
 
 ## Set a bucket policy
 
@@ -485,7 +583,7 @@ Validation errors are on `rules` and name the rule, for example `Rule 2: another
 DELETE /buckets/:hashed_id
 ```
 
-Deletes the bucket and every object in it. This can't be undone. The bucket's policy is removed first, then the bucket goes to `Terminating` while its objects are deleted in the background, which can take a while for a large bucket. When it is done, the bucket disappears and its status answers `404`. The name becomes free for anyone to take.
+Deletes the bucket and every object in it. This can't be undone. The bucket's policy is removed first, and the targets that point domains at its website are deleted (the domains stay), then the bucket goes to `Terminating` while its objects are deleted in the background, which can take a while for a large bucket. When it is done, the bucket disappears and its status answers `404`. The name becomes free for anyone to take.
 
 **Access:** Read & Write token.
 

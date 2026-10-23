@@ -2,18 +2,18 @@
 title: cloider_bucket resource (Terraform)
 sidebar_label: cloider_bucket
 sidebar_position: 3
-description: Create S3 compatible object storage buckets on Cloider with the cloider_bucket Terraform resource, choose the region, public access and versioning, and import existing buckets.
-keywords: [cloider_bucket, terraform s3 bucket, terraform object storage, s3 compatible terraform, bucket versioning terraform, public bucket terraform, cloider object storage terraform]
+description: Create S3 compatible buckets on Cloider with the cloider_bucket Terraform resource, region, public access, versioning, static websites and import.
+keywords: [cloider_bucket, terraform s3 bucket, terraform object storage, s3 compatible terraform, bucket versioning terraform, public bucket terraform, static website terraform, cloider object storage terraform]
 ---
 
-The `cloider_bucket` resource creates and manages a Cloider [object storage](/object-storage/overview) bucket: an S3 compatible container for files that any S3 client, SDK or tool can read and write. You choose its name, its region, whether anyone may read its files without a key, and whether it keeps earlier versions of files. To read and write the bucket, create a [`cloider_bucket_key`](/terraform/resources/bucket-key).
+The `cloider_bucket` resource creates and manages a Cloider [object storage](/object-storage/overview) bucket: an S3 compatible container for files that any S3 client, SDK or tool can read and write. You choose its name, its region, whether anyone may read its files without a key, whether it keeps earlier versions of files, and whether it is served as a [static website](/object-storage/static-websites). To read and write the bucket, create a [`cloider_bucket_key`](/terraform/resources/bucket-key).
 
 ## At a glance
 
 | | |
 | --- | --- |
 | **Required arguments** | `name` |
-| **Changes in place** | `public`, `versioning` |
+| **Changes in place** | `public`, `versioning`, `website`, `index_document`, `error_document` |
 | **Changes that replace the bucket** | `name`, `region` |
 | **Sensitive attributes** | None |
 | **Timeouts** | `create`, `delete`, 20 minutes each by default |
@@ -69,6 +69,36 @@ resource "cloider_bucket" "backups" {
 ```
 
 With versioning on, overwriting or deleting a file keeps the earlier version. See [Versioning](/object-storage/versioning).
+
+### Static website on your domain
+
+```hcl title="main.tf"
+resource "cloider_bucket" "site" {
+  name           = "acme-site"
+  public         = true
+  website        = true
+  error_document = "404.html"
+}
+
+resource "cloider_domain" "docs" {
+  name = "docs.example.com"
+}
+
+resource "cloider_target" "docs" {
+  domain    = cloider_domain.docs.name
+  bucket_id = cloider_bucket.site.id
+}
+
+output "website_url" {
+  value = cloider_bucket.site.website_url
+}
+```
+
+```text title="Output"
+website_url = "https://acme-site.s3-website.eu-central-2.cloider.com"
+```
+
+The website needs `public = true`. The [`cloider_target`](/terraform/resources/target) also serves it on `docs.example.com`. For a single-page app, set `error_document = "index.html"`. See [Static websites](/object-storage/static-websites).
 
 ### Choose the region
 
@@ -140,6 +170,9 @@ resource "cloider_bucket" "this" {
 | `region` | String | No | The first region `cloider_bucket_regions` lists | **Replaces** the bucket | The region code, such as `eu-central-2` |
 | `public` | Bool | No | `false` | In place | Whether anyone may read the bucket's files without a key |
 | `versioning` | Bool | No | `false` | In place | Whether the bucket keeps earlier versions of its files. Once on, versioning can only be suspended: `false` after `true` stops keeping new versions but keeps those already kept |
+| `website` | Bool | No | `false` | In place | Whether the bucket is served as a static website at `website_url`, and on the domains a `cloider_target` with `bucket_id` routes to it. Needs `public = true` |
+| `index_document` | String | No | `"index.html"` | In place | The file the website serves for a path ending in a slash, a name without a slash |
+| `error_document` | String | No | `""` | In place | The key the website serves, with a `404`, for anything missing. `""` is a built-in page |
 | `timeouts` | Object | No | 20 minutes each | | `create` and `delete` durations |
 
 ## Attribute reference
@@ -150,6 +183,7 @@ resource "cloider_bucket" "this" {
 | `status` | String | `Ready`, `Failed` or `Terminating`. See [Status values](/reference/status-values) |
 | `endpoint` | String | The S3 endpoint of the bucket's region, such as `https://s3.eu-central-2.cloider.com`. Give this to S3 clients as the endpoint URL |
 | `url` | String | The bucket's own URL, such as `https://acme-assets.s3.eu-central-2.cloider.com`, where a public bucket's files are read |
+| `website_url` | String | The website's own address, such as `https://acme-site.s3-website.eu-central-2.cloider.com`, while `website` is on |
 | `created_at` | String | When the bucket was created, in RFC 3339 |
 | `region` | String | The region in use, also when you didn't set it |
 
@@ -157,7 +191,7 @@ resource "cloider_bucket" "this" {
 
 Changing `name` or `region` deletes the bucket, **with every file and every version in it**, and creates a new, empty one. Terraform shows `# forces replacement` next to the attribute in the plan. A bucket's name can't be changed, and a bucket can't move between regions. To rename or move one, create the new bucket, copy the files with an S3 tool such as `rclone`, then remove the old one from the configuration.
 
-`public` and `versioning` change in place, without touching the files.
+`public`, `versioning` and the website settings change in place, without touching the files. When `public` and `website` change together, the provider turns the website off before it makes the bucket private, and on after it makes the bucket public, so either direction applies in one run. Turning the website off is refused while a `cloider_target` still serves it: `Domains still point at this website, remove their targets first.`
 
 ## Create and delete behavior
 
@@ -177,7 +211,7 @@ Files, bucket policies, lifecycle rules and data protection aren't part of `cloi
 | `create` | 20 minutes | Covers the create call and, after a timed out create, the search for the new bucket |
 | `delete` | 20 minutes | The bucket and its contents to be gone |
 
-There is no `update` timeout: changing `public` or `versioning` takes effect immediately.
+There is no `update` timeout: changing `public`, `versioning` or the website settings takes effect immediately, and website changes show on the website within about 30 seconds.
 
 ## Import
 
@@ -213,12 +247,13 @@ With the `terraform import` command:
 terraform import cloider_bucket.assets b7r2xw
 ```
 
-After the import, set `public` and `versioning` in the configuration to what the bucket has, or the next apply changes them back to the defaults (`false`).
+After the import, set `public`, `versioning` and the website settings in the configuration to what the bucket has, or the next apply changes them back to the defaults (`false`, `index.html` and `""`).
 
 ## Related
 
 - [`cloider_bucket_key`](/terraform/resources/bucket-key): S3 credentials for the bucket
 - [`cloider_bucket_regions`](/terraform/data-sources/bucket-regions): region codes and endpoints
+- [`cloider_target`](/terraform/resources/target): serve the bucket's website on a domain
 - [Object storage with the AWS provider](/terraform/guides/object-storage): upload files and use S3 tools
 - [Store Terraform state in a bucket](/terraform/guides/state-backend)
 - [Create a bucket](/object-storage/create-a-bucket) with the dashboard, CLI or API
@@ -227,6 +262,7 @@ After the import, set `public` and `versioning` in the configuration to what the
   {q: 'How do I create an S3 bucket on Cloider with Terraform?', a: 'Add a cloider_bucket resource with a name nobody else on Cloider uses, and run terraform apply. Then create a cloider_bucket_key with buckets = [cloider_bucket.<name>.id] to get an access key and secret key for S3 clients.'},
   {q: 'Can I rename a bucket or change its region with Terraform?', a: 'No. Changing name or region replaces the bucket, which deletes it with all its files and creates a new empty one. Copy the files to a new bucket with an S3 tool instead.'},
   {q: 'Can I turn versioning off with Terraform?', a: 'You can set versioning = false after true, which suspends versioning: new versions stop being kept, but versions already kept stay until you delete them.'},
+  {q: 'How do I host a static website on a Cloider bucket with Terraform?', a: 'Set public = true and website = true on the cloider_bucket, optionally with index_document and error_document, and read the address from website_url. To serve it on your domain, add a cloider_target with bucket_id = cloider_bucket.<name>.id.'},
   {q: 'Does destroying a cloider_bucket delete its files?', a: 'Yes. Deleting a bucket deletes every file and every version in it, and its name becomes free for anyone to take. Use lifecycle { prevent_destroy = true } on buckets that hold data you need.'},
   {q: 'Can Terraform upload files to a Cloider bucket?', a: 'Not with the Cloider provider. Use the aws provider\'s aws_s3_object resource pointed at the bucket\'s endpoint, with a cloider_bucket_key\'s access key and secret key.'},
 ]} />

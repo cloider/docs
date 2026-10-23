@@ -16,7 +16,7 @@ follow so that a domain you still use keeps working.
 | | |
 | --- | --- |
 | **What is deleted** | The domain, every DNS record on it, and every target routing it |
-| **What stays** | Your apps, clusters and Services; the domain's registration at your registrar |
+| **What stays** | Your apps, clusters, Services and buckets with their websites; the domain's registration at your registrar |
 | **Undo** | Not possible. Add the domain again and recreate its records and targets |
 | **The name afterwards** | Free to be added by any account |
 | **Who can delete** | Members with write access. Read-only members and tokens get `You have read-only access to this account, you can not delete domains!` |
@@ -27,7 +27,8 @@ follow so that a domain you still use keeps working.
 1. **DNS records** are removed from Cloider's nameservers, then from your account. For a custom domain that still uses
    Cloider's nameservers, every name under it stops resolving: resolvers get `NXDOMAIN` once their cached answers
    expire. Websites, email and verification records on the domain stop working.
-2. **Targets** routing the domain are deleted. The apps and cluster Services they pointed at keep running.
+2. **Targets** routing the domain are deleted. The apps, cluster Services and bucket websites they pointed at keep
+   running, and a bucket's website stays on at its own `s3-website` address.
 3. **The domain** is removed from your account, and its name is free for any account to add or claim.
 
 Nothing changes at your registrar: the domain stays registered to you, and its nameservers stay whatever you set them
@@ -200,7 +201,7 @@ targets costs nothing.
 
 <FAQ items={[
   {q: 'What happens to DNS records when I delete a domain?', a: 'They are deleted with it. If the domain still uses Cloider\'s nameservers, every name under it stops resolving once resolvers\' cached answers expire.'},
-  {q: 'Does deleting a domain delete my app or cluster?', a: 'No. Only the domain, its DNS records and its targets are deleted. The apps and Services the targets pointed at keep running.'},
+  {q: 'Does deleting a domain delete my app or cluster?', a: 'No. Only the domain, its DNS records and its targets are deleted. The apps, Services and bucket websites the targets pointed at keep running.'},
   {q: 'Can I undo deleting a domain?', a: 'No. Add the domain again and recreate its records and targets. A free subdomain can be claimed by another account in the meantime.'},
   {q: 'Does deleting a domain cancel its registration?', a: 'No. Cloider doesn\'t register domains. The domain stays registered at your registrar until you cancel it there.'},
   {q: 'How do I stop serving my app on a domain without deleting it?', a: 'Delete the target that routes the domain to the app. The domain and its DNS records stay.'},

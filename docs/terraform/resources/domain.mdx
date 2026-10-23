@@ -6,7 +6,7 @@ description: Claim free cloider.app subdomains and add custom domains with the c
 keywords: [cloider_domain, terraform custom domain, cloider.app subdomain terraform, terraform nameservers, free subdomain terraform, domain terraform import, cloider dns terraform]
 ---
 
-The `cloider_domain` resource adds a domain to your Cloider account: either a **free subdomain** under one of Cloider's roots, such as `acme-web.cloider.app`, or a **custom domain** you own, such as `example.com`. Once added, you route it to an app or a cluster Service with a [`cloider_target`](/terraform/resources/target), and give a custom domain DNS records with [`cloider_dns_record`](/terraform/resources/dns-record).
+The `cloider_domain` resource adds a domain to your Cloider account: either a **free subdomain** under one of Cloider's roots, such as `acme-web.cloider.app`, or a **custom domain** you own, such as `example.com`. Once added, you route it to an app, a cluster Service or a bucket's static website with a [`cloider_target`](/terraform/resources/target), and give a custom domain DNS records with [`cloider_dns_record`](/terraform/resources/dns-record).
 
 ## At a glance
 
@@ -179,7 +179,7 @@ The ID is lower-cased and a trailing dot is removed, so `Example.com.` imports a
 ## Related
 
 - [`cloider_dns_record`](/terraform/resources/dns-record): records on a custom domain
-- [`cloider_target`](/terraform/resources/target): route the domain to an app or a Service
+- [`cloider_target`](/terraform/resources/target): route the domain to an app, a Service or a bucket's website
 - [`cloider_options`](/terraform/data-sources/options): subdomain roots and nameservers
 - [Domains overview](/domains/overview)
 

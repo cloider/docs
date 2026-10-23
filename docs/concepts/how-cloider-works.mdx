@@ -109,7 +109,7 @@ Buckets are S3 compatible object storage. Any S3 client, SDK or tool (AWS CLI, r
 
 - **Region and endpoint**: buckets live in the `eu-central-2` region (Europe), at `https://s3.eu-central-2.cloider.com`. Both path style and virtual hosted style addressing work.
 - **Access**: [access keys](/object-storage/access-keys) (S3 credentials) are managed per account in **Access Control**, and a bucket can be [public or private](/object-storage/public-and-private-buckets).
-- **Features**: [versioning](/object-storage/versioning), [lifecycle rules](/object-storage/lifecycle-rules), [bucket policies](/object-storage/bucket-policies) and a file browser in the dashboard.
+- **Features**: [versioning](/object-storage/versioning), [lifecycle rules](/object-storage/lifecycle-rules), [bucket policies](/object-storage/bucket-policies), [static websites](/object-storage/static-websites) and a file browser in the dashboard.
 - **Billing**: GiB stored, averaged over time. Requests and data transfer are free.
 
 Read the [Object Storage overview](/object-storage/overview).
@@ -128,11 +128,11 @@ Read the [Container Registry overview](/container-registry/overview).
 
 ### Domains and DNS
 
-Cloider runs authoritative DNS for your domains and routes HTTP traffic to your apps and cluster services.
+Cloider runs authoritative DNS for your domains and routes HTTP traffic to your apps, cluster services and bucket websites.
 
 - **Free subdomains**: claim a name under `cloider.app`, such as `blog.cloider.app`, with HTTPS included.
 - **Custom domains**: add a domain you own and point it at Cloider's nameservers, `ns1.cloider.com` to `ns4.cloider.com`, then manage its [DNS records](/domains/dns-records).
-- **Targets**: a [target](/domains/targets) routes a path of a domain (for example `example.com/api`) to an app or to a Service in a cluster.
+- **Targets**: a [target](/domains/targets) routes a path of a domain (for example `example.com/api`) to an app or to a Service in a cluster, or a whole domain to a bucket's static website.
 
 Read the [Domains overview](/domains/overview).
 

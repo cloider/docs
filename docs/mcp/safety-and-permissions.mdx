@@ -89,9 +89,9 @@ Every tool declares what it does through the standard MCP **tool annotations**. 
 
 | Annotation | Set on | Typical client behavior |
 | --- | --- | --- |
-| `readOnlyHint: true` | The 51 read only tools | May run without asking, or offer "always allow" |
+| `readOnlyHint: true` | The 52 read only tools | May run without asking, or offer "always allow" |
 | `destructiveHint: true` | The 27 destructive tools: deletes, whole replacements, uploads that overwrite, and the exec tools | Asks every time, often with a warning |
-| `idempotentHint: true` | Read only tools, and 23 changes that do nothing more when repeated, such as `pause_cluster` or `set_bucket_versioning` | Safe to retry after a timeout |
+| `idempotentHint: true` | Read only tools, and 24 changes that do nothing more when repeated, such as `pause_cluster` or `set_bucket_versioning` | Safe to retry after a timeout |
 | `openWorldHint: false` | Every tool | The tools only reach your Cloider account, not the open internet |
 
 Inside the tools, nothing asks for confirmation: the server runs every command with `--yes`. **Your client's approval prompt is the confirmation step**, so read it before you approve, in particular the tool name and its arguments.

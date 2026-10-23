@@ -8,7 +8,8 @@ keywords: [free subdomain, cloider.app, free domain, subdomain availability, cla
 
 A free subdomain is a name under `cloider.app`, such as `blog.cloider.app`, that you claim for your Cloider account at no
 charge. It resolves to Cloider and is covered by Cloider's HTTPS certificate from the moment you claim it, so you can
-put an [app](/apps/overview) or a [Kubernetes Service](/kubernetes/expose-services) on it without touching DNS. This
+put an [app](/apps/overview), a [Kubernetes Service](/kubernetes/expose-services) or a bucket's
+[static website](/object-storage/static-websites) on it without touching DNS. This
 page covers the naming rules, the availability check, claiming, routing and releasing a subdomain.
 
 ## At a glance
@@ -151,8 +152,8 @@ Claiming a subdomain reserves it for your account with the status `Pending`. To 
 2. Type the label in **Subdomain Name**, for example `acme-blog`. The menu next to it shows the parent domain,
    `.cloider.app`.
 3. Click **Check availability**. If the name is free, Cloider claims it and moves to **Connect your apps**.
-4. Click **Add target**, choose **App** or **Cluster** as the **Target type**, pick what to route to and click **Save**.
-   See [Targets](/domains/targets) for every field.
+4. Click **Add target**, choose **App**, **Cluster** or **Bucket** as the **Target type**, pick what to route to and
+   click **Save**. See [Targets](/domains/targets) for every field.
 5. Click **Add subdomain**. The button is enabled once the subdomain has at least one target.
 
 <Screenshot
@@ -347,13 +348,14 @@ More cases are in [Domains troubleshooting](/domains/troubleshooting).
 
 ## Next steps
 
-- [Targets](/domains/targets): route paths of the subdomain to apps and cluster Services.
+- [Targets](/domains/targets): route paths of the subdomain to apps and cluster Services, or the subdomain to a
+  bucket's [static website](/object-storage/static-websites).
 - [Add a custom domain](/domains/add-a-custom-domain): use your own domain as well.
 - [Domains for apps](/apps/domains): subdomains claimed when an app is created.
 
 <FAQ items={[
   {q: 'Is the cloider.app subdomain really free?', a: 'Yes. Free subdomains have no charge. You pay only for the app or cluster that serves the traffic.'},
-  {q: 'Does a free subdomain have HTTPS?', a: 'Yes. Every name under cloider.app is covered by Cloider\'s certificate for *.cloider.app, so HTTPS works as soon as a target routes the subdomain to an app or Service.'},
+  {q: 'Does a free subdomain have HTTPS?', a: 'Yes. Every name under cloider.app is covered by Cloider\'s certificate for *.cloider.app, so HTTPS works as soon as a target routes the subdomain to an app, a Service or a bucket\'s website.'},
   {q: 'Can I use a multi-level subdomain such as api.blog.cloider.app?', a: 'No. A free subdomain has exactly one label in front of cloider.app. Use a hyphen instead, as in api-blog.cloider.app, or use a custom domain.'},
   {q: 'How many free subdomains can I claim?', a: 'Claim one per address you need, for example one per app or environment. Each must follow the naming rules and not be taken by another account.'},
   {q: 'Can I add DNS records such as MX or TXT to a cloider.app subdomain?', a: 'No. Free subdomains don\'t take DNS records. Add a custom domain to manage records.'},

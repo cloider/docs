@@ -6,7 +6,7 @@ description: Every cloider CLI command and subcommand in one place, grouped by p
 keywords: [cloider commands, cloider cli reference, cloider command list, cloider help, cli cheat sheet, cloider subcommands]
 ---
 
-This page lists every command of the `cloider` CLI, grouped by product, with a one line description and a link to its full reference with flags, examples and output. The CLI has 195 commands and subcommands; `cloider <command> --help` shows the same information in the terminal.
+This page lists every command of the `cloider` CLI, grouped by product, with a one line description and a link to its full reference with flags, examples and output. The CLI has 196 commands and subcommands; `cloider <command> --help` shows the same information in the terminal.
 
 ## How to read the reference
 
@@ -124,6 +124,7 @@ Commands that change a resource take `--wait` (`-w`) and `--timeout`; deletes as
 | [`cloider bucket versioning`](/cli/commands/bucket#cloider-bucket-versioning) | Show or change whether a bucket keeps previous versions of its files |
 | [`cloider bucket versions`](/cli/commands/bucket#cloider-bucket-versions) | List the versions a file has, newest first |
 | [`cloider bucket visibility`](/cli/commands/bucket#cloider-bucket-visibility) | Show or change whether anyone can read a bucket's files |
+| [`cloider bucket website`](/cli/commands/bucket#cloider-bucket-website) | Show or change a bucket's static website |
 
 ## Container registry
 
@@ -233,8 +234,8 @@ Commands that change a resource take `--wait` (`-w`) and `--timeout`; deletes as
 | [`cloider dns get`](/cli/commands/dns#cloider-dns-get) | Show a DNS record |
 | [`cloider dns list`](/cli/commands/dns#cloider-dns-list) | List a domain's DNS records |
 | [`cloider dns update`](/cli/commands/dns#cloider-dns-update) | Change a DNS record, keeping what isn't given |
-| [`cloider target`](/cli/commands/target) | Route a domain's paths to apps or cluster services |
-| [`cloider target create`](/cli/commands/target#cloider-target-create) | Route a path of a domain to an app or a cluster service |
+| [`cloider target`](/cli/commands/target) | Route a domain's paths to apps, bucket websites or cluster services |
+| [`cloider target create`](/cli/commands/target#cloider-target-create) | Route a path of a domain to an app, a bucket website or a cluster service |
 | [`cloider target delete`](/cli/commands/target#cloider-target-delete) | Delete a target |
 | [`cloider target list`](/cli/commands/target#cloider-target-list) | List a domain's targets |
 | [`cloider target update`](/cli/commands/target#cloider-target-update) | Change a target, keeping what isn't given |
@@ -332,7 +333,7 @@ Most command groups also answer to a plural or a short form, and `list` and `del
 - [MCP tools](/mcp/tools) for the same commands as AI agent tools.
 
 <FAQ items={[
-  {q: 'How many commands does the Cloider CLI have?', a: 'The cloider CLI has 195 commands and subcommands, grouped into cluster, db, bucket, registry, app, deploy, git, domain, dns, target, support, the account commands (usage, billing, pricing, member, token, whoami), login, logout, profile, version, update, completion and mcp.'},
+  {q: 'How many commands does the Cloider CLI have?', a: 'The cloider CLI has 196 commands and subcommands, grouped into cluster, db, bucket, registry, app, deploy, git, domain, dns, target, support, the account commands (usage, billing, pricing, member, token, whoami), login, logout, profile, version, update, completion and mcp.'},
   {q: 'How do I see the help for a command in the terminal?', a: 'Add --help to any command, for example cloider db create --help, or run cloider help db create. Both show the arguments, flags and examples.'},
   {q: 'Which global flags does every command take?', a: '--profile, --api-url, --token-file, -o/--output, -q/--quiet, --no-headers, --no-color, -y/--yes, --debug and -h/--help.'}
 ]} />

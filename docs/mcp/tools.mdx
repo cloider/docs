@@ -15,12 +15,12 @@ This page lists every tool the Cloider MCP server (`cloider mcp`) offers, groupe
 | [`account`](#account-tools-account) | 6 | 6 | 0 | 0 |
 | [`clusters`](#kubernetes-cluster-tools-clusters) | 9 | 4 | 3 | 2 |
 | [`databases`](#database-tools-databases) | 16 | 6 | 8 | 2 |
-| [`buckets`](#object-storage-tools-buckets) | 25 | 10 | 7 | 8 |
+| [`buckets`](#object-storage-tools-buckets) | 27 | 11 | 8 | 8 |
 | [`registry`](#container-registry-tools-registry) | 23 | 8 | 7 | 8 |
 | [`apps`](#app-tools-apps) | 23 | 10 | 9 | 4 |
 | [`domains`](#domain-dns-and-target-tools-domains) | 12 | 4 | 5 | 3 |
 | [`support`](#support-tools-support) | 5 | 3 | 2 | 0 |
-| **All** | **119** | **51** | **41** | **27** |
+| **All** | **121** | **52** | **42** | **27** |
 
 - **Read only** tools change nothing. They are the only tools `cloider mcp --read-only` offers.
 - **Changes resources** tools create or update something but don't delete anything.
@@ -492,7 +492,7 @@ A database's resource use, today and per day this month: CPU, memory, storage, d
 
 The `buckets` toolset manages [S3 compatible buckets](/object-storage/overview) and what is in them: create and delete buckets, change visibility, versioning, policies and lifecycle rules, list, upload, download and delete files, restore earlier versions, and manage S3 access keys. Uploads go through the API one file at a time; for large syncs, have the agent create a key with `create_bucket_key` and use an S3 tool.
 
-Tools: `list_buckets`, `get_bucket`, `create_bucket`, `delete_bucket`, `list_bucket_regions`, `set_bucket_visibility`, `get_bucket_versioning`, `set_bucket_versioning`, `set_bucket_policy`, `delete_bucket_policy`, `get_bucket_lifecycle`, `set_bucket_lifecycle`, `list_bucket_objects`, `upload_bucket_objects`, `download_bucket_objects`, `delete_bucket_objects`, `create_bucket_folder`, `list_bucket_object_versions`, `restore_bucket_object_version`, `list_deleted_bucket_objects`, `delete_bucket_object_versions`, `list_bucket_keys`, `create_bucket_key`, `update_bucket_key`, `delete_bucket_key`.
+Tools: `list_buckets`, `get_bucket`, `create_bucket`, `delete_bucket`, `list_bucket_regions`, `set_bucket_visibility`, `get_bucket_versioning`, `set_bucket_versioning`, `get_bucket_website`, `set_bucket_website`, `set_bucket_policy`, `delete_bucket_policy`, `get_bucket_lifecycle`, `set_bucket_lifecycle`, `list_bucket_objects`, `upload_bucket_objects`, `download_bucket_objects`, `delete_bucket_objects`, `create_bucket_folder`, `list_bucket_object_versions`, `restore_bucket_object_version`, `list_deleted_bucket_objects`, `delete_bucket_object_versions`, `list_bucket_keys`, `create_bucket_key`, `update_bucket_key`, `delete_bucket_key`.
 
 
 ### list_buckets
@@ -507,7 +507,7 @@ No parameters.
 
 ### get_bucket
 
-Show a bucket: its S3 endpoint, public url, size, access and policy.
+Show a bucket: its S3 endpoint, public url, size, access, policy and website.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -531,6 +531,7 @@ Create a bucket. Its name is global across Cloider, 3 to 63 lowercase letters, d
 | `region` | string | No | Region code, see list_bucket_regions (default: the first). |
 | `public` | boolean | No | Let anyone read its files over https. |
 | `versioning` | boolean | No | Keep previous versions of overwritten and deleted files. |
+| `website` | boolean | No | Serve it as a static website, see set_bucket_website. Needs public. |
 | `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
 
 ### delete_bucket
@@ -593,6 +594,33 @@ Turn versioning on or off. Once on it can only be suspended: versions already ke
 | --- | --- | --- | --- |
 | `bucket` | string | Yes | Name or id of the bucket. |
 | `enabled` | boolean | Yes | Whether to keep previous versions. |
+
+### get_bucket_website
+
+A bucket's static website: whether it is on, its address, and its index and error documents.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket website`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+
+### set_bucket_website
+
+Turn a bucket's static website on or off. It serves the bucket at `https://<bucket>.s3-website.<region>.<domain>`, the index document for paths ending in a slash and the error document with a 404 for anything missing. The bucket has to be public. Serve it on a domain with create_domain_target and bucket.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider bucket website`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `enabled` | boolean | Yes | Whether the website is on. |
+| `index_document` | string | No | File name served for paths ending in a slash (default: the current one, index.html at first). |
+| `error_document` | string | No | Key served with a 404 for anything missing (default: the current one, a built-in page at first). |
 
 ### set_bucket_policy
 
@@ -1528,7 +1556,7 @@ No parameters.
 
 ### get_domain
 
-Show a domain and its targets, the routes from its paths to apps and cluster services.
+Show a domain and its targets, the routes from its paths to apps, bucket websites and cluster services.
 
 :::note
 The answer holds the domain's name, type, status and creation date, and its targets, each with the `hashed_id` that `update_domain_target` and `delete_domain_target` take.
@@ -1636,7 +1664,7 @@ Delete a DNS record.
 
 ### create_domain_target
 
-Route a path of a domain to an app, or to a cluster's service. Give app, or cluster with service.
+Route a path of a domain to an app, a bucket's website or a cluster's service. Give app, bucket, or cluster with service.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1646,6 +1674,7 @@ Route a path of a domain to an app, or to a cluster's service. Give app, or clus
 | --- | --- | --- | --- |
 | `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
 | `app` | string | No | Route to this app. |
+| `bucket` | string | No | Serve this bucket's website, at the domain's root only; see set_bucket_website. |
 | `cluster` | string | No | Route to a service in this cluster. |
 | `service` | string | No | The cluster's service as `<namespace>/<service>`, see list_cluster_services. |
 | `port` | integer | No | The service's port (default: its only port). |
@@ -1655,7 +1684,7 @@ Route a path of a domain to an app, or to a cluster's service. Give app, or clus
 
 ### update_domain_target
 
-Change a domain's target, keeping what isn't given; app or cluster moves it to another app or service.
+Change a domain's target, keeping what isn't given; app, bucket or cluster moves it to another app, bucket website or service.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1666,6 +1695,7 @@ Change a domain's target, keeping what isn't given; app or cluster moves it to a
 | `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
 | `target_id` | string | Yes | The target's id, see get_domain. |
 | `app` | string | No | Route to this app. |
+| `bucket` | string | No | Serve this bucket's website, at the domain's root only; see set_bucket_website. |
 | `cluster` | string | No | Route to a service in this cluster. |
 | `service` | string | No | The cluster's service as `<namespace>/<service>`, see list_cluster_services. |
 | `port` | integer | No | The service's port (default: its only port). |

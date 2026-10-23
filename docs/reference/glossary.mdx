@@ -277,6 +277,9 @@ A Kubernetes object that gives a stable name and port to a set of pods. Targets 
 ### Start command
 The command an app is started with. Left empty, the project's own Procfile or start script decides. See [Build configuration](/apps/build-configuration).
 
+### Static website
+A public bucket served as a website, with an index document for every folder path and an error document for anything missing, at `https://<bucket>.s3-website.eu-central-2.cloider.com` or on a domain with a Bucket target. See [Static websites](/object-storage/static-websites).
+
 ### Status
 The state of a resource, such as **Creating**, **Ready** or **Paused**. See [Status values](/reference/status-values).
 
@@ -292,7 +295,7 @@ The state of an account whose trial ended without an upgrade. It can't create re
 A name for one image in a repository, such as `1.0` or `latest`. See [Repositories and tags](/container-registry/repositories-and-tags).
 
 ### Target
-A route from a domain and path, such as `example.com/api`, to an app or a Service in a cluster. See [Targets](/domains/targets).
+A route from a domain and path, such as `example.com/api`, to an app, a Service in a cluster, or a bucket's static website. See [Targets](/domains/targets).
 
 ### Terminal
 A shell in the browser (or `cloider ... shell`) inside an app's container, with `kubectl` and `helm` for a cluster, or with a database client. See [Web terminal and exec](/kubernetes/web-terminal-and-exec).

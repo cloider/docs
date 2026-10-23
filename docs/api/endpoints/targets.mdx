@@ -2,11 +2,11 @@
 title: Targets API endpoints
 sidebar_label: Targets
 sidebar_position: 14
-description: Cloider API reference for targets, route a domain path over HTTPS to an app or a Kubernetes service, list a domain's targets, change and delete them.
-keywords: [cloider target api, route domain to app, expose kubernetes service api, ingress api, domain path routing, https routing api]
+description: Cloider API reference for targets, route a domain path over HTTPS to an app, a Kubernetes service or a bucket website, list, change and delete them.
+keywords: [cloider target api, route domain to app, expose kubernetes service api, bucket website domain api, ingress api, domain path routing, https routing api]
 ---
 
-A **target** routes requests for a domain and path, such as `https://example.com/` or `https://example.com/api`, to an [app](/apps/overview) or to a Service in one of your [Kubernetes clusters](/kubernetes/overview). Cloider sets up the routing and the HTTPS certificate for you. These endpoints list, create, change and delete targets.
+A **target** routes requests for a domain and path, such as `https://example.com/` or `https://example.com/api`, to an [app](/apps/overview), to a Service in one of your [Kubernetes clusters](/kubernetes/overview), or to a bucket's [static website](/object-storage/static-websites). Cloider sets up the routing and the HTTPS certificate for you. These endpoints list, create, change and delete targets.
 
 All paths are relative to `https://cloider.com/api`. See [Targets](/domains/targets) for how routing works.
 
@@ -31,6 +31,8 @@ All paths are relative to `https://cloider.com/api`. See [Targets](/domains/targ
   "app_id": "",
   "app_name": "",
   "app_label": "",
+  "bucket_id": "",
+  "bucket_name": "",
   "namespace": "shop",
   "service": "api",
   "port": 8080,
@@ -45,11 +47,12 @@ All paths are relative to `https://cloider.com/api`. See [Targets](/domains/targ
 | --- | --- | --- |
 | `hashed_id` | string | The target's id |
 | `domain_name` | string | The domain it routes |
-| `target_type` | string | `App` or `Cluster` |
+| `target_type` | string | `App`, `Bucket` or `Cluster` |
 | `cluster_id`, `cluster_name` | string | For a `Cluster` target, the cluster's id and name |
 | `app_id`, `app_name`, `app_label` | string | For an `App` target, the app's id, name and label |
-| `namespace`, `service`, `port`, `protocol` | string, string, integer, string | For a `Cluster` target, the Kubernetes Service in your cluster that requests go to. For an `App` target, `namespace` and `service` are empty, and `port` is the app's port |
-| `path` | string | The path on the domain that is routed, for example `/` or `/api` |
+| `bucket_id`, `bucket_name` | string | For a `Bucket` target, the bucket's id and name |
+| `namespace`, `service`, `port`, `protocol` | string, string, integer, string | For a `Cluster` target, the Kubernetes Service in your cluster that requests go to. For an `App` target, `namespace` and `service` are empty, and `port` is the app's port. For a `Bucket` target, `namespace` and `service` are empty too |
+| `path` | string | The path on the domain that is routed, for example `/` or `/api`. Always `/` for a `Bucket` target |
 | `target_path` | string | The path requests are sent to on the service. Defaults to `path` |
 | `created_at` | string | When the target was created |
 
@@ -82,7 +85,7 @@ The response is a list of [target objects](#the-target-object). Without `domain_
 POST /targets
 ```
 
-Routes a domain path to an app or a cluster service. The route and its certificate are set up in the background after the request returns.
+Routes a domain path to an app, a cluster service or a bucket's website. The route and its certificate are set up in the background after the request returns.
 
 **Access:** Read & Write token.
 
@@ -91,10 +94,11 @@ Routes a domain path to an app or a cluster service. The route and its certifica
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain_name` | string | Yes | A domain of the account |
-| `target_type` | string | No | `App` or `Cluster`. Default `Cluster` |
-| `path` | string | No | The path on the domain. Default `/`. Must start with `/` and use only letters, digits, `/`, `_`, `.` and `-` |
+| `target_type` | string | No | `App`, `Bucket` or `Cluster`. Default `Cluster` |
+| `path` | string | No | The path on the domain. Default `/`. Must start with `/` and use only letters, digits, `/`, `_`, `.` and `-`. Must be `/` for `Bucket` |
 | `target_path` | string | No | The path on the service. Default: the same as `path`. Same rules |
 | `app_id` | string | For `App` | The app's `hashed_id`. The app must be `Ready` or `Paused` |
+| `bucket_id` | string | For `Bucket` | The bucket's `hashed_id`. The bucket must be `Ready`, with its [static website](/object-storage/static-websites) on |
 | `cluster_id` | string | For `Cluster` | The cluster's `hashed_id` |
 | `cluster_name` | string | For `Cluster` | The cluster's `cluster_name`, exactly as in `GET /clusters` |
 | `namespace` | string | For `Cluster` | The Service's namespace |
@@ -112,6 +116,16 @@ curl -X POST https://cloider.com/api/targets \
   -H "Authorization: Bearer $CLOIDER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"domain_name": "blog.example.com", "target_type": "App", "app_id": "a8q2w", "path": "/"}'
+```
+
+</TabItem>
+<TabItem value="bucket" label="Route to a bucket website">
+
+```bash
+curl -X POST https://cloider.com/api/targets \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain_name": "docs.example.com", "target_type": "Bucket", "bucket_id": "s3w8q"}'
 ```
 
 </TabItem>
@@ -151,14 +165,17 @@ For a custom domain, the domain's nameservers must point to Cloider for the rout
 | `400` | `domain_name` | `Domain name is required` |
 | `400` | `path`, `target_path` | `Path must start with / and may only contain letters, numbers and / _ . -`, `Target path must start with / and may only contain letters, numbers and / _ . -` |
 | `400` | `app_id` | `App is required` |
+| `400` | `bucket_id` | `Bucket is required` |
+| `400` | `path`, `target_path` | `A bucket website is served at the root of its domain, the path must be /`, `A bucket website is served at the root of its domain, the target path must be /` (Bucket targets) |
 | `400` | `service`, `namespace`, `port` | `Service is required`, `Namespace is required`, `Valid port is required` |
 | `400` | `_` | `Invalid target type specified` |
 | `400` | `_` | `This path is already in use on this domain. Please choose a different path.` |
 | `400` | `_` | `This app is not ready yet. Wait until it finishes deploying, then add the target.` |
+| `400` | `_` | `This bucket is not ready yet. Wait until it is created, then add the target.`, `Turn on the bucket's website first, from its Settings.` |
 | `400` | `_` | `Service and namespace names are too long for this cluster (combined limit exceeded)`, `This app's name is too long to be exposed on a domain.` |
 | `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
 | `403` | `_` | `This API token is read only!` |
-| `404` | `_` | `App not found!`, or `Not Found` (plain text) for a domain or cluster that isn't the account's |
+| `404` | `_` | `App not found!`, `Bucket not found!`, or `Not Found` (plain text) for a domain or cluster that isn't the account's |
 
 ## Change a target
 
@@ -166,7 +183,7 @@ For a custom domain, the domain's nameservers must point to Cloider for the rout
 PUT /targets/:hashed_id
 ```
 
-Changes where a target routes: its domain, path, target path, and the app or service. The body is the same as for [creating a target](#request-body), and every field is applied, so send the complete target.
+Changes where a target routes: its domain, path, target path, and the app, service or bucket. The body is the same as for [creating a target](#request-body), and every field is applied, so send the complete target.
 
 **Access:** Read & Write token.
 
@@ -200,7 +217,7 @@ The errors are those of creating a target, and `Operation failed, Couldn't updat
 DELETE /targets/:hashed_id
 ```
 
-Removes the route. The app or service keeps running but is no longer reachable on that domain and path. When a domain loses its last target, its status becomes `Suspended`.
+Removes the route. The app, service or bucket website keeps running but is no longer reachable on that domain and path. When a domain loses its last target, its status becomes `Suspended`.
 
 **Access:** Read & Write token.
 
@@ -218,5 +235,6 @@ curl -X DELETE https://cloider.com/api/targets/x4v7n \
 ## Related
 
 - [Targets](/domains/targets) and [HTTPS certificates](/domains/https-certificates)
+- [Static websites](/object-storage/static-websites) and the [website endpoints](/api/endpoints/buckets#get-a-buckets-website) of buckets
 - [Expose services](/kubernetes/expose-services) from a cluster
 - [cloider target](/cli/commands/target) and the [cloider_target](/terraform/resources/target) Terraform resource

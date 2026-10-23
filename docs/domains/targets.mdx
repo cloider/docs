@@ -1,16 +1,17 @@
 ---
-title: Route a domain to apps and services with targets
+title: Route a domain to apps, services and buckets with targets
 sidebar_label: Targets
 sidebar_position: 8
-description: Route a domain or a path of it to a Cloider app or a Kubernetes Service over HTTPS with targets, with path routing, rewrites, every field, limit and error.
-keywords: [cloider target, route domain to app, route path to service, path routing, rewrite path, reverse proxy, kubernetes ingress alternative, cloider target create, cloider_target]
+description: Route a domain or a path of it to a Cloider app, a Kubernetes Service or a bucket's static website over HTTPS with targets, with every field and error.
+keywords: [cloider target, route domain to app, route path to service, bucket website custom domain, path routing, rewrite path, reverse proxy, kubernetes ingress alternative, cloider target create, cloider_target]
 ---
 
-A target is a route from a domain, or a path of it, to a [Cloider app](/apps/overview) or to a Service in a
-[Kubernetes cluster](/kubernetes/overview). With targets, `https://example.com/` can serve the `web` app,
-`https://example.com/api` a Service in your `production` cluster, and `https://example.com/docs` another app, each over
-HTTPS. This page is the complete reference for targets: how they route, every field, path rewrites, and the errors you
-can hit.
+A target is a route from a domain, or a path of it, to a [Cloider app](/apps/overview), to a Service in a
+[Kubernetes cluster](/kubernetes/overview), or to a bucket's [static website](/object-storage/static-websites). With
+targets, `https://example.com/` can serve the `web` app, `https://example.com/api` a Service in your `production`
+cluster, and `https://example.com/docs` another app, each over HTTPS, while `https://docs.example.com/` serves a
+website straight from a bucket. This page is the complete reference for targets: how they route, every field, path
+rewrites, and the errors you can hit.
 
 For the same topic from the other side, see [Domains for apps](/apps/domains) and
 [Expose Kubernetes services](/kubernetes/expose-services).
@@ -20,9 +21,10 @@ For the same topic from the other side, see [Domains for apps](/apps/domains) an
 | | |
 | --- | --- |
 | **Routes** | A host name and a path prefix, such as `example.com/api` |
-| **To** | An app, or a Service port in one of your clusters |
+| **To** | An app, a Service port in one of your clusters, or a bucket's static website |
+| **Types** | `App`, `Cluster` and `Bucket` |
 | **Domains** | Free subdomains and custom domains |
-| **Paths** | One target per path per domain. The longest matching path wins |
+| **Paths** | One target per path per domain. The longest matching path wins. A Bucket target always uses `/` |
 | **Rewrites** | Optional `target_path` replaces the matched path before the request is forwarded |
 | **Protocol to your code** | Plain HTTP. Cloider terminates HTTPS |
 | **Certificates** | Automatic. See [HTTPS certificates](/domains/https-certificates) |
@@ -45,7 +47,8 @@ flowchart LR
 3. Among the host name's targets, the one with the longest `path` that matches the request wins. A path matches itself
    and everything below it: `/api` matches `/api` and `/api/orders`.
 4. If the target has a `target_path` different from its `path`, the matched prefix is replaced.
-5. The request is forwarded as plain HTTP to the app's port or to the Service's port.
+5. The request is forwarded as plain HTTP to the app's port or to the Service's port. For a Bucket target, the
+   bucket's website answers it, as described in [Static websites](/object-storage/static-websites).
 
 Plain `http://` requests are redirected to `https://`.
 
@@ -54,18 +57,20 @@ Plain `http://` requests are redirected to `https://`.
 | Field (API) | Dashboard | CLI flag | Terraform | Meaning |
 | --- | --- | --- | --- | --- |
 | `domain_name` | the domain's page | `<domain>` argument | `domain` | The domain to route. Its name is the host name served |
-| `target_type` | **Target type** | `--app` or `--cluster` | `app_id` or `cluster_id` | `App` or `Cluster`. Defaults to `Cluster` in the API |
+| `target_type` | **Target type** | `--app`, `--bucket` or `--cluster` | `app_id`, `bucket_id` or `cluster_id` | `App`, `Bucket` or `Cluster`. Defaults to `Cluster` in the API |
 | `app_id` | **App** | `--app <name or id>` | `app_id` | The app's id. App targets only |
+| `bucket_id` | **Bucket** | `--bucket <name or id>` | `bucket_id` | The bucket's id. Bucket targets only |
+| `bucket_name` | set for you | set for you | set for you | The bucket's name, shown in lists. Bucket targets only |
 | `cluster_id` | **Cluster** | `--cluster <name or id>` | `cluster_id` | The cluster's id. Cluster targets only |
 | `cluster_name` | set for you | set for you | set for you | The cluster's name, shown in lists |
 | `namespace` | **Namespace** | `--service <namespace>/<service>` | `namespace` | The Service's namespace. Cluster targets only |
 | `service` | **Service** | `--service <namespace>/<service>` | `service` | The Service's name. Cluster targets only |
 | `port` | **Port** | `--port` (default: the Service's only port) | `port` | The Service's port, which must speak HTTP |
 | `protocol` | from the port | `--protocol` (default: the port's own) | `protocol` (default `TCP`) | `TCP` or `UDP`, as the Service declares the port |
-| `path` | **Path** | `--path` (default `/`) | `path` (default `/`) | The path prefix on the domain |
-| `target_path` | **Target path** | `--target-path` (default: `--path`) | `target_path` (default: `path`) | The path the request is forwarded with |
+| `path` | **Path** | `--path` (default `/`) | `path` (default `/`) | The path prefix on the domain. Always `/` for Bucket targets |
+| `target_path` | **Target path** | `--target-path` (default: `--path`) | `target_path` (default: `path`) | The path the request is forwarded with. Always `/` for Bucket targets |
 
-For an app target you only choose the app: Cloider routes to the app's port itself, and the response carries the app's `app_name` and `app_label`. Every target has an id, `hashed_id`, such as
+For an app target you only choose the app: Cloider routes to the app's port itself, and the response carries the app's `app_name` and `app_label`. For a bucket target you only choose the bucket, and the response carries its `bucket_name`. Every target has an id, `hashed_id`, such as
 `t4k9vq`, and a `created_at` time.
 
 ## Before you begin
@@ -75,6 +80,8 @@ For an app target you only choose the app: Cloider routes to the app's port itse
 - **For an app target**: an app that has deployed. Its status must be `Ready` or `Paused`.
 - **For a cluster target**: a cluster with a Service to route to. List them with `cloider cluster services <cluster>`
   or in the dashboard's target dialog. See [Deploy a workload](/kubernetes/deploy-a-workload).
+- **For a bucket target**: a public bucket in the **Ready** state with its static website on. See
+  [Static websites](/object-storage/static-websites).
 - Write access to the account. Members with read-only access can see targets but not change them.
 
 ## Route a domain to an app
@@ -277,6 +284,78 @@ The agent can first call `list_cluster_services` to find the namespace, Service 
 </TabItem>
 </Tabs>
 
+## Route a domain to a bucket's website
+
+A Bucket target serves a bucket's [static website](/object-storage/static-websites) on the domain. It takes the whole
+domain: its path and target path are always `/`, and the website maps every request path to a file in the bucket.
+Turn the bucket's website on first.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the domain under **Domains** and click **Add target**.
+2. Choose **Bucket** as the **Target type** and pick the bucket in **Bucket**. Buckets whose website is off are marked
+   **website off** and can't be picked.
+3. **Path** and **Target path** stay `/`.
+4. Click **Save**.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider target create docs.example.com --bucket acme-site
+```
+
+```text title="Output"
+✓ Routed docs.example.com/ to the bucket's website
+```
+
+`--bucket` takes the bucket's name or id, and can't be combined with `--app` or `--cluster`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="main.tf"
+resource "cloider_target" "docs" {
+  domain    = "docs.example.com"
+  bucket_id = cloider_bucket.site.id
+}
+```
+
+The `cloider_bucket` needs `public = true` and `website = true`.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X POST https://cloider.com/api/targets \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain_name": "docs.example.com", "target_type": "Bucket", "bucket_id": "s3w8qn"}'
+```
+
+```json title="Response"
+{
+  "hashed_id": "t9b3ks",
+  "domain_name": "docs.example.com",
+  "message": "Target created successfully"
+}
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Serve the acme-site bucket's website on docs.example.com.
+```
+
+```json title="Tool call: create_domain_target"
+{"domain": "docs.example.com", "bucket": "acme-site"}
+```
+
+</TabItem>
+</Tabs>
+
 The route starts answering shortly after the target is saved, once Cloider has set it up. For a custom domain, HTTPS
 works once its certificate is issued.
 
@@ -285,9 +364,10 @@ works once its certificate is issued.
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
-The **Targets** section of the domain's page lists each target with its **Type** (**App** or **Cluster**), **Name**,
-**Namespace**, **Service**, **Port**, **Protocol**, **Path** (with a link that opens it) and **Target path**. Each row's
-**Actions** menu has **URL**, **Edit** and **Delete**.
+The **Targets** section of the domain's page lists each target with its **Type** (**App**, **Bucket** or
+**Cluster**), **Name**, **Namespace**, **Service**, **Port**, **Protocol**, **Path** (with a link that opens it) and
+**Target path**. Namespace and Service are only shown for cluster targets, and Port and Protocol not for bucket
+targets. Each row's **Actions** menu has **URL**, **Edit** and **Delete**.
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -303,7 +383,8 @@ example.com/api    production/shop/api:80    /api          TCP
 example.com/       app web                   /             -
 ```
 
-Add `-o wide` for the `ID` column, which `update` and `delete` take.
+A bucket target shows as `website of bucket <name>`. Add `-o wide` for the `ID` column, which `update` and `delete`
+take.
 
 </TabItem>
 <TabItem value="terraform" label="Terraform">
@@ -412,8 +493,9 @@ the app's base path (for example `basePath` in Next.js or `base` in Vite), or gi
 
 ## Edit a target
 
-Editing can change the path, the target path and what the target points at, including switching between an app and a
-cluster Service. Cloider replaces the route in one step.
+Editing can change the path, the target path and what the target points at, including switching between an app, a
+cluster Service and a bucket's website. Cloider replaces the route in one step. A target moved to a bucket must have
+the path `/`.
 
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
@@ -426,10 +508,11 @@ Open the target's **Actions** menu, click **Edit**, change the fields in the **E
 `cloider target update` keeps whatever you don't give:
 
 ```bash
-cloider target list example.com -o wide              # find the id
-cloider target update example.com t7p3xr --path /v2   # move the route
-cloider target update example.com t7p3xr --app api    # point it at an app instead
-cloider target update example.com t7p3xr --port 8080  # another port of the same Service
+cloider target list example.com -o wide                 # find the id
+cloider target update example.com t7p3xr --path /v2      # move the route
+cloider target update example.com t7p3xr --app api       # point it at an app instead
+cloider target update example.com t7p3xr --port 8080     # another port of the same Service
+cloider target update example.com t4k9vq --bucket acme-site  # serve a bucket's website at /
 ```
 
 ```text title="Output"
@@ -534,7 +617,7 @@ Delete the target t7p3xr of example.com.
 </TabItem>
 </Tabs>
 
-## Targets when an app or cluster changes
+## Targets when an app, cluster or bucket changes
 
 | Event | What happens to its targets |
 | --- | --- |
@@ -543,6 +626,9 @@ Delete the target t7p3xr of example.com.
 | App's **port changed** | The route follows the app's port on the next deploy. The dashboard shows **App now listens on port 8080; edit and save this target to update it.** until you save the target |
 | App **deleted** | Its targets are deleted with it. See [Domains for apps](/apps/domains) |
 | Cluster **deleted**, or a Service removed | The targets stay and point at nothing. The dashboard shows **Orphaned targets detected!**. Delete them or point them elsewhere |
+| Bucket's **website turned off** | Refused while targets point at it: `Domains still point at this website, remove their targets first.` |
+| Bucket **made private** | Refused while its website is on: `The bucket's website needs it public, turn the website off first.` |
+| Bucket **deleted** | Its website stops and its targets are deleted with it. The domains stay |
 
 ## Limits
 
@@ -554,6 +640,8 @@ Delete the target t7p3xr of example.com.
 | An app name of 50 characters or fewer always works; a longer one can be refused | `This app's name is too long to be exposed on a domain.` |
 | The app has deployed (`Ready` or `Paused`) | `This app is not ready yet. Wait until it finishes deploying, then add the target.` |
 | A port is required for cluster targets | `Valid port is required` |
+| A bucket target takes the whole domain: `path` and `target_path` are `/` | `A bucket website is served at the root of its domain, the path must be /`, `A bucket website is served at the root of its domain, the target path must be /` |
+| The bucket is `Ready` with its website on | `This bucket is not ready yet. Wait until it is created, then add the target.`, `Turn on the bucket's website first, from its Settings.` |
 | The port speaks HTTP | Not checked. An HTTPS or non-HTTP port answers with errors |
 | Request bodies | Larger uploads may be refused with `413 Request Entity Too Large`. Upload big files straight to [object storage](/object-storage/overview) instead |
 
@@ -564,12 +652,15 @@ For raw TCP or UDP traffic, such as a database or a game server, use a
 
 | Problem | Cause and fix |
 | --- | --- |
-| **Add target** is disabled | There is nothing to route to yet: **You have no apps yet. Create one under Apps before adding an app target.** or **No clusters found. You need to create at least one cluster before adding cluster targets.** |
+| **Add target** is disabled | There is nothing to route to yet: **You have no apps yet. Create one under Apps before adding an app target.**, **No clusters found. You need to create at least one cluster before adding cluster targets.** or **You have no buckets yet. Create one under Buckets and turn on its website before adding a bucket target.** |
+| **None of your buckets has its website on. ...** | Turn on the [static website](/object-storage/static-websites) in a bucket's **Settings** tab, then add the target |
+| `Turn on the bucket's website first, from its Settings.` | The bucket's website is off. Turn it on, then add the target |
+| `A bucket website is served at the root of its domain, the path must be /` | Bucket targets take the whole domain. Leave the path as `/`, or use a domain of its own such as `docs.example.com` |
 | `This path is already in use on this domain. ...` | Edit or delete the target that has the path |
 | `This app is not ready yet. ...` | Wait for the app's first deploy to finish |
-| `App not found!` | The app id is wrong or the app belongs to another account. Check `cloider app list -o wide` |
+| `App not found!`, `Bucket not found!` | The id is wrong or belongs to another account. Check `cloider app list -o wide` or `cloider bucket list -o wide` |
 | `404 Not Found` from the API on create | The domain isn't in your account. Add it first; `www.example.com` is a domain of its own |
-| `say where to route to with --app or --cluster` (CLI) | Add `--app <app>` or `--cluster <cluster> --service <namespace>/<service>` |
+| `say where to route to with --app, --bucket or --cluster` (CLI) | Add `--app <app>`, `--bucket <bucket>` or `--cluster <cluster> --service <namespace>/<service>` |
 | `shop/api has several ports (80/TCP, 9090/TCP), pick one with --port` (CLI) | Add `--port 80` |
 | `no service shop/api in cluster production, see cloider cluster services` (CLI) | Check the namespace and the Service name |
 | The page shows `404` | The host name reaches Cloider but no target's path matches. Add a target for `/` |
@@ -583,11 +674,13 @@ More cases are in [Domains troubleshooting](/domains/troubleshooting).
 
 - [HTTPS certificates](/domains/https-certificates): how targets get their certificates.
 - [Expose Kubernetes services](/kubernetes/expose-services): targets from the cluster's point of view.
+- [Static websites](/object-storage/static-websites): serve a bucket on a domain with a Bucket target.
 - [`cloider target`](/cli/commands/target), [`cloider_target`](/terraform/resources/target) and the
   [Targets API](/api/endpoints/targets).
 
 <FAQ items={[
-  {q: 'What is a target on Cloider?', a: 'A target is a route from a domain, or a path of it, to a Cloider app or to a Service port in one of your Kubernetes clusters. Cloider serves it over HTTPS and forwards requests as plain HTTP.'},
+  {q: 'What is a target on Cloider?', a: 'A target is a route from a domain, or a path of it, to a Cloider app, to a Service port in one of your Kubernetes clusters, or to a bucket\'s static website. Cloider serves it over HTTPS and forwards requests to apps and Services as plain HTTP.'},
+  {q: 'Can a domain serve a bucket\'s static website?', a: 'Yes. Turn on the bucket\'s static website, then add a target of type Bucket that points the domain at it, for example cloider target create docs.example.com --bucket acme-site. A Bucket target takes the whole domain, at the path /.'},
   {q: 'Can one domain route to several apps?', a: 'Yes. Add one target per path, for example / to the web app, /api to a cluster Service and /docs to a docs app. The longest matching path wins.'},
   {q: 'How do I strip a path prefix before it reaches my app?', a: 'Set the target path. A target with path /api and target path / forwards /api/orders as /orders.'},
   {q: 'Do I need an Ingress or a load balancer?', a: 'No. Targets replace both for HTTP traffic. Ingress objects inside a Cloider cluster aren\'t served. Use a LoadBalancer Service only for traffic that isn\'t HTTP.'},

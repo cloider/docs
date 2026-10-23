@@ -6,7 +6,7 @@ description: Cloider API reference for domains, claim a free cloider.app subdoma
 keywords: [cloider domain api, add custom domain api, free subdomain api, cloider.app subdomain, domain availability api, delete domain api]
 ---
 
-These endpoints manage the domains of a Cloider account: **free subdomains** under `cloider.app` that Cloider hosts for you, and **custom domains** you own and point at Cloider's nameservers. A domain does nothing by itself: [DNS records](/api/endpoints/dns-records) say what its names resolve to, and [targets](/api/endpoints/targets) route its paths to an app or a cluster service over HTTPS.
+These endpoints manage the domains of a Cloider account: **free subdomains** under `cloider.app` that Cloider hosts for you, and **custom domains** you own and point at Cloider's nameservers. A domain does nothing by itself: [DNS records](/api/endpoints/dns-records) say what its names resolve to, and [targets](/api/endpoints/targets) route its paths to an app, a cluster service or a bucket's static website over HTTPS.
 
 All paths are relative to `https://cloider.com/api`. Domains are identified by their name, not by an id: `GET /domains/example.com`. See [Domains overview](/domains/overview).
 
@@ -152,7 +152,7 @@ Adding a domain the account already has returns the existing domain with `200`, 
 GET /domains/:domain_name
 ```
 
-Returns one domain with its targets, newest first. For an app target, `namespace` and `service` are empty.
+Returns one domain with its targets, newest first. For an app or bucket target, `namespace` and `service` are empty.
 
 **Access:** any token.
 
@@ -181,7 +181,7 @@ A domain that doesn't exist, or belongs to another account, answers `404 Not Fou
 DELETE /domains/:domain_name
 ```
 
-Deletes a domain together with all of its DNS records and targets. Apps and cluster services that were routed through it stop being reachable on it. This can't be undone, and a free subdomain becomes available to anyone.
+Deletes a domain together with all of its DNS records and targets. Apps, cluster services and bucket websites that were routed through it keep running, but are no longer reachable on it. This can't be undone, and a free subdomain becomes available to anyone.
 
 **Access:** Read & Write token.
 

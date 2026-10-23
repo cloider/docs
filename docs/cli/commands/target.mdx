@@ -2,11 +2,11 @@
 title: cloider target command reference
 sidebar_label: target
 sidebar_position: 11
-description: Reference for cloider target, to route a domain's paths to apps or Kubernetes cluster services, list routes, change a route's path or destination and delete it.
-keywords: [cloider target, route domain to app, route domain to kubernetes service, path routing, cloider target create, custom domain routing]
+description: Reference for cloider target, to route a domain's paths to apps, Kubernetes services or bucket websites, list routes, change a route and delete it.
+keywords: [cloider target, route domain to app, route domain to kubernetes service, bucket website domain, path routing, cloider target create, custom domain routing]
 ---
 
-`cloider target` routes traffic on your [domains](/domains/targets) to where it should go. A **target** maps a path on a domain, such as `example.com/` or `example.com/api`, to one of your apps or to a Service in one of your Kubernetes clusters. Cloider serves the domain over HTTPS and forwards each request to the matching target.
+`cloider target` routes traffic on your [domains](/domains/targets) to where it should go. A **target** maps a path on a domain, such as `example.com/` or `example.com/api`, to one of your apps, to a Service in one of your Kubernetes clusters, or to a bucket's [static website](/object-storage/static-websites). Cloider serves the domain over HTTPS and forwards each request to the matching target.
 
 ```text
 cloider target <command> [flags]
@@ -19,7 +19,7 @@ cloider target <command> [flags]
 | Command | Description |
 | --- | --- |
 | [`cloider target list`](#cloider-target-list) | List a domain's targets |
-| [`cloider target create`](#cloider-target-create) | Route a path of a domain to an app or a cluster service |
+| [`cloider target create`](#cloider-target-create) | Route a path of a domain to an app, a bucket website or a cluster service |
 | [`cloider target update`](#cloider-target-update) | Change a target, keeping what isn't given |
 | [`cloider target delete`](#cloider-target-delete) | Delete a target |
 
@@ -32,7 +32,8 @@ All subcommands also take the [global flags](/cli/configuration#global-flags).
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--app` | string | | Route to this app (name or id) |
-| `--cluster` | string | | Route to a service in this cluster (name or id). Can't be combined with `--app` |
+| `--bucket` | string | | Serve this bucket's website (name or id), at the domain's root. The bucket's website must be on, and `--path` must be `/` |
+| `--cluster` | string | | Route to a service in this cluster (name or id). `--app`, `--bucket` and `--cluster` can't be combined |
 | `--service` | string | | The cluster service, as `<namespace>/<service>`, for example `default/web` |
 | `--port` | int | the service's only port | The service port. Required when the service has several |
 | `--protocol` | string | the port's own | `TCP` or `UDP` |
@@ -61,11 +62,11 @@ t4k9x   example.com/      app web                    /             -
 m2p8q   example.com/api   production/shop/api:8080   /             TCP
 ```
 
-**ROUTE** is the domain and path; **TARGET** is `app <name>` or `<cluster>/<namespace>/<service>:<port>`; **TARGET PATH** is the path the request arrives at the target with. Without `-o wide`, the **ID** column is hidden; `-q` prints ids. `cloider domain get` shows the same table. The MCP server has no separate list tool; agents read targets from `get_domain`.
+**ROUTE** is the domain and path; **TARGET** is `app <name>`, `website of bucket <name>` or `<cluster>/<namespace>/<service>:<port>`; **TARGET PATH** is the path the request arrives at the target with. Without `-o wide`, the **ID** column is hidden; `-q` prints ids. `cloider domain get` shows the same table. The MCP server has no separate list tool; agents read targets from `get_domain`.
 
 ## cloider target create
 
-Route a path of a domain to an app or a cluster service.
+Route a path of a domain to an app, a bucket website or a cluster service.
 
 ```text
 cloider target create <domain> [flags]
@@ -81,6 +82,16 @@ cloider target create blog.cloider.app --app blog
 ✓ Routed blog.cloider.app/ to the app
 ```
 
+Serve a bucket's [static website](/object-storage/static-websites) on a domain:
+
+```bash
+cloider target create docs.example.com --bucket acme-site
+```
+
+```text title="Output"
+✓ Routed docs.example.com/ to the bucket's website
+```
+
 Route `/api` on a custom domain to a Service in a cluster, stripping the prefix:
 
 ```bash
@@ -91,7 +102,7 @@ cloider target create example.com --cluster production --service shop/api --port
 ✓ Routed example.com/api to production/shop/api:8080
 ```
 
-The CLI checks the cluster's services first: an unknown service fails with exit code `4` (``no service shop/api in cluster production, see `cloider cluster services` ``), and a service with several ports needs `--port` (`shop/api has several ports (8080/TCP, 9090/TCP), pick one with --port`). Without `--app` or `--cluster` it fails with `say where to route to with --app or --cluster`. See [Targets](/domains/targets) and [Expose services](/kubernetes/expose-services). MCP tool: `create_domain_target`.
+The CLI checks the cluster's services first: an unknown service fails with exit code `4` (``no service shop/api in cluster production, see `cloider cluster services` ``), and a service with several ports needs `--port` (`shop/api has several ports (8080/TCP, 9090/TCP), pick one with --port`). Without `--app`, `--bucket` or `--cluster` it fails with `say where to route to with --app, --bucket or --cluster`. See [Targets](/domains/targets) and [Expose services](/kubernetes/expose-services). MCP tool: `create_domain_target`.
 
 ## cloider target update
 
@@ -104,6 +115,7 @@ cloider target update <domain> <target-id> [flags]
 ```bash
 cloider target update example.com m2p8q --path /v2
 cloider target update example.com t4k9x --app blog
+cloider target update example.com t4k9x --bucket acme-site
 cloider target update example.com m2p8q --port 9090
 ```
 
@@ -111,7 +123,7 @@ cloider target update example.com m2p8q --port 9090
 ✓ Updated example.com/v2 to production/shop/api:8080
 ```
 
-To move an app target to a cluster service, give `--cluster` and `--service`; `--service`, `--port` or `--protocol` alone on an app target fail with `this target routes to an app, give --cluster to route it to a service instead`. MCP tool: `update_domain_target`.
+To move an app target to a cluster service, give `--cluster` and `--service`; `--service`, `--port` or `--protocol` alone on an app target fail with `this target routes to an app, give --cluster to route it to a service instead`, and on a bucket target with `this target serves a bucket website, give --cluster to route it to a service instead`. `--bucket` moves a target to a bucket's website, which works only for a target whose path is `/`. MCP tool: `update_domain_target`.
 
 ## cloider target delete
 
@@ -142,5 +154,6 @@ MCP tool: `delete_domain_target`.
 <FAQ items={[
   {q: 'How do I point a domain at my app?', a: 'Run cloider target create example.com --app web. The whole domain (path /) then routes to the app over HTTPS.'},
   {q: 'How do I route a domain to a Kubernetes service?', a: 'List the services with cloider cluster services, then run cloider target create example.com --cluster production --service default/web --port 80.'},
+  {q: 'How do I serve a bucket\'s static website on my domain?', a: 'Turn the website on with cloider bucket website acme-site on, then run cloider target create example.com --bucket acme-site. A bucket target takes the whole domain, at the path /.'},
   {q: 'Can different paths of one domain go to different apps?', a: 'Yes. Create one target per path, for example --path / to the web app and --path /api to the api app or a cluster service. --target-path sets the path the request arrives with.'}
 ]} />

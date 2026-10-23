@@ -115,6 +115,7 @@ The exact messages, such as `Cluster name can not start with numbers` or `Bucket
 | Versions listed per file | The newest 1000 | |
 | Lifecycle rules | 100 per bucket; prefixes up to 1024 characters; day counts 1 to 36500 | `A bucket can have up to 100 lifecycle rules` |
 | Bucket policy | 16 KB of text | `The policy is over 16 KB` |
+| [Static website](/object-storage/static-websites) | Public buckets only; index document a file name up to 255 characters without `/`; error document a key up to 1024 characters | `Make the bucket public first, its website is read without a key.` |
 
 S3 clients have no dashboard limits: use one for large files and bulk operations. See [S3 tools](/object-storage/s3-tools).
 
@@ -133,6 +134,7 @@ S3 clients have no dashboard limits: use one for large files and bulk operations
 | DNS record TTL | 60 to 172800 seconds (the CLI defaults to 300) | `TTL must be between 60 and 172800 seconds` |
 | DNS record types | A, AAAA, CNAME, ALIAS, MX, TXT, NS, CAA, HTTPS, SPF, SRV, PTR | |
 | Targets | One per domain and path | `This path is already in use on this domain. Please choose a different path.` |
+| Target to a bucket website | The whole domain: path and target path `/` | `A bucket website is served at the root of its domain, the path must be /` |
 
 ## Running commands (exec)
 

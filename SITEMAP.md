@@ -83,6 +83,7 @@ sections' pages.
 - `sdks.mdx`: JavaScript, Python, Go, PHP and others
 - `manage-files.mdx`: the file browser and the CLI
 - `public-and-private-buckets.mdx`
+- `static-websites.mdx`: serve a public bucket as a website, on its own address or a domain
 - `bucket-policies.mdx`
 - `versioning.mdx`
 - `data-protection.mdx`

@@ -9,8 +9,8 @@ keywords: [cloider domains, cloider dns, free subdomain, cloider.app, custom dom
 Cloider gives every account two kinds of domains: **free subdomains** such as `blog.cloider.app`, and **custom domains**
 you already own, such as `example.com`. A custom domain can use Cloider's nameservers, which then answer for it with
 the DNS records you add. Either kind is connected to your workloads with **targets**: routes from a path of the domain
-to a [Cloider app](/apps/overview) or to a Service in a [Kubernetes cluster](/kubernetes/overview), served over HTTPS
-with a certificate Cloider manages.
+to a [Cloider app](/apps/overview), to a Service in a [Kubernetes cluster](/kubernetes/overview), or to a bucket's
+[static website](/object-storage/static-websites), served over HTTPS with a certificate Cloider manages.
 
 ## At a glance
 
@@ -20,13 +20,14 @@ with a certificate Cloider manages.
 | **How you get it** | Claim a free name under `cloider.app` | Buy it from any registrar, then add it to Cloider |
 | **Cost** | No charge | No charge from Cloider. Your registrar bills the registration |
 | **DNS records** | Not editable. Cloider answers for it | A, AAAA, CNAME, ALIAS, MX, TXT, NS, CAA, HTTPS, SPF, SRV and PTR records, once the domain uses Cloider's nameservers |
-| **Targets** | Yes: route paths to apps and cluster Services | Yes: route paths to apps and cluster Services |
+| **Targets** | Yes: route paths to apps and cluster Services, or the whole domain to a bucket's website | Yes: route paths to apps and cluster Services, or the whole domain to a bucket's website |
 | **HTTPS** | Works immediately, with Cloider's certificate for `*.cloider.app` | A certificate is issued for the host name automatically, once it resolves to Cloider |
 | **Nameservers** | Nothing to change | `ns1.cloider.com`, `ns2.cloider.com`, `ns3.cloider.com`, `ns4.cloider.com` |
 | **Managed with** | Dashboard, CLI, Terraform, API, MCP | Dashboard, CLI, Terraform, API, MCP |
 
 - Domains, DNS records and targets have no charge of their own. You pay for the [apps](/apps/overview) and
-  [clusters](/kubernetes/overview) that serve the traffic. See [Billing model](/concepts/billing-model).
+  [clusters](/kubernetes/overview) that serve the traffic, and a [bucket](/object-storage/overview) only for the data
+  it stores. See [Billing model](/concepts/billing-model).
 - Cloider doesn't register or sell domains. To use your own name, buy it from a registrar such as Namecheap, GoDaddy,
   Cloudflare, Squarespace Domains or Amazon Route 53, then [add it to Cloider](/domains/add-a-custom-domain).
 - A domain belongs to one Cloider account. Once an account has added a name, no other account can add it.
@@ -55,8 +56,9 @@ flowchart LR
 2. **DNS records**: the answers Cloider's nameservers give for a custom domain, such as "`www.example.com` is
    `203.0.113.10`" or "mail for `example.com` goes to `mx1.mail.example.net`". Only custom domains have editable
    records. See [DNS records](/domains/dns-records).
-3. **Targets**: routes from a path of a domain (`/`, `/api`, `/blog`) to an app or to a Service in a cluster. A target
-   is what makes a domain serve something over HTTPS. See [Targets](/domains/targets).
+3. **Targets**: routes from a path of a domain (`/`, `/api`, `/blog`) to an app or to a Service in a cluster, or from
+   the whole domain to a bucket's static website. A target is what makes a domain serve something over HTTPS. See
+   [Targets](/domains/targets).
 
 If DNS is new to you, read [DNS basics](/domains/dns-basics) first. It explains domains, subdomains, records, TTL,
 nameservers and propagation in plain words, with examples.
@@ -91,7 +93,7 @@ Every domain has a status. It describes routing, not DNS: it changes when you ad
 | Status | Meaning |
 | --- | --- |
 | `Pending` | The domain was added and nothing routes to it yet. Add a target to activate it |
-| `Active` | At least one target routes a path of the domain to an app or a cluster Service |
+| `Active` | At least one target routes a path of the domain to an app, a cluster Service or a bucket's website |
 | `Suspended` | The domain had targets, and the last one was deleted. Add a target to make it `Active` again |
 
 The status only follows the domain's targets, so `Active` doesn't mean the domain resolves yet. Use [the checks in Troubleshooting](/domains/troubleshooting) to see what the internet sees.
@@ -104,7 +106,8 @@ Every target is served over HTTPS, and you never upload a certificate:
 - Custom domains get a certificate of their own from Let's Encrypt, issued automatically once the host name resolves
   to Cloider.
 
-Requests reach your app or Service as plain HTTP, so your code doesn't handle TLS. See
+Requests reach your app or Service as plain HTTP, so your code doesn't handle TLS, and a bucket's website is served
+straight from the bucket. See
 [HTTPS certificates](/domains/https-certificates).
 
 ## Who can manage domains?
@@ -147,12 +150,12 @@ Command references: [`cloider domain`](/cli/commands/domain), [`cloider dns`](/c
     Bring `example.com` to Cloider, with steps for popular registrars.
   </Card>
   <Card title="Route a domain with targets" href="/domains/targets" icon="sitemap-outline">
-    Send paths of a domain to apps and Kubernetes Services.
+    Send paths of a domain to apps and Kubernetes Services, or a domain to a bucket's website.
   </Card>
 </Cards>
 
 <FAQ items={[
-  {q: 'Does Cloider charge for domains or DNS?', a: 'No. Free subdomains, custom domains, DNS records and targets have no charge of their own. You pay for the apps and clusters that serve the traffic, and your registrar bills the registration of a custom domain.'},
+  {q: 'Does Cloider charge for domains or DNS?', a: 'No. Free subdomains, custom domains, DNS records and targets have no charge of their own. You pay for the apps and clusters that serve the traffic, a bucket that serves a website is billed only for its stored data, and your registrar bills the registration of a custom domain.'},
   {q: 'Can I buy a domain from Cloider?', a: 'No. Cloider doesn\'t register domains. Buy one from a registrar such as Namecheap, GoDaddy, Cloudflare, Squarespace Domains or Amazon Route 53, then add it to Cloider as a custom domain.'},
   {q: 'What are Cloider\'s nameservers?', a: 'ns1.cloider.com, ns2.cloider.com, ns3.cloider.com and ns4.cloider.com. Set all four at your registrar to have Cloider answer DNS for a custom domain.'},
   {q: 'What is the difference between a free subdomain and a custom domain?', a: 'A free subdomain is a name under cloider.app, such as blog.cloider.app, that works immediately and has no editable DNS records. A custom domain is a domain you own, such as example.com, that you point at Cloider and whose DNS records you manage.'},

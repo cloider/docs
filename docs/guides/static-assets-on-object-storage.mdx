@@ -44,9 +44,10 @@ flowchart LR
 
 :::info[What a public bucket is and isn't]
 A public bucket lets anyone **download** a file whose exact URL they know. Listing the bucket, uploading, overwriting
-and deleting still need an access key. A bucket serves files, not a website: there is no index document and no custom
-domain for a bucket. Serve your HTML from an [app](/apps/overview) and its assets from the bucket. See
-[Public and private buckets](/object-storage/public-and-private-buckets).
+and deleting still need an access key. In this guide the HTML comes from an [app](/apps/overview) and only the assets
+from the bucket. A site with no server-side code can live entirely in a bucket instead: see
+[Static websites](/object-storage/static-websites) for index and error documents and serving it on your own domain.
+See [Public and private buckets](/object-storage/public-and-private-buckets).
 :::
 
 ## Before you begin
@@ -508,5 +509,5 @@ and `~/.aws/config` if you no longer need the profile.
   {q: 'How do I set Cache-Control on files in a Cloider bucket?', a: 'Set it when uploading: aws s3 sync or aws s3 cp with --cache-control "public, max-age=31536000, immutable", CacheControl in the AWS SDKs, or a signed Cache-Control header on a presigned upload. The storage returns it with every download.'},
   {q: 'How do users upload files directly to a Cloider bucket?', a: 'Your server creates a presigned PUT URL for one key and content type with an AWS SDK, using a bucket access key, and the browser PUTs the file to that URL with the same headers. The file never passes through your server, and the key never reaches the browser.'},
   {q: 'Does Cloider charge for bucket traffic or requests?', a: 'No. Buckets are billed for the data stored, per GiB per month. Requests and traffic are free.'},
-  {q: 'Can I put my own domain in front of a Cloider bucket?', a: 'No. Domains and targets route to apps and Kubernetes services, not to buckets. Serve your pages from an app on your domain, and the assets from the bucket\'s own address.'},
+  {q: 'Can I put my own domain in front of a Cloider bucket?', a: 'Yes. Turn on the bucket\'s static website and add a Bucket target that points the domain at it. The target takes the whole domain, so for assets next to an app on example.com use a domain of their own, such as assets.example.com, or keep the bucket\'s own address.'},
 ]} />

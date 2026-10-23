@@ -6,14 +6,14 @@ description: Permanently delete a Cloider bucket with all its files and versions
 keywords: [delete s3 bucket, delete bucket with files, cloider bucket delete, remove bucket, empty bucket, bucket deletion]
 ---
 
-Deleting a bucket permanently removes the bucket and everything in it: every file, every earlier version kept by versioning, its policy and its lifecycle rules. It can't be undone. This page shows how to delete a bucket with every tool, what happens step by step, and what to check first.
+Deleting a bucket permanently removes the bucket and everything in it: every file, every earlier version kept by versioning, its policy, its lifecycle rules, and its static website with the targets that serve it. It can't be undone. This page shows how to delete a bucket with every tool, what happens step by step, and what to check first.
 
 You don't need to empty a bucket before deleting it: Cloider deletes the contents for you.
 
 ## Before you begin
 
 - **Copy anything you want to keep.** Download it with the CLI or an S3 tool, or copy it to another bucket, for example `rclone copy cloider:acme-old cloider:acme-archive`. Versioning doesn't help here: deleting the bucket deletes every version too.
-- **Check what uses the bucket.** Apps, Kubernetes workloads, CI jobs, CDN configurations and public links that point at it will start failing with `NoSuchBucket`.
+- **Check what uses the bucket.** Apps, Kubernetes workloads, CI jobs, CDN configurations and public links that point at it will start failing with `NoSuchBucket`. If the bucket is served as a [static website](/object-storage/static-websites), the website stops and the targets that point domains at it are removed; the domains themselves stay.
 - **Make sure you can delete resources.** Members with the read-only role and read only API tokens can't delete buckets.
 - **Decide whether you need the name.** Once deleted, the bucket's name is free for anyone, in any Cloider account, to take.
 
@@ -24,7 +24,7 @@ You don't need to empty a bucket before deleting it: Cloider deletes the content
 
 1. Open **Buckets** in the sidebar and click the bucket. (You can also open the actions menu on the bucket's row in the list and choose **Delete**.)
 2. Select the **Settings** tab and click **Delete bucket** in the danger zone at the bottom.
-3. The **Delete Bucket** dialog warns that every file goes with the bucket and that its name becomes free for anyone to take. Click **I want to delete the bucket**.
+3. The **Delete Bucket** dialog warns that every file goes with the bucket and that its name becomes free for anyone to take. For a website bucket it adds **Its website stops, and the targets pointing domains at it are removed. The domains stay.** Click **I want to delete the bucket**.
 4. Type the bucket's name to confirm, and click **Delete bucket**.
 
 <Screenshot
@@ -128,10 +128,11 @@ It calls the `delete_bucket` tool, which clients that confirm destructive tools 
 ## What happens when you delete a bucket?
 
 1. **The policy is removed** first, so nothing in it can interfere with the deletion.
-2. **The bucket is marked Terminating.** It disappears from use in the dashboard: its page can't be opened from the list anymore.
-3. **Access is revoked.** Public read access is turned off and every access key loses access to the bucket, before any data is deleted, so nothing can write to it while it is emptied.
-4. **Every file and version is deleted**, then the bucket itself. A bucket with many files takes a while; small buckets are gone within seconds.
-5. **The bucket is gone.** Its status becomes **Terminated** and it leaves the Buckets list. Its name is free again.
+2. **The website stops.** If the bucket is served as a [static website](/object-storage/static-websites), the targets that point domains at it are removed. The domains stay in your account, with their other targets and DNS records.
+3. **The bucket is marked Terminating.** It disappears from use in the dashboard: its page can't be opened from the list anymore.
+4. **Access is revoked.** Public read access is turned off and every access key loses access to the bucket, before any data is deleted, so nothing can write to it while it is emptied.
+5. **Every file and version is deleted**, then the bucket itself. A bucket with many files takes a while; small buckets are gone within seconds.
+6. **The bucket is gone.** Its status becomes **Terminated** and it leaves the Buckets list. Its name is free again.
 
 Access keys aren't deleted with the bucket. A key limited to specific buckets simply drops the deleted one from its list (and shows **None left** if that was its only bucket). Keys for all buckets keep working with the others.
 

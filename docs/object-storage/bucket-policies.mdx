@@ -303,6 +303,7 @@ Conditions limit a statement to requests that match. The format is AWS's: an ope
 | Uploads and downloads in the dashboard and with `cloider bucket upload` / `download` | Your public IP: they use presigned URLs, straight from your browser or machine |
 | Everything else the dashboard's **Files** tab and the other `cloider bucket` file commands do (listing, deleting, restoring, new folders), and settings changes such as versioning and lifecycle rules | An address inside Cloider, not yours |
 | Apps and Kubernetes clusters running on Cloider | An address inside Cloider that other accounts' workloads share |
+| Visitors of the bucket's [static website](/object-storage/static-websites), on its own address or a domain | The visitor's public IP. The website reads the bucket anonymously, so statements for everyone (`"Principal": "*"`) match it |
 
 So name your access keys in a statement with an IP condition, rather than everyone: a Deny for everyone with `NotIpAddress` also refuses the dashboard's file listing and deleting, whatever your own IP is. And don't allow Cloider's internal addresses in a policy; give workloads on Cloider their own access key instead.
 
