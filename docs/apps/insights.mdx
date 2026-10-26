@@ -1,20 +1,27 @@
 ---
-title: App insights, CPU, memory and cost per day
+title: App insights, requests, CPU, memory and cost per day
 sidebar_label: Insights
 sidebar_position: 9
-description: Read a Cloider app's average CPU and memory, daily usage charts, month to date cost and forecasts on the Insights tab, with cloider app usage or the REST API.
-keywords: [cloider app insights, app cpu usage, app memory usage, app cost, usage forecast, app metrics, cloider app usage]
+description: Read a Cloider app's requests per day by status class, data served, average CPU and memory, month to date cost and forecasts on the Insights tab, with cloider app usage or the REST API.
+keywords: [cloider app insights, app requests per day, app traffic, app bandwidth, app cpu usage, app memory usage, app cost, usage forecast, app metrics, cloider app usage]
 ---
 
-The **Insights** tab shows how much CPU and memory an app uses and what it costs: averages for this month and today,
-the cost so far this month, a forecast for this month and next, and daily charts for the last 31 days. The same numbers
-come from `cloider app usage` and the REST API. They are the figures an app is billed on, so this page also explains how
-they are measured.
+The **Insights** tab shows how much traffic an app serves and what it uses and costs: requests per day split by status
+class, the data sent back, average CPU and memory for this month and today, the cost so far this month, a forecast for
+this month and next, and daily charts for the last 31 days. The same numbers come from `cloider app usage` and the REST
+API. CPU and memory are the figures an app is billed on, so this page also explains how they are measured. Requests and
+data out are shown only and never billed.
 
 ## At a glance
 
 | Card or chart | Shows |
 | --- | --- |
+| **Requests (Today)** | Requests to the app's domains so far today |
+| **Requests (This Month)** | Requests since the first of the month |
+| **Server Errors (This Month)** | The share of this month's requests answered with a 5xx status, and how many |
+| **Data Out (This Month)** | Bytes sent back to clients since the first of the month |
+| **Requests** | Requests per day, stacked by 2xx, 3xx, 4xx and 5xx, last 31 days |
+| **Data Out** | Bytes sent back per day, last 31 days |
 | **Avg. Usage (This Month)** | Average CPU in cores and memory in GB over the days of this month |
 | **Avg. Usage (Today)** | Average CPU and memory so far today |
 | **Cost to Date (This Month)** | What the app has cost since the first of the month |
@@ -32,6 +39,18 @@ and shows here once the first samples are in.** until its first samples arrive.
   alt="The Insights tab of the blog app with average CPU and memory cards, cost to date, cost forecast, and daily CPU, memory and cost bar charts"
   caption="Insights: averages, cost and 31 days of daily usage."
 />
+
+## How are requests counted?
+
+Requests are counted where they enter Cloider, at the ingress in front of every app domain: the subdomain the app was
+created with and any [custom domain](/apps/domains) or target pointing at it. Every request is counted, including
+the ones the app never sees, such as the `503` a client gets while the app is down or restarting.
+
+- **Requests** is the total. The chart splits it by status class: **2xx** success, **3xx** redirect, **4xx** client error
+  and **5xx** server error. WebSocket upgrades (`101`) are in the total only.
+- **Data Out** is the size of the responses sent back, headers included, in binary units (1 KB = 1024 bytes).
+- Counts are added every minute to the current day, in UTC.
+- Days from before requests were counted show no bar.
 
 ## How is usage measured?
 
@@ -104,7 +123,14 @@ The response is the app with its usage. A trimmed example:
       "date": "2026-10-19T00:00:00Z",
       "total_cost": 0.0947,
       "total_time_seconds": 86400,
-      "metrics": {"cpu": 38.5, "memory": 212.4, "compute_cost": 0.0947}
+      "metrics": {
+        "cpu": 38.5,
+        "memory": 212.4,
+        "compute_cost": 0.0947,
+        "requests": 18342,
+        "requests_by": {"2xx": 17610, "3xx": 402, "4xx": 318, "5xx": 12},
+        "bytes_out": 96468992
+      }
     }
   ],
   "monthly_usage": {
@@ -123,7 +149,9 @@ The response is the app with its usage. A trimmed example:
 ```
 
 `metrics.cpu` and `monthly_usage.avg_cpu_usage` are in millicores (1000 = one core), `metrics.memory` and
-`avg_memory_usage` in MiB. `daily_usage` holds up to the last 31 days.
+`avg_memory_usage` in MiB. `metrics.requests` is the day's request count and `metrics.requests_by` its split by status
+class, `metrics.bytes_out` the bytes sent back. Days from before requests were counted have none of the three.
+`daily_usage` holds up to the last 31 days.
 
 </TabItem>
 <TabItem value="mcp" label="MCP">
@@ -145,6 +173,7 @@ It calls the `get_usage` tool for one app:
 
 ## Use insights to size and save
 
+- **5xx share goes up**: the app is failing requests. Check the [logs](/apps/logs) around the days it rose.
 - **Memory climbs day after day**: the app probably leaks memory. Check the [logs](/apps/logs) and restart it by saving
   the **Environment** tab, then fix the leak.
 - **High CPU at idle**: look for busy loops, aggressive polling or a development server running in production (for
@@ -166,6 +195,7 @@ cloider app exec blog -- ps aux
 - [Pricing](/reference/pricing): current rates.
 
 <FAQ items={[
+  {q: 'How many requests does my app get per day?', a: 'The app\'s Insights tab shows requests per day for the last 31 days, split into 2xx, 3xx, 4xx and 5xx, with today\'s and this month\'s totals and the data sent back. They are counted at the ingress for every domain of the app, and are not billed.'},
   {q: 'Where can I see how much CPU and memory my app uses?', a: 'On the app\'s Insights tab in the dashboard: average CPU in cores and memory in GB for this month and today, and daily charts for the last 31 days. cloider app usage <app> -o json returns the same figures.'},
   {q: 'How often is app usage measured?', a: 'Usage is sampled every minute while the app runs, and averaged per day. A paused app has no running container, so it records zero usage.'},
   {q: 'Does the web terminal count towards my app\'s usage?', a: 'No. Only the app\'s own container is measured and billed. The terminal that the dashboard opens runs separately and isn\'t counted.'},
