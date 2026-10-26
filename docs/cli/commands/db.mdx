@@ -503,13 +503,14 @@ BACKUP             TAKEN
 2026-10-17_02-00   2026-10-17 02:00 UTC
 
 Restore one into a new database with `cloider db restore orders-db 2026-10-19_02-00`.
+Or any moment from 2026-10-12 01:31:07 UTC until now with `cloider db restore orders-db --time <time>`.
 ```
 
-The **BACKUP** column is the backup's name in `YYYY-MM-DD_HH-MM` form (UTC), which `cloider db restore` takes. `-o json` prints the names as a JSON array. See [Backups and restore](/databases/backups-and-restore). MCP tool: `list_database_backups`.
+The **BACKUP** column is the backup's name in `YYYY-MM-DD_HH-MM` form (UTC), which `cloider db restore` takes. For a PostgreSQL database the last line gives the start of its [point-in-time window](/databases/backups-and-restore#restore-a-postgresql-database-to-a-point-in-time). `-o json` prints the backup names only, as a JSON array. See [Backups and restore](/databases/backups-and-restore). MCP tool: `list_database_backups`.
 
 ## cloider db restore
 
-Restore a backup into a **new** database, a copy of this one as it was when the backup was taken. The original database is left as it is.
+Restore a backup into a **new** database, a copy of this one as it was when the backup was taken. A PostgreSQL database can instead be restored to any moment of the last 7 days with `--time`. The original database is left as it is.
 
 ```text
 cloider db restore <database> [backup] [flags]
@@ -518,11 +519,12 @@ cloider db restore <database> [backup] [flags]
 | Argument | Description |
 | --- | --- |
 | `<database>` | Name or id of the database the backup belongs to |
-| `[backup]` | The backup to restore, `YYYY-MM-DD_HH-MM`, as `cloider db backups` lists it. Can also be given with `--backup` |
+| `[backup]` | The backup to restore, `YYYY-MM-DD_HH-MM`, as `cloider db backups` lists it. Can also be given with `--backup`. Leave it out with `--time` |
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--backup` | string | | Backup to restore, `YYYY-MM-DD_HH-MM` |
+| `--time` | string | | PostgreSQL only: restore to this moment instead of a backup. RFC 3339 (`2026-10-25T14:29:00Z`), or `"YYYY-MM-DD HH:MM:SS"` taken as UTC |
 | `-w, --wait` | bool | `false` | Wait until the new database is `Ready` |
 | `--timeout` | duration | `15m0s` | How long `--wait` waits |
 
@@ -538,7 +540,19 @@ Restore backup 2026-10-18_02-00 of orders-db into a new database? [y/N] y
 ✓ The restored database is ready: `cloider db get orders-db-2026-10-18-02-00`
 ```
 
-The new database is named after the original and the backup, `<name>-<backup>` with the underscore turned into a dash (plus `-1`, `-2` if that name is taken). It has the same user, password, plan, version, trusted sources and SSL setting as the original. `-q` prints its id and `-o json` prints `{"hashed_id", "database_label"}`. MCP tool: `restore_database_backup`.
+To a point in time:
+
+```bash
+cloider db restore orders-db --time "2026-10-25 14:29:00" --wait
+```
+
+```text title="Output"
+Restore orders-db as of 2026-10-25 14:29:00 UTC into a new database? [y/N] y
+✓ Restoring orders-db from 2026-10-25 14:29:00 UTC into a new database orders-db-2026-10-25-14-29-00
+✓ The restored database is ready: `cloider db get orders-db-2026-10-25-14-29-00`
+```
+
+The new database is named after the original and the backup, `<name>-<backup>` with the underscore turned into a dash, or `<name>-YYYY-MM-DD-HH-MM-SS` for a point in time (plus `-1`, `-2` if that name is taken). It has the same user, password, plan, version, trusted sources and SSL setting as the original. `-q` prints its id and `-o json` prints `{"hashed_id", "database_label"}`. MCP tool: `restore_database_backup`.
 
 ## cloider db resize
 

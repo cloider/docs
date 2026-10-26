@@ -19,7 +19,7 @@ Every Cloider resource has a **status** that says what it is doing. The same val
 | **Paused** | Stopped, data kept | Clusters, databases, apps |
 | **Upgrading** | Being resized to a new plan | Databases |
 | **Terminating** | Being deleted | Clusters, databases, apps, buckets, registry projects |
-| **Failed** | Couldn't be provisioned or built, and won't retry on its own | Apps, builds, buckets, registry projects |
+| **Failed** | Couldn't be provisioned or built, and won't retry on its own | Apps, builds, databases, buckets, registry projects |
 
 Deleted resources end up **Terminated**, which the lists don't show. It appears on the [Usage](/account/usage) page, where deleted resources stay for 60 days.
 
@@ -47,6 +47,7 @@ The CLI's `cloider cluster create --wait` waits for **Ready**. Terraform's `cloi
 | **Pausing** | Being paused | Nothing |
 | **Paused** | Stopped; data, users and settings are kept | The plan's storage (`paused_price`) |
 | **Terminating** | Being deleted | Nothing |
+| **Failed** | A restore into this new database didn't complete. Delete it and restore again | Nothing |
 
 ## Apps
 
