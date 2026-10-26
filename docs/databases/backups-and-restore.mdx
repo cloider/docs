@@ -2,11 +2,11 @@
 title: Database backups and restore
 sidebar_label: Backups and restore
 sidebar_position: 10
-description: How Cloider backs up PostgreSQL, MySQL, MongoDB and Redis databases daily, how to list backups, how to restore one into a new database, and how to restore PostgreSQL to any point in time.
-keywords: [database backup, restore database, point in time, point-in-time recovery, pitr, fork database, cloider db backups, cloider db restore, pg_dump, mysqldump, mongodump]
+description: How Cloider backs up PostgreSQL, MySQL, MongoDB and Redis databases daily, how to list backups, how to restore one into a new database, and how to restore PostgreSQL, MySQL and MongoDB to any point in time.
+keywords: [database backup, restore database, point in time, point-in-time recovery, pitr, fork database, cloider db backups, cloider db restore, pg_dump, mysqldump, mongodump, oplog]
 ---
 
-Cloider backs up every database automatically once a day and keeps at least the last 7 daily backups. You can restore any listed backup into a **new database**, a copy of your database as it was when the backup was taken, while the original keeps running untouched. A PostgreSQL database can also be restored to [any second of the last 7 days](#restore-a-postgresql-database-to-a-point-in-time). Backups are included in the database's price.
+Cloider backs up every database automatically once a day and keeps at least the last 7 daily backups. You can restore any listed backup into a **new database**, a copy of your database as it was when the backup was taken, while the original keeps running untouched. A PostgreSQL, MySQL or MongoDB database can also be restored to [any second of the last 7 days](#restore-to-a-point-in-time). Backups are included in the database's price.
 
 ## At a glance
 
@@ -17,7 +17,7 @@ Cloider backs up every database automatically once a day and keeps at least the 
 | **Naming** | The time the backup was taken, in UTC: `YYYY-MM-DD_HH-MM`, for example `2026-10-18_02-00` |
 | **What a restore brings back** | Your main database's data and objects. For Redis, the whole server. See [what is restored](#what-is-restored-and-what-isnt) |
 | **Restore** | Into a new database (a fork) with the same name, user, password, plan, version, trusted sources and SSL mode |
-| **Point in time** | PostgreSQL only: any second of the last 7 days, also into a new database. See [point-in-time restore](#restore-a-postgresql-database-to-a-point-in-time) |
+| **Point in time** | PostgreSQL, MySQL and MongoDB: any second of the last 7 days, also into a new database. See [point-in-time restore](#restore-to-a-point-in-time) |
 | **Cost** | Backups are free. A restored database is a new database, billed by its plan |
 | **Deleting the database** | Deletes its backups too |
 | **Managed with** | The **Backups** tab, `cloider db backups` and `cloider db restore`, the API and MCP. Not Terraform |
@@ -26,7 +26,7 @@ Cloider backs up every database automatically once a day and keeps at least the 
 
 Every night, Cloider backs up each running database, with nothing for you to set up. Each backup is kept apart from the database's own storage, and is named after the moment it was taken, in UTC. Older backups are removed automatically, and at least the last 7 daily backups of each database are always kept. What a restore brings back depends on the engine, see [what is restored and what isn't](#what-is-restored-and-what-isnt).
 
-A backup captures the data as it was while the backup ran. It isn't continuous: changes written after the last backup are only in the database itself until the next night. PostgreSQL is the exception: its changes are also archived continuously, so it can be restored to any second, see [point-in-time restore](#restore-a-postgresql-database-to-a-point-in-time).
+A backup captures the data as it was while the backup ran. It isn't continuous: changes written after the last backup are only in the database itself until the next night. PostgreSQL, MySQL and MongoDB are the exception: their changes are also archived continuously, so they can be restored to any second, see [point-in-time restore](#restore-to-a-point-in-time).
 
 :::note[Paused databases]
 A paused database isn't running, so it can't be backed up. The backups taken before you paused it stay available, and daily backups start again once you resume it.
@@ -209,18 +209,18 @@ Because the name, user and password are the same, switching an app to the restor
 
 A restore keeps going past statements that fail, such as an object that needs privileges the database user doesn't have, so the new database always comes up. Check the objects you depend on after a restore.
 
-A [point-in-time restore](#restore-a-postgresql-database-to-a-point-in-time) works differently and brings back the whole PostgreSQL server: every database, role and grant.
+A [point-in-time restore](#restore-to-a-point-in-time) works differently and brings back the whole PostgreSQL, MySQL or MongoDB server: every database, role, user or account, and grant.
 
-## Restore a PostgreSQL database to a point in time
+## Restore to a point in time
 
-Besides the nightly backups, Cloider archives every change of a PostgreSQL database as it happens. You can restore the database to any second of the last 7 days, for example to the second before a `DROP TABLE` or a bad migration. Like a backup restore, this creates a new database and leaves the original running untouched.
+Besides the nightly backups, Cloider archives every change of a PostgreSQL, MySQL or MongoDB database as it happens. You can restore the database to any second of the last 7 days, for example to the second before a `DROP TABLE` or a bad migration. Like a backup restore, this creates a new database and leaves the original running untouched.
 
 | | |
 | --- | --- |
-| **Engines** | PostgreSQL |
+| **Engines** | PostgreSQL, MySQL, MongoDB |
 | **Window** | From about 7 days ago until the moment you restore. It starts with the first nightly backup after the database was created |
-| **Precision** | To the second: everything committed by the time you pick is restored, nothing after it |
-| **What a restore brings back** | The whole server as it was then: every database, role, password and grant |
+| **Precision** | To the second: everything committed by the time you pick is restored, nothing after it. MySQL counts a statement at the second it started, so one still running at that time is restored too |
+| **What a restore brings back** | The whole server as it was then: every database, role, user or account, password and grant |
 | **Requirement** | The database must be running, not paused |
 | **Duration** | Longer than a backup restore: Cloider loads the nightly backup taken before your time, then replays the changes after it. Minutes for most databases |
 
@@ -351,7 +351,7 @@ MYSQL_PWD="$(cloider db password shop-db)" \
   --single-transaction --no-tablespaces shop-db | gzip > shop-db.sql.gz
 
 # MongoDB: one database to a gzipped archive
-mongodump --uri "mongodb://catalog_db_user:$(cloider db password catalog-db)@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true" \
+mongodump --uri "mongodb://catalog_db_user:$(cloider db password catalog-db)@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true" \
   --tlsCAFile ca.crt --gzip --archive=catalog-db.archive
 
 # Redis: a snapshot of the whole server
@@ -395,9 +395,9 @@ The time is before the start of the window or in the future. The window starts a
 
 The database is paused or still changing. [Resume](/databases/pause-resume-and-delete) it, or wait until it is **Ready**, then restore.
 
-### Point-in-time recovery is only available for PostgreSQL databases!
+### Point-in-time recovery is only available for PostgreSQL, MySQL and MongoDB databases!
 
-MySQL, MongoDB and Redis databases are restored from their [daily backups](#restore-a-backup-into-a-new-database).
+Redis databases are restored from their [daily backups](#restore-a-backup-into-a-new-database).
 
 ### The restored database shows Failed
 
@@ -414,6 +414,6 @@ The restore didn't complete, so the new database doesn't hold a usable copy. You
   {q: 'How long are database backups kept?', a: 'At least the last 7 daily backups of each database are kept. The Backups tab and cloider db backups <database> list exactly which backups are available.'},
   {q: 'Does restoring a backup overwrite my database?', a: 'No. A restore always creates a new database from the backup, with the same name, user, password and plan. The original database keeps running unchanged.'},
   {q: 'What happens to backups when I delete a database?', a: 'They are deleted with it. Restore or export anything you want to keep before deleting a database.'},
-  {q: 'Can I restore a database to a specific minute?', a: 'For PostgreSQL, yes: any second of the last 7 days, into a new database. MySQL, MongoDB and Redis are restored from their daily backups.'},
+  {q: 'Can I restore a database to a specific minute?', a: 'For PostgreSQL, MySQL and MongoDB, yes: any second of the last 7 days, into a new database. Redis is restored from its daily backups.'},
   {q: 'Can I download a Cloider backup file?', a: 'The daily backups can only be restored into a new database. To get a file, export the data yourself with pg_dump, mysqldump, mongodump or redis-cli --rdb.'}
 ]} />

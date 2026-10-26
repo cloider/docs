@@ -239,7 +239,7 @@ A connection string (also called a DSN or a database URL) puts every detail in o
 | --- | --- | --- |
 | PostgreSQL | `postgresql://orders_db_user:PASSWORD@orders-db-p0q9zm.db.cloider.com:20417/orders-db?sslmode=require` | `postgresql://orders_db_user:PASSWORD@orders-db-p0q9zm.db.cloider.com:20417/orders-db` |
 | MySQL | `mysql://shop_db_user:PASSWORD@shop-db-k7x2wd.db.cloider.com:22861/shop-db` | `mysql://shop_db_user:PASSWORD@shop-db-k7x2wd.db.cloider.com:22861/shop-db` |
-| MongoDB | `mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true` | `mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db` |
+| MongoDB | `mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true` | `mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true` |
 | Redis | `rediss://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0` | `redis://cache_user:PASSWORD@cache-c5n1qa.db.cloider.com:26742/0` |
 
 Notes:
@@ -276,10 +276,10 @@ MYSQL_PWD='PASSWORD' mysql -h shop-db-k7x2wd.db.cloider.com -P 22861 -u shop_db_
 
 ```bash
 # SSL on, with the CA certificate saved as ca.crt
-mongosh "mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true" --tlsCAFile ca.crt
+mongosh "mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true" --tlsCAFile ca.crt
 
 # SSL off
-mongosh "mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db"
+mongosh "mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true"
 ```
 
 </TabItem>

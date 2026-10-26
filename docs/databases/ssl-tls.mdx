@@ -197,7 +197,7 @@ mysql -h shop-db-k7x2wd.db.cloider.com -P 22861 -u shop_db_user -p shop-db \
 ### MongoDB: tlsCAFile
 
 ```bash
-mongosh "mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true" --tlsCAFile ca.crt
+mongosh "mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true" --tlsCAFile ca.crt
 ```
 
 MongoDB clients always verify the certificate when TLS is on. Don't use `tlsAllowInvalidCertificates` or `tlsInsecure` to get around a missing CA, pass the CA file instead.

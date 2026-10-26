@@ -22,7 +22,7 @@ This page explains what a Cloider database is, how to choose an engine and a pla
 | **Endpoints** | A public host `<name>-<id>.db.cloider.com` and a private host `<name>-<id>.db.cloider.internal` for your Cloider apps and Kubernetes clusters, both on the database's own port |
 | **Access control** | [Trusted sources](/databases/trusted-sources): anywhere, IPv4 addresses and CIDR ranges, your apps and your clusters |
 | **Encryption** | Optional [SSL/TLS](/databases/ssl-tls) with a certificate signed by Cloider's CA, which you can download |
-| **Backups** | [Daily backups](/databases/backups-and-restore), at least the last 7 kept, restored into a new database. PostgreSQL can also be restored to [any second of the last 7 days](/databases/backups-and-restore#restore-a-postgresql-database-to-a-point-in-time) |
+| **Backups** | [Daily backups](/databases/backups-and-restore), at least the last 7 kept, restored into a new database. PostgreSQL, MySQL and MongoDB can also be restored to [any second of the last 7 days](/databases/backups-and-restore#restore-to-a-point-in-time) |
 | **Scaling** | [Resize](/databases/resize) to a larger plan at any time, with a short restart |
 | **Built-in tools** | A [browser terminal and `cloider db exec`](/databases/terminal-and-exec), and [insights](/databases/insights) charts for CPU, memory, storage, disk, network and connections |
 | **Managed with** | The dashboard, the `cloider db` CLI, the `cloider_database` Terraform resource, the REST API and the MCP server |

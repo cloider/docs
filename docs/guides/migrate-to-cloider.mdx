@@ -292,7 +292,7 @@ cloider db cert catalog-db -f ca.crt
 mongodump --uri "$OLD_MONGODB_URI" --gzip --archive=catalog.archive
 
 NEW=$(cloider db get catalog-db -o json)
-mongorestore --uri "mongodb://$(echo "$NEW" | jq -r .database_user):$(cloider db password catalog-db)@$(echo "$NEW" | jq -r .host):$(echo "$NEW" | jq -r .database_port)/catalog-db?tls=true" \
+mongorestore --uri "mongodb://$(echo "$NEW" | jq -r .database_user):$(cloider db password catalog-db)@$(echo "$NEW" | jq -r .host):$(echo "$NEW" | jq -r .database_port)/catalog-db?directConnection=true&tls=true" \
   --tlsCAFile ca.crt --gzip --archive=catalog.archive \
   --nsFrom 'catalog.*' --nsTo 'catalog-db.*'
 ```

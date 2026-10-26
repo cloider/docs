@@ -2,11 +2,11 @@
 title: Managed MongoDB on Cloider
 sidebar_label: MongoDB
 sidebar_position: 6
-description: Use managed MongoDB 8 on Cloider. Connect with mongosh, Node.js, Mongoose, Python, Go, PHP, Java and Ruby over TLS, and learn the limits of a standalone server.
-keywords: [managed mongodb, mongodb hosting, mongodb 8, mongosh, mongoose, pymongo, mongo go driver, mongodb tls, tlsCAFile, mongodb connection string]
+description: Use managed MongoDB 8 on Cloider. Connect with mongosh, Node.js, Mongoose, Python, Go, PHP, Java and Ruby over TLS, and learn what its single-member replica set means for drivers.
+keywords: [managed mongodb, mongodb hosting, mongodb 8, mongosh, mongoose, pymongo, mongo go driver, mongodb tls, tlsCAFile, mongodb connection string, directConnection, mongodb transactions, change streams]
 ---
 
-Cloider runs managed **MongoDB 8**, the document database that stores JSON-like documents in collections. Each MongoDB database is its own server with its own storage, a database and a user created for you, daily backups and optional TLS. This page covers what is specific to MongoDB on Cloider and how to connect from the shell and from code.
+Cloider runs managed **MongoDB 8**, the document database that stores JSON-like documents in collections. Each MongoDB database is its own server with its own storage, a database and a user created for you, daily backups, point-in-time restore and optional TLS. This page covers what is specific to MongoDB on Cloider and how to connect from the shell and from code.
 
 <Logos items={[{src: '/img/logos/mongodb.svg', alt: 'MongoDB'}]} />
 
@@ -15,14 +15,14 @@ Cloider runs managed **MongoDB 8**, the document database that stores JSON-like 
 | | |
 | --- | --- |
 | **Version** | MongoDB 8 |
-| **Topology** | A standalone server (not a replica set) |
+| **Topology** | A single-member replica set, so transactions and change streams work |
 | **Port** | Assigned per database (not 27017) |
 | **Database and user** | A database named after your Cloider database (for example `catalog-db`) and the user you chose (for example `catalog_db_user`), created in that database |
 | **Admin access** | Not given out. The `admin` user and the `admin`, `local` and `config` databases are reserved |
 | **SSL** | On by default. The server accepts TLS and, for compatibility, unencrypted connections too |
 | **Client** | `mongosh` |
 | **Plans** | Hobby (0.25 vCPU, 0.5 GB RAM, 2 GB storage) to Pro (3 vCPU, 6 GB RAM, 24 GB storage), see [plans](/databases/overview#mongodb-plans) |
-| **Backups** | Daily, restored into a new database |
+| **Backups** | Daily, restored into a new database, and any second of the last 7 days |
 
 ## Create a MongoDB database
 
@@ -46,10 +46,10 @@ Or in the dashboard, choose **MongoDB v8** under **Database Engine**. See [creat
 The connection string, with SSL on:
 
 ```text
-mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true
+mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true
 ```
 
-The user is created in the `catalog-db` database, and a driver authenticates against the database in the path by default, so no `authSource` parameter is needed. Use `mongodb://`, not `mongodb+srv://`: Cloider databases don't publish SRV records.
+Keep `directConnection=true`: the server is a [single-member replica set](#a-single-member-replica-set), and without it a driver connects to the set's member under the public host, whatever host you gave it. The user is created in the `catalog-db` database, and a driver authenticates against the database in the path by default, so no `authSource` parameter is needed. Use `mongodb://`, not `mongodb+srv://`: Cloider databases don't publish SRV records.
 
 ## Connect with mongosh
 
@@ -58,7 +58,7 @@ Download the CA certificate first. MongoDB clients verify the server's certifica
 ```bash
 cloider db cert catalog-db -f ca.crt
 
-mongosh "mongodb://catalog_db_user:$(cloider db password catalog-db)@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true" \
+mongosh "mongodb://catalog_db_user:$(cloider db password catalog-db)@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true" \
   --tlsCAFile ca.crt
 ```
 
@@ -100,7 +100,7 @@ With the [MongoDB Node.js driver](https://www.mongodb.com/docs/drivers/node/curr
 ```js title="db.js"
 import { MongoClient } from "mongodb";
 
-// mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true
+// mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true
 const client = new MongoClient(process.env.MONGODB_URI, {
   tlsCAFile: "ca.crt",
   maxPoolSize: 10,
@@ -141,7 +141,7 @@ With [PyMongo](https://pymongo.readthedocs.io/) (`pip install pymongo`):
 import os
 from pymongo import MongoClient
 
-# mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true
+# mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true
 client = MongoClient(os.environ["MONGODB_URI"], tlsCAFile="ca.crt")
 db = client.get_default_database()
 
@@ -169,7 +169,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true&tlsCAFile=ca.crt
+	// mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true&tlsCAFile=ca.crt
 	client, err := mongo.Connect(options.Client().ApplyURI(os.Getenv("MONGODB_URI")))
 	if err != nil {
 		panic(err)
@@ -218,7 +218,7 @@ import org.bson.Document;
 
 public class Main {
     public static void main(String[] args) {
-        // mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true
+        // mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true
         try (MongoClient client = MongoClients.create(System.getenv("MONGODB_URI"))) {
             MongoCollection<Document> products = client.getDatabase("catalog-db").getCollection("products");
             System.out.println(products.find(new Document("sku", "ACME-001")).first());
@@ -237,7 +237,7 @@ With the [mongo gem](https://www.mongodb.com/docs/ruby-driver/current/) (`gem in
 ```ruby title="db.rb"
 require "mongo"
 
-# mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true
+# mongodb://catalog_db_user:PASSWORD@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true
 client = Mongo::Client.new(ENV.fetch("MONGODB_URI"), ssl_ca_cert: "ca.crt")
 puts client[:products].find(sku: "ACME-001").first
 ```
@@ -247,15 +247,17 @@ puts client[:products].find(sku: "ACME-001").first
 
 ## MongoDB features and limits on Cloider
 
-### A standalone server, not a replica set
+### A single-member replica set
 
-A Cloider MongoDB database runs as a single standalone `mongod`, not as a replica set. Features that MongoDB only offers on replica sets aren't available:
+A Cloider MongoDB database runs as a replica set named `rs0` with one member, the primary. Its oplog is what makes [point-in-time restore](/databases/backups-and-restore#restore-to-a-point-in-time) possible, and features that MongoDB only offers on replica sets work:
 
-- **Multi-document transactions** (`session.withTransaction()`, `startTransaction`). Single document writes are still atomic.
+- **Multi-document transactions** (`session.withTransaction()`, `startTransaction`).
 - **Change streams** (`collection.watch()`).
-- Read preferences other than the primary, and read concern `majority` options that need replication.
+- Libraries that require a replica set, such as Prisma's MongoDB connector.
 
-Some libraries depend on these. Prisma's MongoDB connector, for example, requires a replica set, so it can't be used with a Cloider MongoDB database. Mongoose, the official drivers and most ODMs work, as long as your code doesn't start transactions. Don't put `replicaSet=` in the connection string.
+There are no secondaries, so every read goes to the primary and `majority` means that one member.
+
+The member's address is the public host, `catalog-db-m3v8rt.db.cloider.com:24309`. A driver that connects to a replica set looks up its members and switches to their addresses, so a connection string with the private host and without `directConnection=true` ends up on the public host. Keep `directConnection=true` in the connection string, as the ones Cloider shows have it, and don't add `replicaSet=`.
 
 ### The database and the user
 
@@ -272,6 +274,8 @@ MongoDB's storage engine, WiredTiger, keeps frequently used data and indexes in 
 ### Backups and restore
 
 Cloider backs up every MongoDB database each night. A [restore](/databases/backups-and-restore) creates a new database with the collections, documents and indexes of your main database (`catalog-db`). Other databases, and users and roles you created, aren't restored.
+
+Every change is also archived as it happens, so you can restore a MongoDB database to [any second of the last 7 days](/databases/backups-and-restore#restore-to-a-point-in-time), for example right before a bad `deleteMany`. That restore brings back the whole server, every database, user and role included.
 
 ## Common tasks
 
@@ -298,7 +302,7 @@ Run any of them with `cloider db exec catalog-db '<expression>'`. Single quotes 
 mongodump --uri "mongodb://app:PASSWORD@old-db.example.com:27017/catalog" --gzip --archive=catalog.archive
 
 # Restore it into the Cloider database, renaming the namespace
-mongorestore --uri "mongodb://catalog_db_user:$(cloider db password catalog-db)@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?tls=true" \
+mongorestore --uri "mongodb://catalog_db_user:$(cloider db password catalog-db)@catalog-db-m3v8rt.db.cloider.com:24309/catalog-db?directConnection=true&tls=true" \
   --tlsCAFile ca.crt --gzip --archive=catalog.archive \
   --nsFrom 'catalog.*' --nsTo 'catalog-db.*'
 ```
@@ -312,8 +316,7 @@ mongorestore --uri "mongodb://catalog_db_user:$(cloider db password catalog-db)@
 | `MongoServerSelectionError: connection timed out` or `Server selection timed out after 30000 ms` | Your IP isn't trusted. `cloider db trusted-sources catalog-db --add-my-ip` |
 | `MongoServerError: Authentication failed.` | Wrong password or user, or the wrong database in the path. The path must be `/catalog-db` |
 | `unable to get local issuer certificate` or `self signed certificate in certificate chain` | The client doesn't trust Cloider's CA. Pass `tlsCAFile=ca.crt` |
-| `Transaction numbers are only allowed on a replica set member or mongos` | Your code starts a transaction, which a standalone server can't run. Remove the transaction or use single document writes |
-| `The $changeStream stage is only supported on replica sets` | Change streams need a replica set. Poll instead |
+| `getaddrinfo ENOTFOUND catalog-db-m3v8rt.db.cloider.com` or a timeout from a Cloider app on the private host | The connection string lacks `directConnection=true`, so the driver switched to the replica set member's public host. Add `directConnection=true` |
 | `querySrv ENOTFOUND` | The URI uses `mongodb+srv://`. Use `mongodb://` with the host and port |
 | Connection works but data is missing | Your code writes to another database. Use the database from the connection string (`client.db()`) |
 
@@ -326,9 +329,9 @@ More in [database troubleshooting](/databases/troubleshooting).
 - [Insights](/databases/insights)
 
 <FAQ items={[
-  {q: 'Which MongoDB version does Cloider run?', a: 'Cloider runs MongoDB 8 as a standalone server, one per database.'},
-  {q: 'Does Cloider MongoDB support transactions?', a: 'No. Multi-document transactions and change streams need a replica set, and a Cloider MongoDB database is a standalone server. Single document operations are atomic.'},
-  {q: 'Can I use Prisma with Cloider MongoDB?', a: 'No. Prisma\'s MongoDB connector requires a replica set. Use the official MongoDB driver or Mongoose instead.'},
+  {q: 'Which MongoDB version does Cloider run?', a: 'Cloider runs MongoDB 8 as a single-member replica set, one server per database.'},
+  {q: 'Does Cloider MongoDB support transactions?', a: 'Yes. A Cloider MongoDB database is a single-member replica set, so multi-document transactions and change streams work.'},
+  {q: 'Can I use Prisma with Cloider MongoDB?', a: 'Yes. Prisma\'s MongoDB connector needs a replica set, which a Cloider MongoDB database is. Keep directConnection=true in the connection string.'},
   {q: 'Why does mongosh say the certificate is not trusted?', a: 'Cloider signs MongoDB certificates with its own CA. Download it with cloider db cert <database> -f ca.crt or from the Overview tab, and pass it with --tlsCAFile ca.crt.'},
   {q: 'What port does Cloider MongoDB use?', a: 'Each MongoDB database gets its own port when it is created, not 27017. The port is in the connection details.'},
   {q: 'Can I use mongodb+srv connection strings?', a: 'No. Use a mongodb:// connection string with the host and port from the connection details.'}

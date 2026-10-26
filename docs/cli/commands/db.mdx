@@ -387,7 +387,7 @@ Password: `cloider db password orders-db`
 | PostgreSQL | `psql -h <host> -U <user> -d <database> -p <port>` (with `PGSSLMODE=require` when SSL is on) |
 | MySQL | `mysql -h <host> -P <port> -u <user> <database> --ssl-mode=REQUIRED` (SSL on), or `--ssl-mode=DISABLED --get-server-public-key` (SSL off) |
 | Redis | `redis-cli -h <host> -p <port> --user <user> --tls --cacert ca.crt` (`--tls --cacert` only with SSL on) |
-| MongoDB | `mongosh mongodb://<user>@<host>:<port>/<database>?tls=true --tlsCAFile ca.crt` (TLS parts only with SSL on) |
+| MongoDB | `mongosh mongodb://<user>@<host>:<port>/<database>?directConnection=true&tls=true --tlsCAFile ca.crt` (TLS parts only with SSL on) |
 
 If the client isn't installed, the command says so: ``psql isn't installed, install it or use `cloider db shell ...`, which needs nothing installed``. If the database isn't `Ready`, it warns first. See [Connect to a database](/databases/connect).
 
@@ -506,11 +506,11 @@ Restore one into a new database with `cloider db restore orders-db 2026-10-19_02
 Or any moment from 2026-10-12 01:31:07 UTC until now with `cloider db restore orders-db --time <time>`.
 ```
 
-The **BACKUP** column is the backup's name in `YYYY-MM-DD_HH-MM` form (UTC), which `cloider db restore` takes. For a PostgreSQL database the last line gives the start of its [point-in-time window](/databases/backups-and-restore#restore-a-postgresql-database-to-a-point-in-time). `-o json` prints the backup names only, as a JSON array. See [Backups and restore](/databases/backups-and-restore). MCP tool: `list_database_backups`.
+The **BACKUP** column is the backup's name in `YYYY-MM-DD_HH-MM` form (UTC), which `cloider db restore` takes. For a PostgreSQL, MySQL or MongoDB database the last line gives the start of its [point-in-time window](/databases/backups-and-restore#restore-to-a-point-in-time). `-o json` prints the backup names only, as a JSON array. See [Backups and restore](/databases/backups-and-restore). MCP tool: `list_database_backups`.
 
 ## cloider db restore
 
-Restore a backup into a **new** database, a copy of this one as it was when the backup was taken. A PostgreSQL database can instead be restored to any moment of the last 7 days with `--time`. The original database is left as it is.
+Restore a backup into a **new** database, a copy of this one as it was when the backup was taken. A PostgreSQL, MySQL or MongoDB database can instead be restored to any moment of the last 7 days with `--time`. The original database is left as it is.
 
 ```text
 cloider db restore <database> [backup] [flags]
@@ -524,7 +524,7 @@ cloider db restore <database> [backup] [flags]
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--backup` | string | | Backup to restore, `YYYY-MM-DD_HH-MM` |
-| `--time` | string | | PostgreSQL only: restore to this moment instead of a backup. RFC 3339 (`2026-10-25T14:29:00Z`), or `"YYYY-MM-DD HH:MM:SS"` taken as UTC |
+| `--time` | string | | PostgreSQL, MySQL and MongoDB only: restore to this moment instead of a backup. RFC 3339 (`2026-10-25T14:29:00Z`), or `"YYYY-MM-DD HH:MM:SS"` taken as UTC |
 | `-w, --wait` | bool | `false` | Wait until the new database is `Ready` |
 | `--timeout` | duration | `15m0s` | How long `--wait` waits |
 

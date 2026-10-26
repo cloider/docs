@@ -403,7 +403,7 @@ A database's backups, newest first, named YYYY-MM-DD_HH-MM in UTC.
 
 ### restore_database_backup
 
-Restore a backup into a new database, a fork of this one as it was then. The database itself is left as it is. A PostgreSQL database can instead be restored to any moment of the last 7 days with time.
+Restore a backup into a new database, a fork of this one as it was then. The database itself is left as it is. A PostgreSQL, MySQL or MongoDB database can instead be restored to any moment of the last 7 days with time.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -413,7 +413,7 @@ Restore a backup into a new database, a fork of this one as it was then. The dat
 | --- | --- | --- | --- |
 | `database` | string | Yes | Name or id of the database. |
 | `backup` | string | No | The backup, YYYY-MM-DD_HH-MM, see list_database_backups. Give either this or time. |
-| `time` | string | No | PostgreSQL only: the moment to restore to, RFC 3339 like 2026-10-25T14:29:00Z. |
+| `time` | string | No | PostgreSQL, MySQL and MongoDB only: the moment to restore to, RFC 3339 like 2026-10-25T14:29:00Z. |
 | `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
 
 ### resize_database
