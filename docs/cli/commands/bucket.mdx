@@ -2,11 +2,11 @@
 title: cloider bucket command reference
 sidebar_label: bucket
 sidebar_position: 4
-description: Reference for cloider bucket, to manage S3 compatible buckets, files, versions, static websites, policies, lifecycle rules and access keys from the terminal.
-keywords: [cloider bucket, cloider bucket upload, cloider bucket download, cloider bucket website, cloider bucket key create, s3 cli, object storage cli, bucket policy, lifecycle rules]
+description: Reference for cloider bucket, to manage S3 compatible buckets, files, versions, static websites, policies, lifecycle and CORS rules and access keys from the terminal.
+keywords: [cloider bucket, cloider bucket upload, cloider bucket download, cloider bucket website, cloider bucket key create, s3 cli, object storage cli, bucket policy, lifecycle rules, bucket cors]
 ---
 
-`cloider bucket` manages your [S3 compatible object storage](/object-storage/overview): buckets and their settings, static websites, the files in them, previous versions of files, bucket policies, lifecycle rules, and the S3 access keys that let other tools reach your buckets.
+`cloider bucket` manages your [S3 compatible object storage](/object-storage/overview): buckets and their settings, static websites, the files in them, previous versions of files, bucket policies, lifecycle and CORS rules, and the S3 access keys that let other tools reach your buckets.
 
 ```text
 cloider bucket <command> [flags]
@@ -32,6 +32,7 @@ cloider bucket <command> [flags]
 | [`cloider bucket website`](#cloider-bucket-website) | Show or change a bucket's static website |
 | [`cloider bucket policy get`, `set`, `delete`](#cloider-bucket-policy) | Show, set or remove a bucket's S3 policy |
 | [`cloider bucket lifecycle get`, `set`, `clear`](#cloider-bucket-lifecycle) | Show or replace a bucket's lifecycle rules |
+| [`cloider bucket cors get`, `set`, `clear`](#cloider-bucket-cors) | Show or replace a bucket's CORS rules |
 
 **Files**
 
@@ -424,6 +425,60 @@ tmp/     yes       7d       -            1d
 ```
 
 `-o wide` adds the rule **ID** column. `set` replaces every rule. If the bucket has rules set through the S3 API with options the CLI doesn't show, `get` warns about them and `set` and `clear` ask before replacing them. `clear` always asks for confirmation; pass `--yes` to skip. See [Lifecycle rules](/object-storage/lifecycle-rules). MCP tools: `get_bucket_lifecycle`, `set_bucket_lifecycle`.
+
+## cloider bucket cors
+
+Show or replace a bucket's CORS rules, which decide the websites that can use the bucket from a browser. Without rules any website can. With rules only the origins they list can, and the Cloider dashboard always can.
+
+| Command | Description |
+| --- | --- |
+| `cloider bucket cors get <bucket>` | List a bucket's CORS rules |
+| `cloider bucket cors set <bucket> -f <rules.json>` | Replace every CORS rule of a bucket (`-f -` reads stdin) |
+| `cloider bucket cors clear <bucket>` | Remove every CORS rule of a bucket, so any website can use it again |
+
+`set` flags:
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --file` | string | (required) | Rules file, `-` for stdin |
+
+A rules file is a JSON array of rules, or an object `{"rules": [...]}`. Each rule has:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | string | An optional name for the rule |
+| `allowed_origins` | string list | Origins like `https://app.example.com`, `https://*.example.com` for its subdomains, `*` for any website |
+| `allowed_methods` | string list | Any of `GET`, `HEAD`, `PUT`, `POST` and `DELETE` |
+| `allowed_headers` | string list | Request headers a page may send. `*` for any, or a prefix like `x-amz-*` |
+| `expose_headers` | string list | Response headers a page's script may read, like `ETag` |
+| `max_age_seconds` | int | How long browsers may reuse a preflight answer. `0` leaves it to the browser |
+
+```json title="cors.json"
+[
+  {"id": "web-app", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT"], "allowed_headers": ["Content-Type"], "expose_headers": ["ETag"], "max_age_seconds": 3000},
+  {"id": "anyone-reads", "allowed_origins": ["*"], "allowed_methods": ["GET", "HEAD"]}
+]
+```
+
+```bash
+cloider bucket cors set acme-assets -f cors.json
+```
+
+```text title="Output"
+✓ acme-assets now has 2 CORS rule(s)
+```
+
+```bash
+cloider bucket cors get acme-assets
+```
+
+```text title="Output"
+ID            ORIGINS                  METHODS   HEADERS
+web-app       https://app.example.com  GET,PUT   Content-Type
+anyone-reads  *                        GET,HEAD  -
+```
+
+`-o wide` adds the **EXPOSE** and **MAX AGE** columns. `set` replaces every rule. `clear` always asks for confirmation; pass `--yes` to skip. See [CORS](/object-storage/cors). MCP tools: `get_bucket_cors`, `set_bucket_cors`.
 
 ## cloider bucket ls
 

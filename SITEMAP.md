@@ -85,6 +85,7 @@ sections' pages.
 - `public-and-private-buckets.mdx`
 - `static-websites.mdx`: serve a public bucket as a website, on its own address or a domain
 - `bucket-policies.mdx`
+- `cors.mdx`: which websites may use a bucket from a browser
 - `versioning.mdx`
 - `data-protection.mdx`
 - `lifecycle-rules.mdx`

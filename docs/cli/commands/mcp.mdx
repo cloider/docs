@@ -20,7 +20,7 @@ This page is the command reference. Setting it up in each AI client is covered i
 | --- | --- |
 | **Transport** | stdio (the client starts `cloider mcp` and talks over stdin and stdout) |
 | **Authentication** | The CLI's own login: the current profile, `--profile`, `CLOIDER_TOKEN` or `--token-file` |
-| **Tools** | 121 tools in 8 toolsets, 52 of them read only |
+| **Tools** | 123 tools in 8 toolsets, 54 of them read only |
 | **Restrict** | `--read-only` for read only tools, `--toolsets` for some toolsets |
 | **Not offered** | Interactive and local commands (`shell`, `db connect`, `login`, `logout`, `profile`, `update`, `app open`, `app link`, `registry login`), and managing members and API tokens |
 
@@ -49,7 +49,7 @@ An unknown toolset fails at start with `unknown toolset "dns", pick from account
 | `account` | 6 | 6 | whoami, usage, billing, pricing, members and API tokens (read only) |
 | `clusters` | 9 | 4 | Kubernetes clusters, kubeconfig, services, `cluster_exec` |
 | `databases` | 16 | 6 | Databases, passwords, certificates, backups, restore, resize, SSL, trusted sources, insights, `database_exec` |
-| `buckets` | 27 | 11 | Buckets, settings, static websites, policies, lifecycle, files, versions, access keys |
+| `buckets` | 29 | 13 | Buckets, settings, static websites, policies, lifecycle, CORS, files, versions, access keys |
 | `registry` | 23 | 8 | Registry projects, repositories, images, tokens, retention, immutability |
 | `apps` | 23 | 10 | Apps, deploys, logs, variables, builds, git connections, `app_exec` |
 | `domains` | 12 | 4 | Domains, DNS records, targets |

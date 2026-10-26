@@ -1,0 +1,345 @@
+---
+title: CORS rules for Cloider buckets
+sidebar_label: CORS
+sidebar_position: 8.5
+description: Set CORS rules on Cloider buckets to choose which websites can upload to and read from a bucket in the browser, with presigned URL, fetch and Terraform examples.
+keywords: [s3 cors, bucket cors configuration, cors presigned url upload, Access-Control-Allow-Origin s3, put-bucket-cors, s3 cors error, AllowedOrigins, cors_rule]
+---
+
+CORS (cross-origin resource sharing) decides which websites a browser lets use your bucket: upload to it with presigned URLs, or read its files with `fetch` or `XMLHttpRequest`. Plain links, `<img>`, `<video>` and downloads don't need CORS.
+
+Without rules, any website can use a Cloider bucket from a browser. CORS rules narrow that down to the websites you list.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Without rules** | Any website can use the bucket from a browser |
+| **With rules** | Only the origins the rules list, with the methods and headers they allow. The Cloider dashboard keeps working |
+| **Origins** | `https://app.example.com`, `https://*.example.com` for its subdomains, `*` for any website |
+| **Methods** | `GET`, `HEAD`, `PUT`, `POST`, `DELETE` |
+| **Rules per bucket** | Up to 99 |
+| **Applies to** | The S3 endpoint and the bucket's [static website](/object-storage/static-websites) |
+| **Managed with** | The bucket's **Permissions** > **CORS** tab, `cloider bucket cors`, the Terraform provider, the REST API, MCP, and the S3 API |
+
+## How CORS works on Cloider
+
+- **No rules means any origin.** A bucket without CORS rules answers every website's requests and preflights. This differs from Amazon S3, where a bucket without CORS rules refuses cross-origin requests.
+- **Rules replace that default.** Once a bucket has a rule, a browser only lets the origins the rules list use it, and only with the methods and headers they allow.
+- **The first rule whose origin matches answers a preflight**, even if it doesn't allow the method. Put rules for specific origins before a rule for `*`.
+- **The dashboard keeps working.** Saving rules from the dashboard, the CLI, Terraform, the API or MCP also adds a rule for the Cloider dashboard ahead of yours, so uploads in the **Files** tab keep working. It isn't listed with your rules.
+- **Origins are compared exactly.** `https://app.example.com` doesn't match `http://app.example.com`, `https://example.com` or `https://app.example.com:8443`. A `*` only goes right after the scheme, as in `https://*.example.com`.
+
+## Set CORS rules
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Buckets** in the sidebar, click the bucket, and select **Permissions**, then **CORS**. (It appears once the bucket is **Ready**.)
+2. Click **Add rule**.
+3. Enter an **ID** if you like, a name for the rule such as `web-app`.
+4. Under **Allowed origins**, enter the websites that may use the bucket, one per line, for example `https://app.example.com`.
+5. Check the **Allowed methods**: **GET** and **HEAD** to read files, **PUT** or **POST** to upload with presigned URLs.
+6. Under **Allowed headers**, enter the request headers pages may send, one per line, for example `Content-Type`, or `*` for any.
+7. Under **Exposed headers**, enter the response headers pages' scripts may read, for example `ETag`.
+8. Optionally set **Max age**, how many seconds browsers may reuse a preflight answer.
+9. Click **Add rule**.
+
+The tab lists each rule's **ID**, **Origins**, **Methods** and **Headers**. Use the edit and delete buttons to change or remove a rule.
+
+To write the rules as JSON instead, click **Edit JSON**. It takes AWS's CORS JSON as the S3 console edits it, a list of rules:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://app.example.com"],
+    "AllowedMethods": ["GET", "PUT"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+`{"CORSRules": [...]}`, as `aws s3api get-bucket-cors` prints it, and the CLI's rules files work too. **Save rules** replaces every rule, and `[]` removes them.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+`cloider bucket cors set` replaces **all** CORS rules of the bucket with the ones in a JSON file. The file is a list of rules, or an object with a `rules` list:
+
+```json title="cors.json"
+[
+  {
+    "id": "web-app",
+    "allowed_origins": ["https://app.example.com"],
+    "allowed_methods": ["GET", "PUT"],
+    "allowed_headers": ["Content-Type"],
+    "expose_headers": ["ETag"],
+    "max_age_seconds": 3000
+  }
+]
+```
+
+```bash
+cloider bucket cors set acme-assets -f cors.json
+```
+
+```text title="Output"
+✓ acme-assets now has 1 CORS rule(s)
+```
+
+`-f -` reads the rules from standard input. List the rules:
+
+```bash
+cloider bucket cors get acme-assets
+```
+
+```text title="Output"
+ID       ORIGINS                  METHODS  HEADERS
+web-app  https://app.example.com  GET,PUT  Content-Type
+```
+
+`-o wide` adds the exposed headers and max age, and `-o json` prints the rules as JSON, ready to edit and set again.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Add a `cors_rule` block to the `cloider_bucket` for each rule, in order:
+
+```hcl
+resource "cloider_bucket" "uploads" {
+  name = "acme-uploads"
+
+  cors_rule {
+    id              = "web-app"
+    allowed_origins = ["https://app.example.com"]
+    allowed_methods = ["GET", "PUT"]
+    allowed_headers = ["Content-Type"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+}
+```
+
+Write origins in lower case and methods in upper case, the way they're stored, so the plan stays clean. See the [`cloider_bucket` reference](/terraform/resources/bucket).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+`PUT` replaces every CORS rule of the bucket:
+
+```bash
+curl -X PUT https://cloider.com/api/buckets/b7r2xw/cors \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rules": [
+      {"id": "web-app", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT"],
+       "allowed_headers": ["Content-Type"], "expose_headers": ["ETag"], "max_age_seconds": 3000}
+    ]
+  }'
+```
+
+```json title="Response"
+{
+  "rules": [
+    {"id": "web-app", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT"],
+     "allowed_headers": ["Content-Type"], "expose_headers": ["ETag"], "max_age_seconds": 3000}
+  ]
+}
+```
+
+Read the rules with `GET /api/buckets/b7r2xw/cors`, which answers in the same shape.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Let https://app.example.com upload to acme-assets from the browser with presigned URLs.
+```
+
+It reads the current rules with `get_bucket_cors`, then sets the full list:
+
+```json title="Tool call: set_bucket_cors"
+{
+  "bucket": "acme-assets",
+  "rules": [
+    {"id": "web-app", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT"], "allowed_headers": ["Content-Type"]}
+  ]
+}
+```
+
+</TabItem>
+</Tabs>
+
+:::warning[Setting rules replaces all of them]
+The CLI, the API and MCP always send the complete list of rules. To add one rule, get the current rules first, add yours to the list, and set the whole list. The dashboard does this for you.
+:::
+
+## Rule reference
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `id` | string | Optional. Up to 255 characters, unique within the bucket. `CloiderDashboard` is reserved |
+| `allowed_origins` | list of strings | Required. Origins as browsers send them: a scheme, host and optional port, no path. `https://*.example.com` matches its subdomains, `*` any website. Stored in lower case |
+| `allowed_methods` | list of strings | Required. `GET`, `HEAD`, `PUT`, `POST` and `DELETE`. Stored in upper case |
+| `allowed_headers` | list of strings | Request headers a page may send in a preflighted request. `*` for any, or a prefix like `x-amz-*`. Matched without regard to case |
+| `expose_headers` | list of strings | Response headers a page's script may read, beyond the basic ones, for example `ETag` or `x-amz-version-id` |
+| `max_age_seconds` | integer | How long browsers may reuse a preflight answer, up to 86400. `0` leaves it to the browser |
+
+A bucket can have up to 99 rules.
+
+## Examples
+
+Replace `acme-assets` and the origins with your own. Every example is a complete rule list for `cloider bucket cors set`.
+
+### Upload from a web app with presigned URLs
+
+Your server [creates a presigned URL](/object-storage/sdks#let-a-browser-upload-directly-to-the-bucket) and the browser `PUT`s the file to it with a `Content-Type`:
+
+```json
+[
+  {"id": "uploads", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["PUT"], "allowed_headers": ["Content-Type"]}
+]
+```
+
+### Multipart uploads from the browser
+
+A browser that uploads a large file in parts needs to read each part's `ETag` to complete the upload:
+
+```json
+[
+  {"id": "multipart", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT", "POST"],
+   "allowed_headers": ["*"], "expose_headers": ["ETag"], "max_age_seconds": 3000}
+]
+```
+
+### Read files with fetch from your sites
+
+Let your site and its subdomains read JSON, fonts or other files with `fetch`:
+
+```json
+[
+  {"id": "site", "allowed_origins": ["https://example.com", "https://*.example.com"], "allowed_methods": ["GET", "HEAD"]}
+]
+```
+
+### Production and local development
+
+```json
+[
+  {"id": "production", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT"], "allowed_headers": ["Content-Type"]},
+  {"id": "local", "allowed_origins": ["http://localhost:3000"], "allowed_methods": ["GET", "PUT"], "allowed_headers": ["Content-Type"]}
+]
+```
+
+### Your app uploads, any website reads
+
+The rule for your app comes first: the first rule whose origin matches answers a preflight, and `*` matches every origin.
+
+```json
+[
+  {"id": "app", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT"], "allowed_headers": ["Content-Type"]},
+  {"id": "anyone-reads", "allowed_origins": ["*"], "allowed_methods": ["GET", "HEAD"]}
+]
+```
+
+## CORS on static websites
+
+A bucket's [static website](/object-storage/static-websites), on its own address and on your domains, answers with the same CORS rules as the S3 endpoint, preflights included. Without rules, any website can read the site's files with `fetch`. The site's files are public either way.
+
+## Remove CORS rules
+
+Without rules, any website can use the bucket from a browser again.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+Click a rule's delete button in **Permissions** > **CORS** and confirm with **Delete** in **Delete Rule**.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+Remove every rule:
+
+```bash
+cloider bucket cors clear acme-assets
+```
+
+```text title="Output"
+Remove every CORS rule of acme-assets? Any website can then use it from a browser. [y/N] y
+✓ acme-assets now has 0 CORS rule(s)
+```
+
+To remove one rule, set the list without it.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Remove the `cors_rule` blocks and apply.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X PUT https://cloider.com/api/buckets/b7r2xw/cors \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"rules": []}'
+```
+
+An empty list removes the bucket's CORS configuration.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```json title="Tool call: set_bucket_cors"
+{"bucket": "acme-assets", "rules": []}
+```
+
+</TabItem>
+</Tabs>
+
+## Rules set through the S3 API
+
+A read and write access key can also manage CORS rules with S3 tools, for example `aws s3api put-bucket-cors`. They show in the dashboard, the CLI and the API like any other.
+
+Rules set this way don't get the dashboard's rule. If they don't allow the dashboard's origin, `https://cloider.com`, uploads in the **Files** tab fail until the rules are saved again from the dashboard, the CLI, Terraform, the API or MCP.
+
+To stop access keys from changing CORS rules, deny `s3:PutBucketCors` and `s3:DeleteBucketCors` to them in a [bucket policy](/object-storage/bucket-policies). Name the keys in the statement: a Deny for everyone also stops the dashboard from saving rules.
+
+## Troubleshooting
+
+| Message | Cause and fix |
+| --- | --- |
+| `No 'Access-Control-Allow-Origin' header is present` (browser console) | The page's origin isn't in any rule. Compare it with the rule exactly: scheme, host and port |
+| The preflight fails for a method the rules allow | An earlier rule matches the origin too, for example `*`, and doesn't allow the method. Move the specific rule first |
+| `Request header field content-type is not allowed` (browser console) | Add the header, or `*`, to the rule's allowed headers |
+| A script reads `null` for `ETag` | Add `ETag` to the rule's exposed headers |
+| Uploads in the **Files** tab fail | The rules were set through the S3 API without the dashboard's origin. Save them from the dashboard or the CLI |
+| `Rule N: ... isn't a CORS rule field` (**Edit JSON**) | Use `ID`, `AllowedOrigins`, `AllowedMethods`, `AllowedHeaders`, `ExposeHeaders` and `MaxAgeSeconds`, spelled as in AWS's JSON |
+| `Rule N: add at least one allowed origin` | List the websites the rule is for |
+| `Rule N: the origin "..." isn't an origin like https://app.example.com` | Write the scheme too, for example `https://example.com` rather than `example.com` |
+| `Rule N: the origin "..." has a path, ...` | Leave out the path and the trailing slash: `https://example.com`, not `https://example.com/` |
+| `Rule N: the origin "..." can only have a * right after the scheme, like https://*.example.com` | Use `https://*.example.com`, or list the origins |
+| `Rule N: the method "..." isn't one of GET, PUT, POST, DELETE, HEAD` | Use only these methods |
+| `Rule N: the allowed header "..." isn't a header name, a * only goes at its end, like x-amz-*` | Write header names without spaces, with a `*` only at the end |
+| `A bucket can have up to 99 CORS rules` | Combine rules: a rule takes several origins |
+| `The bucket's policy denies this, change the policy first.` | A bucket policy denies `s3:PutBucketCors`, `s3:GetBucketCors` or `s3:DeleteBucketCors` to everyone. Edit the policy |
+
+## Next steps
+
+- [Let a browser upload directly to a bucket](/object-storage/sdks#let-a-browser-upload-directly-to-the-bucket).
+- [Serve a bucket as a static website](/object-storage/static-websites).
+- [Control access with bucket policies](/object-storage/bucket-policies).
+
+<FAQ items={[
+  {q: 'Why do browser uploads work without CORS rules?', a: 'A Cloider bucket without CORS rules answers every website, unlike Amazon S3. CORS rules narrow that down to the origins you list.'},
+  {q: 'How do I allow a browser to upload to a bucket with a presigned URL?', a: 'Without CORS rules it already can. With rules, add one for your site\'s origin with the PUT method and Content-Type in its allowed headers, for example with cloider bucket cors set <bucket> -f cors.json.'},
+  {q: 'Does setting CORS rules break the Cloider dashboard?', a: 'No. Saving rules with Cloider\'s tools adds a rule for the dashboard ahead of yours. Only rules set through the S3 API, for example with aws s3api put-bucket-cors, leave it out.'},
+  {q: 'Can I paste CORS JSON from AWS?', a: 'Yes. In the bucket\'s Permissions > CORS tab, click Edit JSON and paste the rules as the S3 console shows them, or the {"CORSRules": [...]} that aws s3api get-bucket-cors prints. Saving replaces every rule.'},
+  {q: 'Do CORS rules apply to a bucket\'s static website?', a: 'Yes. The website, on its own address and on your domains, answers with the bucket\'s CORS rules, preflights included.'},
+  {q: 'Can I use a wildcard in an origin?', a: 'Yes, once and right after the scheme: https://*.example.com matches every subdomain of example.com. * on its own matches any website.'},
+  {q: 'Do CORS rules keep other websites from downloading my files?', a: 'No. CORS only tells browsers which pages may read responses with scripts. Links, images and tools like curl don\'t check it. Use a private bucket, presigned URLs or a bucket policy to control who can read files.'},
+]} />

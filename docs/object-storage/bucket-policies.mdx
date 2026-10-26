@@ -21,7 +21,7 @@ This page explains how policies are evaluated on Cloider, what they may contain,
 | **Deny** | Any supported action, for your keys or for everyone, except the two actions that change the policy |
 | **Resources** | The bucket (`arn:aws:s3:::acme-assets`) or keys in it (`arn:aws:s3:::acme-assets/backups/*`) |
 | **Size** | Up to 16 KB of JSON |
-| **Managed with** | The bucket's **Policy** tab, `cloider bucket policy`, the REST API and MCP. Not through the S3 API and not with the Terraform provider |
+| **Managed with** | The bucket's **Permissions** > **Bucket Policy** tab, `cloider bucket policy`, the REST API and MCP. Not through the S3 API and not with the Terraform provider |
 
 ## How are bucket policies evaluated?
 
@@ -44,7 +44,7 @@ The policy itself can always be changed or removed from the dashboard, the CLI, 
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
-1. Open **Buckets** in the sidebar, click the bucket, and select the **Policy** tab.
+1. Open **Buckets** in the sidebar, click the bucket, and select **Permissions**, then **Bucket Policy**.
 2. Type or paste the policy JSON into the **Bucket Policy** editor. Click **Examples** to insert one of the ready made policies, filled in with the bucket's name and your first access key id.
 3. Click **Save policy**. The policy is checked, and any error is shown under the editor with the statement it is about.
 4. An **Active** tag next to the title shows that the bucket has a policy.
@@ -155,7 +155,7 @@ Removing the policy puts access back to what each access key and the bucket's vi
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
-1. Open the bucket's **Policy** tab.
+1. Open the bucket's **Permissions** tab, then **Bucket Policy**.
 2. Click **Remove policy** and confirm with **Remove**.
 
 </TabItem>
@@ -530,7 +530,7 @@ Listing can be limited with the `s3:prefix` condition, here to `downloads/`:
 - [Protect important data](/object-storage/data-protection).
 
 <FAQ items={[
-  {q: 'Does Cloider support S3 bucket policies?', a: 'Yes. Each bucket can have one policy in AWS bucket policy JSON (Version 2012-10-17) with Allow and Deny statements. Principals are your access keys by access key id, or everyone ("*"). Set it in the bucket\'s Policy tab, with cloider bucket policy set, or through the REST API.'},
+  {q: 'Does Cloider support S3 bucket policies?', a: 'Yes. Each bucket can have one policy in AWS bucket policy JSON (Version 2012-10-17) with Allow and Deny statements. Principals are your access keys by access key id, or everyone ("*"). Set it in the bucket\'s Permissions tab, with cloider bucket policy set, or through the REST API.'},
   {q: 'How do I stop an access key from deleting files?', a: 'Add a Deny statement for that key\'s access key id with the actions s3:DeleteObject and s3:DeleteObjectVersion on the resource arn:aws:s3:::<bucket>/*. The key keeps its other permissions.'},
   {q: 'Can I set a bucket policy with aws s3api put-bucket-policy?', a: 'No. Bucket policies are managed with Cloider\'s tools only (the dashboard, the cloider CLI, the REST API and the MCP server), so an access key can never change or read its own bucket\'s policy.'},
   {q: 'Can a bucket policy restrict access by IP address?', a: 'Yes. Use aws:SourceIp with IpAddress or NotIpAddress, for example a Deny for an access key with NotIpAddress and your office range, so the key only works from there. The dashboard\'s file listing and workloads running on Cloider reach storage from inside Cloider, not from your public IP, so restrict access keys rather than everyone.'},

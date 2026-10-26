@@ -93,6 +93,10 @@ Commands that change a resource take `--wait` (`-w`) and `--timeout`; deletes as
 | Command | Description |
 | --- | --- |
 | [`cloider bucket`](/cli/commands/bucket) | Manage object storage buckets, their files and access keys |
+| [`cloider bucket cors`](/cli/commands/bucket#cloider-bucket-cors) | Show or replace a bucket's CORS rules |
+| [`cloider bucket cors clear`](/cli/commands/bucket#cloider-bucket-cors) | Remove every CORS rule of a bucket, so any website can use it again |
+| [`cloider bucket cors get`](/cli/commands/bucket#cloider-bucket-cors) | List a bucket's CORS rules |
+| [`cloider bucket cors set`](/cli/commands/bucket#cloider-bucket-cors) | Replace every CORS rule of a bucket (-f - reads stdin) |
 | [`cloider bucket create`](/cli/commands/bucket#cloider-bucket-create) | Create a bucket |
 | [`cloider bucket delete`](/cli/commands/bucket#cloider-bucket-delete) | Delete a bucket and every file in it |
 | [`cloider bucket deleted`](/cli/commands/bucket#cloider-bucket-deleted) | List deleted files a versioned bucket can still restore |

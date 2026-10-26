@@ -234,12 +234,14 @@ The website answers like an Amazon S3 website endpoint:
 | `HEAD` | The same status and headers as `GET`, without the body |
 | A `Range` header | `206 Partial Content` with that part of the file, so video and audio can be seeked |
 | `If-None-Match` or `If-Modified-Since` matching the file | `304 Not Modified` |
-| `POST`, `PUT`, `DELETE` and other methods | `405 Method Not Allowed`, with `Allow: GET, HEAD` |
+| `OPTIONS`, a CORS preflight | The bucket's [CORS rules](/object-storage/cors) answer it, without a body |
+| `POST`, `PUT`, `DELETE` and other methods | `405 Method Not Allowed`, with `Allow: GET, HEAD, OPTIONS` |
 
 - **The index document applies in every folder.** With the index document `index.html`, `/` serves `index.html` and `/blog/2026/` serves `blog/2026/index.html`.
 - **Folders are never listed.** A folder without an index document answers with the error document.
 - **The error document is read like any other file.** If it is missing, or a policy denies it to the visitor, the built-in page is shown instead, with the same status.
 - **There are no redirect or routing rules.** The only redirect is from a folder path without the slash to the same path with it.
+- **CORS follows the bucket's rules.** Pages on other websites can read the site's files with `fetch` when the bucket's [CORS rules](/object-storage/cors#cors-on-static-websites) allow their origin. Without rules, every website can.
 
 ## Set headers when you upload
 
@@ -418,7 +420,7 @@ This Deny names everyone, so it applies to every download from the bucket, not o
 | Bucket status | **Ready** to change the settings | `The bucket must be ready to change its settings.` |
 | Index document | A file name without `/`, up to 255 characters | `The index document is a file name without a slash, like index.html` |
 | Error document | A key in the bucket, up to 1024 characters, not starting with `/` and without `.` or `..` segments | `The error document is a key in the bucket, like 404.html, not starting with a slash` |
-| Methods | `GET` and `HEAD` | `405 Method Not Allowed` |
+| Methods | `GET` and `HEAD`, and `OPTIONS` for CORS preflights | `405 Method Not Allowed` |
 | Folder listings | Not offered | |
 | Redirect and routing rules | Not offered | |
 | Private files | Not served: the website reads without a key and doesn't take access keys or presigned URLs | |

@@ -20,7 +20,7 @@ This page explains the concepts behind object storage for readers who are new to
 | **Billing** | Per GB of stored data per month, billed by the hour. No charges for requests or traffic. See [Usage and billing](/object-storage/usage-and-billing) |
 | **Credentials** | [Access keys](/object-storage/access-keys): an access key id (`CLDR...`) and a secret, for every bucket of the account or only the ones you pick, read and write or read only. Up to 50 per account |
 | **Visibility** | Private by default. A [public bucket](/object-storage/public-and-private-buckets) lets anyone download a file by its URL, while listing and changing files still need a key |
-| **Features** | [Versioning](/object-storage/versioning) with restore of earlier versions and deleted files, [lifecycle rules](/object-storage/lifecycle-rules), [bucket policies](/object-storage/bucket-policies), [static website hosting](/object-storage/static-websites) on the bucket's own address or your domain, a [file browser](/object-storage/manage-files) in the dashboard, multipart uploads from S3 tools |
+| **Features** | [Versioning](/object-storage/versioning) with restore of earlier versions and deleted files, [lifecycle rules](/object-storage/lifecycle-rules), [bucket policies](/object-storage/bucket-policies), [CORS rules](/object-storage/cors), [static website hosting](/object-storage/static-websites) on the bucket's own address or your domain, a [file browser](/object-storage/manage-files) in the dashboard, multipart uploads from S3 tools |
 | **Plans** | The Free plan allows one bucket. Paid accounts can create more |
 | **Status in the dashboard** | **Buckets** in the sidebar, marked **Beta** |
 | **Tools** | [Dashboard](https://cloider.com/dashboard/buckets), [CLI](/cli/commands/bucket), [Terraform](/terraform/resources/bucket), [REST API](/api/endpoints/buckets), [MCP](/mcp/tools) |
@@ -109,7 +109,7 @@ flowchart LR
 
 There are two ways to work with a bucket, and you will usually use both:
 
-1. **Cloider's own tools** (the dashboard, the `cloider` CLI, Terraform, the REST API and the MCP server) create and delete buckets, manage access keys, change visibility, versioning, policies and lifecycle rules, and browse, upload, download and restore files. They authenticate with your Cloider login or an [API token](/account/api-tokens).
+1. **Cloider's own tools** (the dashboard, the `cloider` CLI, Terraform, the REST API and the MCP server) create and delete buckets, manage access keys, change visibility, versioning, policies, CORS and lifecycle rules, and browse, upload, download and restore files. They authenticate with your Cloider login or an [API token](/account/api-tokens).
 2. **Any S3 client** (the AWS CLI, rclone, s3cmd, the MinIO client, the AWS SDKs, backup tools, frameworks) reads and writes objects directly on the S3 endpoint. They authenticate with a bucket [access key](/object-storage/access-keys), not with your Cloider login.
 
 Files moved with Cloider's tools travel the same way: the dashboard and the CLI ask the API for a presigned URL and then send the bytes straight to the S3 endpoint, so uploads and downloads never pass through the Cloider API.

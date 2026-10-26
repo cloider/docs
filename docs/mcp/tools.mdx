@@ -15,12 +15,12 @@ This page lists every tool the Cloider MCP server (`cloider mcp`) offers, groupe
 | [`account`](#account-tools-account) | 6 | 6 | 0 | 0 |
 | [`clusters`](#kubernetes-cluster-tools-clusters) | 9 | 4 | 3 | 2 |
 | [`databases`](#database-tools-databases) | 16 | 6 | 8 | 2 |
-| [`buckets`](#object-storage-tools-buckets) | 27 | 11 | 8 | 8 |
+| [`buckets`](#object-storage-tools-buckets) | 29 | 13 | 8 | 9 |
 | [`registry`](#container-registry-tools-registry) | 23 | 8 | 7 | 8 |
 | [`apps`](#app-tools-apps) | 23 | 10 | 9 | 4 |
 | [`domains`](#domain-dns-and-target-tools-domains) | 12 | 4 | 5 | 3 |
 | [`support`](#support-tools-support) | 5 | 3 | 2 | 0 |
-| **All** | **121** | **52** | **42** | **27** |
+| **All** | **123** | **54** | **42** | **28** |
 
 - **Read only** tools change nothing. They are the only tools `cloider mcp --read-only` offers.
 - **Changes resources** tools create or update something but don't delete anything.
@@ -490,9 +490,9 @@ A database's resource use, today and per day this month: CPU, memory, storage, d
 
 ## Object storage tools (buckets)
 
-The `buckets` toolset manages [S3 compatible buckets](/object-storage/overview) and what is in them: create and delete buckets, change visibility, versioning, policies and lifecycle rules, list, upload, download and delete files, restore earlier versions, and manage S3 access keys. Uploads go through the API one file at a time; for large syncs, have the agent create a key with `create_bucket_key` and use an S3 tool.
+The `buckets` toolset manages [S3 compatible buckets](/object-storage/overview) and what is in them: create and delete buckets, change visibility, versioning, policies, lifecycle and CORS rules, list, upload, download and delete files, restore earlier versions, and manage S3 access keys. Uploads go through the API one file at a time; for large syncs, have the agent create a key with `create_bucket_key` and use an S3 tool.
 
-Tools: `list_buckets`, `get_bucket`, `create_bucket`, `delete_bucket`, `list_bucket_regions`, `set_bucket_visibility`, `get_bucket_versioning`, `set_bucket_versioning`, `get_bucket_website`, `set_bucket_website`, `set_bucket_policy`, `delete_bucket_policy`, `get_bucket_lifecycle`, `set_bucket_lifecycle`, `list_bucket_objects`, `upload_bucket_objects`, `download_bucket_objects`, `delete_bucket_objects`, `create_bucket_folder`, `list_bucket_object_versions`, `restore_bucket_object_version`, `list_deleted_bucket_objects`, `delete_bucket_object_versions`, `list_bucket_keys`, `create_bucket_key`, `update_bucket_key`, `delete_bucket_key`.
+Tools: `list_buckets`, `get_bucket`, `create_bucket`, `delete_bucket`, `list_bucket_regions`, `set_bucket_visibility`, `get_bucket_versioning`, `set_bucket_versioning`, `get_bucket_website`, `set_bucket_website`, `set_bucket_policy`, `delete_bucket_policy`, `get_bucket_lifecycle`, `set_bucket_lifecycle`, `get_bucket_cors`, `set_bucket_cors`, `list_bucket_objects`, `upload_bucket_objects`, `download_bucket_objects`, `delete_bucket_objects`, `create_bucket_folder`, `list_bucket_object_versions`, `restore_bucket_object_version`, `list_deleted_bucket_objects`, `delete_bucket_object_versions`, `list_bucket_keys`, `create_bucket_key`, `update_bucket_key`, `delete_bucket_key`.
 
 
 ### list_buckets
@@ -666,6 +666,31 @@ Replace every lifecycle rule of a bucket; an empty list removes them. 0 days tur
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
 | Destructive | Yes | `destructiveHint`, `idempotentHint` | [`cloider bucket lifecycle set`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+| `rules` | array of objects (JSON) | Yes | The rules. |
+
+### get_bucket_cors
+
+A bucket's CORS rules, which decide the websites that can use it from a browser. No rules means any website can.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider bucket cors get`](/cli/commands/bucket) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bucket` | string | Yes | Name or id of the bucket. |
+
+### set_bucket_cors
+
+Replace every CORS rule of a bucket; an empty list removes them, so any website can use it again. With rules only the origins they list can, the Cloider dashboard always can.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Destructive | Yes | `destructiveHint`, `idempotentHint` | [`cloider bucket cors set`](/cli/commands/bucket) |
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -1800,8 +1825,8 @@ Some CLI commands are interactive or only make sense in a terminal, so `cloider 
 - [`cloider mcp` command reference](/cli/commands/mcp)
 
 <FAQ items={[
-  {q: 'How many tools does the Cloider MCP server have?', a: '119 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 51 of them only read, 41 create or change resources, and 27 are destructive, which includes the three exec tools.'},
-  {q: 'Which Cloider MCP tools are destructive?', a: 'Every delete tool, the tools that replace a whole setting (bucket policy, lifecycle rules, retention rules), uploads (which overwrite files with the same key), unsetting app variables, untagging and running retention, disconnecting a git account, and the exec tools app_exec, cluster_exec and database_exec. They all carry destructiveHint, so clients ask before running them.'},
+  {q: 'How many tools does the Cloider MCP server have?', a: '123 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 54 of them only read, 42 create or change resources, and 28 are destructive, which includes the three exec tools.'},
+  {q: 'Which Cloider MCP tools are destructive?', a: 'Every delete tool, the tools that replace a whole setting (bucket policy, lifecycle and CORS rules, retention rules), uploads (which overwrite files with the same key), unsetting app variables, untagging and running retention, disconnecting a git account, and the exec tools app_exec, cluster_exec and database_exec. They all carry destructiveHint, so clients ask before running them.'},
   {q: 'Can the MCP server show a database password?', a: 'Yes, with get_database_password, which is read only. get_database returns the connection details without the password, so a client can let the agent read connection details freely and still ask before it reads the password.'},
   {q: 'Can the agent deploy code from my computer?', a: 'Yes. deploy_app uploads a directory on the machine the MCP server runs on, given as an absolute path in dir, detects the language and port, and follows the build until the app is up.'},
   {q: 'How does an agent list a domain\'s targets?', a: 'There is no MCP tool for that, and get_domain doesn\'t include targets. create_domain_target answers with the new target and its id; to list existing ones, run cloider target list <domain> -o wide.'},

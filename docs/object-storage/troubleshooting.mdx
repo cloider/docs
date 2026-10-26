@@ -131,14 +131,16 @@ The endpoint isn't set, so the tool talks to Amazon S3. Set `endpoint_url` in th
 
 **Symptom:** the browser console shows a CORS error or `403` when a page uploads to a presigned URL.
 
-Uploads from browsers to presigned URLs work on Cloider: the dashboard's own file browser uploads this way. When they fail, the cause is almost always the request, not CORS itself (a failed request often surfaces as a CORS error in the console):
+Uploads from browsers to presigned URLs work on Cloider: the dashboard's own file browser uploads this way. A bucket without [CORS rules](/object-storage/cors) answers every website, so when uploads fail there, the cause is the request, not CORS (a failed request often surfaces as a CORS error in the console):
 
 - the `PUT` sends a different `Content-Type` than the URL was signed with,
 - the URL expired (check the `expiresIn` you used),
 - the key that signed the URL was deleted, is read only, or doesn't open the bucket,
 - the page uses `POST` or a form upload instead of a `PUT` with the file as the body.
 
-Compare the failing request in the browser's network tab with the [browser upload example](/object-storage/sdks#let-a-browser-upload-directly-to-the-bucket). Setting a bucket's own CORS rules isn't available from Cloider's tools.
+If the bucket has CORS rules, check that one lists the page's origin exactly (scheme, host and port), allows `PUT`, and allows the `Content-Type` header. See [CORS troubleshooting](/object-storage/cors#troubleshooting).
+
+Compare the failing request in the browser's network tab with the [browser upload example](/object-storage/sdks#let-a-browser-upload-directly-to-the-bucket).
 
 ## Slow or interrupted transfers
 

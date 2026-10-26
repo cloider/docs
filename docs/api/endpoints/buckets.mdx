@@ -2,11 +2,11 @@
 title: Object storage buckets API endpoints
 sidebar_label: Buckets
 sidebar_position: 4
-description: Cloider API reference for S3 compatible buckets, create, list, delete, usage, visibility, static websites, bucket policies, versioning and lifecycle rules.
-keywords: [cloider bucket api, s3 bucket api, create bucket api, bucket website api, static website api, bucket policy api, bucket versioning api, lifecycle rules api, object storage rest api]
+description: Cloider API reference for S3 compatible buckets, create, list, delete, usage, visibility, static websites, bucket policies, versioning, lifecycle and CORS rules.
+keywords: [cloider bucket api, s3 bucket api, create bucket api, bucket website api, static website api, bucket policy api, bucket versioning api, lifecycle rules api, bucket cors api, object storage rest api]
 ---
 
-These endpoints manage Cloider [object storage](/object-storage/overview) buckets: create and delete them, read their endpoint and usage, make them public or private, serve them as static websites, and set bucket policies, versioning and lifecycle rules. To read and write the files inside a bucket you normally use any S3 client with an [access key](/api/endpoints/bucket-keys); the API's own file endpoints are on [Bucket objects](/api/endpoints/bucket-objects).
+These endpoints manage Cloider [object storage](/object-storage/overview) buckets: create and delete them, read their endpoint and usage, make them public or private, serve them as static websites, and set bucket policies, versioning, lifecycle and CORS rules. To read and write the files inside a bucket you normally use any S3 client with an [access key](/api/endpoints/bucket-keys); the API's own file endpoints are on [Bucket objects](/api/endpoints/bucket-objects).
 
 All paths are relative to `https://cloider.com/api`. See [Authentication](/api/authentication) for the token header.
 
@@ -29,6 +29,8 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | PUT | [`/buckets/:hashed_id/versioning`](#turn-versioning-on-or-off) | Write |
 | GET | [`/buckets/:hashed_id/lifecycle`](#get-the-lifecycle-rules) | Read |
 | PUT | [`/buckets/:hashed_id/lifecycle`](#replace-the-lifecycle-rules) | Write |
+| GET | [`/buckets/:hashed_id/cors`](#get-the-cors-rules) | Read |
+| PUT | [`/buckets/:hashed_id/cors`](#replace-the-cors-rules) | Write |
 | DELETE | [`/buckets/:hashed_id`](#delete-a-bucket) | Write |
 
 ## The bucket object
@@ -576,6 +578,82 @@ curl -X PUT https://cloider.com/api/buckets/k5t1v/lifecycle \
 ```
 
 Validation errors are on `rules` and name the rule, for example `Rule 2: another rule already has the ID "expire-logs"`, `Rule 1: set at least one of the day counts` or `A bucket can have up to 100 lifecycle rules`. See [Lifecycle rules](/object-storage/lifecycle-rules).
+
+## Get the CORS rules
+
+```http
+GET /buckets/:hashed_id/cors
+```
+
+Returns the bucket's CORS rules, which decide the websites that can use it from a browser. An empty list means any website can. The rule that keeps the Cloider dashboard working isn't returned.
+
+**Access:** any token. The bucket must be `Ready`.
+
+```bash
+curl https://cloider.com/api/buckets/k5t1v/cors \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "rules": [
+    {
+      "id": "web-app",
+      "allowed_origins": ["https://app.example.com"],
+      "allowed_methods": ["GET", "PUT"],
+      "allowed_headers": ["Content-Type"],
+      "expose_headers": ["ETag"],
+      "max_age_seconds": 3000
+    }
+  ]
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `id` | The rule's name, `""` for none |
+| `allowed_origins` | Origins a browser lets use the bucket, such as `https://app.example.com`. `https://*.example.com` matches its subdomains, `*` any website |
+| `allowed_methods` | Any of `GET`, `HEAD`, `PUT`, `POST` and `DELETE` |
+| `allowed_headers` | Request headers a page may send. `*` for any, or a prefix like `x-amz-*` |
+| `expose_headers` | Response headers a page's script may read |
+| `max_age_seconds` | How long browsers may reuse a preflight answer. `0` leaves it to the browser |
+
+## Replace the CORS rules
+
+```http
+PUT /buckets/:hashed_id/cors
+```
+
+Replaces all of the bucket's CORS rules with the list you send, including rules set through the S3 API. An empty list removes the CORS configuration, so any website can use the bucket again. The rule that keeps the Cloider dashboard working is added ahead of yours.
+
+**Access:** Read & Write token. The bucket must be `Ready`.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `rules` | object list | Yes | Up to 99 rules, each with the fields above |
+
+Each rule needs at least one origin and one method. Origins are `*` or a scheme, host and optional port without a path, with a `*` only right after the scheme; they come back in lower case, and methods in upper case. An `id` is optional, up to 255 characters, unique in the list. `max_age_seconds` is 0 to 86400.
+
+```bash
+curl -X PUT https://cloider.com/api/buckets/k5t1v/cors \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "rules": [
+      {"id": "web-app", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT"], "allowed_headers": ["Content-Type"], "expose_headers": ["ETag"], "max_age_seconds": 3000}
+    ]
+  }'
+```
+
+```json title="Response"
+{
+  "rules": [
+    {"id": "web-app", "allowed_origins": ["https://app.example.com"], "allowed_methods": ["GET", "PUT"], "allowed_headers": ["Content-Type"], "expose_headers": ["ETag"], "max_age_seconds": 3000}
+  ]
+}
+```
+
+Validation errors are on `rules` and name the rule, for example `Rule 1: the origin "example.com" isn't an origin like https://app.example.com`, `Rule 2: allow at least one method` or `A bucket can have up to 99 CORS rules`. See [CORS](/object-storage/cors).
 
 ## Delete a bucket
 

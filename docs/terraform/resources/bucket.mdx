@@ -2,18 +2,18 @@
 title: cloider_bucket resource (Terraform)
 sidebar_label: cloider_bucket
 sidebar_position: 3
-description: Create S3 compatible buckets on Cloider with the cloider_bucket Terraform resource, region, public access, versioning, static websites and import.
-keywords: [cloider_bucket, terraform s3 bucket, terraform object storage, s3 compatible terraform, bucket versioning terraform, public bucket terraform, static website terraform, cloider object storage terraform]
+description: Create S3 compatible buckets on Cloider with the cloider_bucket Terraform resource, region, public access, versioning, static websites, CORS rules and import.
+keywords: [cloider_bucket, terraform s3 bucket, terraform object storage, s3 compatible terraform, bucket versioning terraform, public bucket terraform, static website terraform, s3 cors terraform, cors_rule, cloider object storage terraform]
 ---
 
-The `cloider_bucket` resource creates and manages a Cloider [object storage](/object-storage/overview) bucket: an S3 compatible container for files that any S3 client, SDK or tool can read and write. You choose its name, its region, whether anyone may read its files without a key, whether it keeps earlier versions of files, and whether it is served as a [static website](/object-storage/static-websites). To read and write the bucket, create a [`cloider_bucket_key`](/terraform/resources/bucket-key).
+The `cloider_bucket` resource creates and manages a Cloider [object storage](/object-storage/overview) bucket: an S3 compatible container for files that any S3 client, SDK or tool can read and write. You choose its name, its region, whether anyone may read its files without a key, whether it keeps earlier versions of files, whether it is served as a [static website](/object-storage/static-websites), and which websites can use it from a browser with [CORS rules](/object-storage/cors). To read and write the bucket, create a [`cloider_bucket_key`](/terraform/resources/bucket-key).
 
 ## At a glance
 
 | | |
 | --- | --- |
 | **Required arguments** | `name` |
-| **Changes in place** | `public`, `versioning`, `website`, `index_document`, `error_document` |
+| **Changes in place** | `public`, `versioning`, `website`, `index_document`, `error_document`, `cors_rule` |
 | **Changes that replace the bucket** | `name`, `region` |
 | **Sensitive attributes** | None |
 | **Timeouts** | `create`, `delete`, 20 minutes each by default |
@@ -100,6 +100,32 @@ website_url = "https://acme-site.s3-website.eu-central-2.cloider.com"
 
 The website needs `public = true`. The [`cloider_target`](/terraform/resources/target) also serves it on `docs.example.com`. For a single-page app, set `error_document = "index.html"`. See [Static websites](/object-storage/static-websites).
 
+### CORS rules for a web app
+
+Only these websites can use the bucket from a browser: the app uploads with presigned URLs and reads each part's `ETag`, and the other sites under `example.com` read files. Without `cors_rule` blocks any website can.
+
+```hcl title="main.tf"
+resource "cloider_bucket" "uploads" {
+  name = "acme-uploads"
+
+  cors_rule {
+    id              = "web-app"
+    allowed_origins = ["https://app.example.com"]
+    allowed_methods = ["GET", "PUT", "POST"]
+    allowed_headers = ["*"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+
+  cors_rule {
+    allowed_origins = ["https://*.example.com"]
+    allowed_methods = ["GET", "HEAD"]
+  }
+}
+```
+
+The first rule whose origin matches answers a preflight, so the rule for the app comes first. The Cloider dashboard keeps working whatever the rules say. See [CORS](/object-storage/cors).
+
 ### Choose the region
 
 ```hcl title="main.tf"
@@ -173,7 +199,21 @@ resource "cloider_bucket" "this" {
 | `website` | Bool | No | `false` | In place | Whether the bucket is served as a static website at `website_url`, and on the domains a `cloider_target` with `bucket_id` routes to it. Needs `public = true` |
 | `index_document` | String | No | `"index.html"` | In place | The file the website serves for a path ending in a slash, a name without a slash |
 | `error_document` | String | No | `""` | In place | The key the website serves, with a `404`, for anything missing. `""` is a built-in page |
+| `cors_rule` | Block list | No | None, any website | In place | Up to 99 rules for the websites that can use the bucket from a browser, in order. See [`cors_rule`](#cors_rule) |
 | `timeouts` | Object | No | 20 minutes each | | `create` and `delete` durations |
+
+### cors_rule
+
+| Argument | Type | Required | Description |
+| --- | --- | --- | --- |
+| `allowed_origins` | List of String | Yes | Origins in lower case without a path, like `https://app.example.com`. `https://*.example.com` matches its subdomains, `*` any website |
+| `allowed_methods` | List of String | Yes | Any of `GET`, `HEAD`, `PUT`, `POST` and `DELETE` |
+| `allowed_headers` | List of String | No | Request headers a page may send, like `Content-Type`. `*` for any, or a prefix like `x-amz-*` |
+| `expose_headers` | List of String | No | Response headers a page's script can read, like `ETag` |
+| `max_age_seconds` | Number | No | How long browsers may reuse a preflight answer, 1 to 86400 |
+| `id` | String | No | A name for the rule |
+
+Rules set through the S3 API or the dashboard show as a diff on the next plan, and apply puts the configuration's rules back.
 
 ## Attribute reference
 
@@ -191,7 +231,7 @@ resource "cloider_bucket" "this" {
 
 Changing `name` or `region` deletes the bucket, **with every file and every version in it**, and creates a new, empty one. Terraform shows `# forces replacement` next to the attribute in the plan. A bucket's name can't be changed, and a bucket can't move between regions. To rename or move one, create the new bucket, copy the files with an S3 tool such as `rclone`, then remove the old one from the configuration.
 
-`public`, `versioning` and the website settings change in place, without touching the files. When `public` and `website` change together, the provider turns the website off before it makes the bucket private, and on after it makes the bucket public, so either direction applies in one run. Turning the website off is refused while a `cloider_target` still serves it: `Domains still point at this website, remove their targets first.`
+`public`, `versioning`, the website settings and `cors_rule` change in place, without touching the files. When `public` and `website` change together, the provider turns the website off before it makes the bucket private, and on after it makes the bucket public, so either direction applies in one run. Turning the website off is refused while a `cloider_target` still serves it: `Domains still point at this website, remove their targets first.`
 
 ## Create and delete behavior
 
@@ -202,7 +242,7 @@ Changing `name` or `region` deletes the bucket, **with every file and every vers
 
 ## What the provider doesn't manage on a bucket
 
-Files, bucket policies, lifecycle rules and data protection aren't part of `cloider_bucket`. Manage them in the dashboard, with [`cloider bucket`](/cli/commands/bucket), or with an S3 tool. To upload files from Terraform, use the `aws` provider's `aws_s3_object` against the bucket's `endpoint`, see [Object storage with the AWS provider](/terraform/guides/object-storage).
+Files, bucket policies, lifecycle rules and data protection aren't part of `cloider_bucket` (CORS rules are, with [`cors_rule`](#cors_rule)). Manage them in the dashboard, with [`cloider bucket`](/cli/commands/bucket), or with an S3 tool. To upload files from Terraform, use the `aws` provider's `aws_s3_object` against the bucket's `endpoint`, see [Object storage with the AWS provider](/terraform/guides/object-storage).
 
 ## Timeouts
 
@@ -211,7 +251,7 @@ Files, bucket policies, lifecycle rules and data protection aren't part of `cloi
 | `create` | 20 minutes | Covers the create call and, after a timed out create, the search for the new bucket |
 | `delete` | 20 minutes | The bucket and its contents to be gone |
 
-There is no `update` timeout: changing `public`, `versioning` or the website settings takes effect immediately, and website changes show on the website within about 30 seconds.
+There is no `update` timeout: changing `public`, `versioning`, the website settings or `cors_rule` takes effect immediately, and website changes show on the website within about 30 seconds.
 
 ## Import
 
@@ -263,6 +303,7 @@ After the import, set `public`, `versioning` and the website settings in the con
   {q: 'Can I rename a bucket or change its region with Terraform?', a: 'No. Changing name or region replaces the bucket, which deletes it with all its files and creates a new empty one. Copy the files to a new bucket with an S3 tool instead.'},
   {q: 'Can I turn versioning off with Terraform?', a: 'You can set versioning = false after true, which suspends versioning: new versions stop being kept, but versions already kept stay until you delete them.'},
   {q: 'How do I host a static website on a Cloider bucket with Terraform?', a: 'Set public = true and website = true on the cloider_bucket, optionally with index_document and error_document, and read the address from website_url. To serve it on your domain, add a cloider_target with bucket_id = cloider_bucket.<name>.id.'},
+  {q: 'How do I set CORS rules on a Cloider bucket with Terraform?', a: 'Add a cors_rule block to the cloider_bucket for each rule, with allowed_origins and allowed_methods, and optionally allowed_headers, expose_headers and max_age_seconds. Without cors_rule blocks any website can use the bucket from a browser.'},
   {q: 'Does destroying a cloider_bucket delete its files?', a: 'Yes. Deleting a bucket deletes every file and every version in it, and its name becomes free for anyone to take. Use lifecycle { prevent_destroy = true } on buckets that hold data you need.'},
   {q: 'Can Terraform upload files to a Cloider bucket?', a: 'Not with the Cloider provider. Use the aws provider\'s aws_s3_object resource pointed at the bucket\'s endpoint, with a cloider_bucket_key\'s access key and secret key.'},
 ]} />

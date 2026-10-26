@@ -366,7 +366,7 @@ The API has no idempotency keys, so a request that is sent twice runs twice. Fol
 - **Reads** (`GET`) are always safe to retry, including after a timeout or a `502`, `503` or `504`.
 - **A `429 Too Many Requests`** means the request was turned away before it reached the API, so it is safe to retry any request after waiting. See [Rate limits](/api/rate-limits).
 - **Writes** (`POST`, `PUT`, `DELETE`) that timed out or failed with a `5xx` may have gone through. Read the resource back before you try again. A second `POST /clusters` with the same name, for example, creates a second cluster labelled `staging-1` rather than failing.
-- **`PUT` endpoints** replace a setting with the value you send (trusted sources, environment variables, lifecycle rules), so sending the same body again leaves the same result.
+- **`PUT` endpoints** replace a setting with the value you send (trusted sources, environment variables, lifecycle and CORS rules), so sending the same body again leaves the same result.
 
 ## Roles and permissions
 
@@ -462,6 +462,8 @@ Every endpoint you can call with an API token, grouped as in the sidebar. The **
 | PUT | `/buckets/:hashed_id/versioning` | Turn versioning on or off | Write |
 | GET | `/buckets/:hashed_id/lifecycle` | Lifecycle rules | Read |
 | PUT | `/buckets/:hashed_id/lifecycle` | Replace the lifecycle rules | Write |
+| GET | `/buckets/:hashed_id/cors` | CORS rules | Read |
+| PUT | `/buckets/:hashed_id/cors` | Replace the CORS rules | Write |
 | GET | `/buckets/:hashed_id/objects` | List folders and files | Read |
 | POST | `/buckets/:hashed_id/objects/upload` | Get presigned upload URLs | Write |
 | GET | `/buckets/:hashed_id/objects/download` | Get a presigned download URL for a file | Read |

@@ -15,8 +15,8 @@ The Cloider MCP server lets AI assistants such as Claude Code, Claude Desktop, C
 | **Command** | `cloider mcp`, part of the `cloider` CLI |
 | **Transport** | stdio: your AI client starts `cloider mcp` as a local process and talks to it over stdin and stdout |
 | **Authentication** | The CLI's login: the current profile, `--profile`, `CLOIDER_TOKEN` or `--token-file` |
-| **Tools** | 121 tools in 8 toolsets: `account`, `clusters`, `databases`, `buckets`, `registry`, `apps`, `domains`, `support` |
-| **Read only tools** | 52, the only ones offered with `--read-only` |
+| **Tools** | 123 tools in 8 toolsets: `account`, `clusters`, `databases`, `buckets`, `registry`, `apps`, `domains`, `support` |
+| **Read only tools** | 54, the only ones offered with `--read-only` |
 | **Safety hints** | Standard MCP tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients can ask before changes |
 | **MCP protocol versions** | `2025-11-25`, `2025-06-18`, `2025-03-26` and `2024-11-05` |
 | **Not offered** | Managing members and API tokens, and the CLI's interactive commands |
@@ -54,7 +54,7 @@ Because every tool is a real CLI command, the agent gets exactly what a script g
 | **Apps** | Deploy the current folder, create an app from a GitHub repository, follow the build, read logs, set environment variables, run a migration in the container |
 | **Kubernetes** | Create, pause, resume and delete clusters, get the kubeconfig, list Services, run `kubectl` and `helm` commands in the cluster |
 | **Databases** | Create PostgreSQL, MySQL, MongoDB and Redis databases, resize, back up and restore, change trusted sources and SSL, run queries |
-| **Object storage** | Create buckets, upload and download files, restore earlier versions, serve static websites, set policies and lifecycle rules, create S3 keys |
+| **Object storage** | Create buckets, upload and download files, restore earlier versions, serve static websites, set policies, lifecycle and CORS rules, create S3 keys |
 | **Container registry** | Create projects, list repositories and images, delete or untag images, create tokens, set retention and immutability rules |
 | **Domains** | Claim `cloider.app` subdomains, add custom domains, manage DNS records, route paths to apps, cluster Services and bucket websites |
 | **Account** | Check usage and the month's forecast, bills and prices, list members and tokens |
@@ -140,7 +140,7 @@ Press Ctrl-C to stop it. Your AI client starts and stops the server itself.
     Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Codex, Gemini CLI, Zed, Cline and Continue.
   </Card>
   <Card title="Tools reference" href="/mcp/tools" icon="code-braces">
-    All 121 tools, their parameters, effects and annotations.
+    All 123 tools, their parameters, effects and annotations.
   </Card>
   <Card title="Safety and permissions" href="/mcp/safety-and-permissions" icon="shield-check-outline">
     Read only tokens, --read-only, toolsets and approvals.
@@ -151,7 +151,7 @@ Press Ctrl-C to stop it. Your AI client starts and stops the server itself.
 </Cards>
 
 <FAQ items={[
-  {q: 'Does Cloider have an MCP server?', a: 'Yes. The cloider CLI includes one: cloider mcp. It offers 121 tools for apps, Kubernetes clusters, databases, buckets, the container registry, domains, DNS, usage, billing and support to any MCP client, such as Claude Code, Claude Desktop, Cursor or VS Code.'},
+  {q: 'Does Cloider have an MCP server?', a: 'Yes. The cloider CLI includes one: cloider mcp. It offers 123 tools for apps, Kubernetes clusters, databases, buckets, the container registry, domains, DNS, usage, billing and support to any MCP client, such as Claude Code, Claude Desktop, Cursor or VS Code.'},
   {q: 'How does the Cloider MCP server log in?', a: 'It uses the cloider CLI\'s login: the current profile, a profile passed with cloider --profile <name> mcp, or the token in CLOIDER_TOKEN. Run cloider login once before adding the server to your client.'},
   {q: 'Can an AI agent delete my Cloider resources?', a: 'Only if you let it. Destructive tools carry the MCP destructiveHint annotation, so clients ask before running them. cloider mcp --read-only removes every tool that changes something, and a read only API token makes the API refuse every change whatever the agent does.'},
   {q: 'Is there a hosted Cloider MCP endpoint?', a: 'No. The server runs locally, started by your AI client over stdio. Install the cloider CLI and add cloider mcp to your client.'},

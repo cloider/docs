@@ -89,8 +89,8 @@ Every tool declares what it does through the standard MCP **tool annotations**. 
 
 | Annotation | Set on | Typical client behavior |
 | --- | --- | --- |
-| `readOnlyHint: true` | The 52 read only tools | May run without asking, or offer "always allow" |
-| `destructiveHint: true` | The 27 destructive tools: deletes, whole replacements, uploads that overwrite, and the exec tools | Asks every time, often with a warning |
+| `readOnlyHint: true` | The 54 read only tools | May run without asking, or offer "always allow" |
+| `destructiveHint: true` | The 28 destructive tools: deletes, whole replacements, uploads that overwrite, and the exec tools | Asks every time, often with a warning |
 | `idempotentHint: true` | Read only tools, and 24 changes that do nothing more when repeated, such as `pause_cluster` or `set_bucket_versioning` | Safe to retry after a timeout |
 | `openWorldHint: false` | Every tool | The tools only reach your Cloider account, not the open internet |
 
@@ -98,18 +98,18 @@ Inside the tools, nothing asks for confirmation: the server runs every command w
 
 ### Destructive tools
 
-These 27 tools carry `destructiveHint`:
+These 28 tools carry `destructiveHint`:
 
 | Toolset | Destructive tools |
 | --- | --- |
 | clusters | `delete_cluster`, `cluster_exec` |
 | databases | `delete_database`, `database_exec` |
-| buckets | `delete_bucket`, `set_bucket_policy`, `delete_bucket_policy`, `set_bucket_lifecycle`, `upload_bucket_objects`, `delete_bucket_objects`, `delete_bucket_object_versions`, `delete_bucket_key` |
+| buckets | `delete_bucket`, `set_bucket_policy`, `delete_bucket_policy`, `set_bucket_lifecycle`, `set_bucket_cors`, `upload_bucket_objects`, `delete_bucket_objects`, `delete_bucket_object_versions`, `delete_bucket_key` |
 | registry | `delete_registry_project`, `delete_registry_image`, `untag_registry_image`, `delete_registry_repository`, `delete_registry_token`, `set_registry_retention_rules`, `run_registry_retention`, `delete_registry_immutability_rule` |
 | apps | `delete_app`, `unset_app_variables`, `app_exec`, `disconnect_git_installation` |
 | domains | `delete_domain`, `delete_dns_record`, `delete_domain_target` |
 
-Some are destructive because they replace something whole: `set_bucket_policy`, `set_bucket_lifecycle` and `set_registry_retention_rules` replace every existing rule, and `upload_bucket_objects` overwrites a file with the same key.
+Some are destructive because they replace something whole: `set_bucket_policy`, `set_bucket_lifecycle`, `set_bucket_cors` and `set_registry_retention_rules` replace every existing rule, and `upload_bucket_objects` overwrites a file with the same key.
 
 ### Changes worth reviewing that aren't marked destructive
 
