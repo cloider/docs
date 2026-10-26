@@ -328,7 +328,7 @@ Add example.com to Cloider, tell me which nameservers to set at my registrar, an
 {"domain": "example.com", "type": "CNAME", "name": "www", "value": "acme-shop.cloider.app.", "ttl": 3600}
 ```
 
-A target doesn't add DNS records, so the agent adds a CNAME for www to a free subdomain the app already has. The domain itself already has an A record that points at Cloider. `www.example.com` is added as a domain of its own so it can have a target.
+A target doesn't add DNS records, so the agent adds a CNAME for www to a free subdomain the app already has. The domain itself already has an ALIAS record that points at Cloider. `www.example.com` is added as a domain of its own so it can have a target.
 
 ```text title="Prompt"
 Set up Google Workspace mail for example.com: MX records, SPF and DMARC.

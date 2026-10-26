@@ -34,8 +34,8 @@ resource "cloider_domain" "example" {
   name = "example.com"
 }
 
-# The apex: name defaults to "", the domain itself. It takes over the A record
-# the domain was added with
+# The apex: name defaults to "", the domain itself. It takes over the ALIAS
+# record the domain was added with
 resource "cloider_dns_record" "apex" {
   domain = cloider_domain.example.name
   type   = "A"
@@ -52,7 +52,7 @@ resource "cloider_dns_record" "www" {
 }
 ```
 
-A CNAME takes exactly one value, and can't be used at the apex. To serve a host name from Cloider, point it at a free subdomain you hold with a CNAME. The apex already points at Cloider through the `A` record the domain came with, so add an apex `A` record (as above) or `ALIAS` record only when the apex is served somewhere else. See [Add a custom domain](/domains/add-a-custom-domain).
+A CNAME takes exactly one value, and can't be used at the apex. To serve a host name from Cloider, point it at a free subdomain you hold with a CNAME. The apex already points at Cloider through the `ALIAS` record the domain came with, so add an apex `A` record (as above) or `ALIAS` record only when the apex is served somewhere else. See [Add a custom domain](/domains/add-a-custom-domain).
 
 ### Mail: MX, SPF, DKIM and DMARC
 
@@ -197,7 +197,7 @@ See [DNS records](/domains/dns-records) for every type, including `NS`, `HTTPS`,
 
 - **Values are compared as written.** Cloider trims each value and drops empty ones, so the provider refuses values with leading or trailing spaces or line breaks at plan time (`must be one line, without leading or trailing spaces`). Otherwise every plan would show a change.
 - **Changing `type` or `name`** updates the same record in place, rather than creating a new one.
-- **The apex A record.** A custom domain comes with an A record for the domain itself that points at Cloider. While it still does, a record of type `A` or `ALIAS` without a `name` takes it over instead of failing as a second record.
+- **The apex ALIAS record.** A custom domain comes with an `ALIAS` record for the domain itself that points at `cloider.app`, and at the app's free subdomain once a target routes the domain to an app. While it still points at Cloider, a record of type `A`, `AAAA` or `ALIAS` without a `name` takes it over instead of failing next to it.
 - **Deleting the domain** deletes its records too.
 - **Deleted outside Terraform.** The next refresh removes the record from state and the plan offers to create it again.
 

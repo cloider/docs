@@ -31,7 +31,7 @@ flowchart LR
   S2 --> P2[web pods]
 ```
 
-1. The domain resolves to Cloider. A free subdomain does so from the start. A custom domain does once it uses Cloider's nameservers: the domain itself has an `A` record that points at Cloider from the start, and other host names need an `A` or `CNAME` record, since a target doesn't add one (see [Add a custom domain](/domains/add-a-custom-domain)).
+1. The domain resolves to Cloider. A free subdomain does so from the start. A custom domain does once it uses Cloider's nameservers: the domain itself has an `ALIAS` record that points at Cloider from the start, and other host names need an `A` or `CNAME` record, since a target doesn't add one (see [Add a custom domain](/domains/add-a-custom-domain)).
 2. Cloider terminates HTTPS for the domain.
 3. It picks the target whose `path` matches the request, the longest one first. A target's path covers everything under it, so `/` catches whatever no longer path does.
 4. It forwards the request as plain HTTP to the Service's port in your cluster, optionally rewriting the path.
@@ -250,7 +250,7 @@ Now `https://example.com/docs/intro` reaches the `docs` Service as `/intro`. Thi
 ## Use a custom domain
 
 1. Add the domain to your account and point it at Cloider's nameservers. See [Add a custom domain](/domains/add-a-custom-domain) and [Nameservers](/domains/nameservers).
-2. Add a DNS record for every other host name you serve. The domain itself comes with an `A` record that points at Cloider, but a target doesn't add records: use a `CNAME` to one of your free `cloider.app` subdomains for `www` and other subdomains. See [Add a custom domain](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
+2. Add a DNS record for every other host name you serve. The domain itself comes with an `ALIAS` record that points at Cloider, but a target doesn't add records: use a `CNAME` to one of your free `cloider.app` subdomains for `www` and other subdomains. See [Add a custom domain](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
 3. Create targets on it exactly as for a free subdomain. A subdomain such as `www.example.com` is a domain of its own for targets, so add it with `cloider domain create` first.
 
 ```bash

@@ -848,8 +848,8 @@ Point it at these nameservers at your registrar:
 Then add records with `cloider dns create example.com ...` and routes with `cloider target create example.com ...`.
 ```
 
-**2. Point both names at Cloider.** `example.com` itself already has an `A` record that points at Cloider, added with
-the domain. A target doesn't create DNS records, so add a `CNAME` for `www` to the app's free subdomain yourself:
+**2. Point both names at Cloider.** `example.com` itself already has an `ALIAS` record that points at Cloider, added
+with the domain. A target doesn't create DNS records, so add a `CNAME` for `www` to the app's free subdomain yourself:
 
 ```bash
 cloider dns create example.com --type CNAME --name www --value acme-web.cloider.app. --ttl 3600
@@ -1012,5 +1012,5 @@ More in [Troubleshooting apps](/apps/troubleshooting), [Database troubleshooting
   {q: 'How do I run database migrations on Cloider?', a: 'Keep migrations as SQL files and run each with cloider db exec -i <database> < file.sql. It runs psql next to the database, needs nothing installed, ignores trusted sources and exits with psql\'s exit code, so it also works in CI. A migration tool can run in the app instead with cloider app exec <app> -- <command>.'},
   {q: 'Does Cloider deploy my app automatically when I push to GitHub?', a: 'Yes. An app created from a GitHub, GitLab or Bitbucket repository has auto deploy on, and every push to its branch builds and deploys the newest commit. A push that arrives while a build is running is skipped.'},
   {q: 'Do I need a Dockerfile to deploy an Express app on Cloider?', a: 'No. A project with a package.json at its root is built with the Node.js buildpack, which installs dependencies from the lockfile and starts the app with npm start. Add a Dockerfile only when you need full control over the image.'},
-  {q: 'How do I serve both example.com and www.example.com?', a: 'Add example.com to Cloider, point it at Cloider\'s nameservers, add a CNAME for www to the app\'s cloider.app subdomain (the apex already has an A record that points at Cloider), then add www.example.com as its own domain and create a target to the app on both names. Cloider serves both with HTTPS but doesn\'t redirect one to the other.'},
+  {q: 'How do I serve both example.com and www.example.com?', a: 'Add example.com to Cloider, point it at Cloider\'s nameservers, add a CNAME for www to the app\'s cloider.app subdomain (the apex already has an ALIAS record that points at Cloider), then add www.example.com as its own domain and create a target to the app on both names. Cloider serves both with HTTPS but doesn\'t redirect one to the other.'},
 ]} />

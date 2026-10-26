@@ -166,7 +166,7 @@ resource "cloider_target" "shop_example" {
 }
 ```
 
-The apex (`example.com` itself) needs no record of its own: it comes with an `A` record that points at Cloider, so a target with `domain = cloider_domain.example.name` is enough. See [Add a custom domain](/domains/add-a-custom-domain).
+The apex (`example.com` itself) needs no record of its own: it comes with an `ALIAS` record that points at Cloider (at the app's free subdomain once a target routes the domain to an app), so a target with `domain = cloider_domain.example.name` is enough. See [Add a custom domain](/domains/add-a-custom-domain).
 
 ### Deploy a Service and route to it in one configuration
 
@@ -277,6 +277,6 @@ An ID without the domain fails with `Invalid target import id: Import a target a
   {q: 'How do I expose a Kubernetes Service on Cloider with Terraform?', a: 'Add a cloider_domain and a cloider_target with domain, cluster_id, namespace, service and port. Cloider routes https://<domain> to the Service over HTTPS. Ingress objects in a Cloider cluster aren\'t served, so targets take their place.'},
   {q: 'Can a cloider_target route to a Cloider app?', a: 'Yes. Set app_id to the app\'s id, from cloider app list -o wide, instead of cluster_id. The app must have been deployed.'},
   {q: 'Can a cloider_target serve a bucket\'s static website?', a: 'Yes. Set bucket_id to the cloider_bucket\'s id, and give the bucket public = true and website = true. A bucket target takes the whole domain, at the path /.'},
-  {q: 'Why does my custom domain target not work?', a: 'A target doesn\'t create DNS records. The custom domain itself comes with an A record that points at Cloider; for a subdomain, add a cloider_dns_record CNAME to a free subdomain you hold. A subdomain such as shop.example.com also has to be a cloider_domain of its own.'},
+  {q: 'Why does my custom domain target not work?', a: 'A target doesn\'t create DNS records. The custom domain itself comes with an ALIAS record that points at Cloider; for a subdomain, add a cloider_dns_record CNAME to a free subdomain you hold. A subdomain such as shop.example.com also has to be a cloider_domain of its own.'},
   {q: 'What is the import ID of a cloider_target?', a: 'The domain and the target id joined by a slash, such as example.com/t4k9vq. cloider target list <domain> -o wide shows the ids.'},
 ]} />

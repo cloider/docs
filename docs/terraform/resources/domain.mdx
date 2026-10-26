@@ -64,7 +64,7 @@ Then change the domain's nameservers at your registrar to the ones in the output
 
 ### Serve a custom domain from an app: domain, DNS records and targets
 
-A custom domain comes with an `A` record for the domain itself that points at Cloider, and a target doesn't add any other record. So serving `example.com` and `www.example.com` takes four kinds of resources:
+A custom domain comes with an `ALIAS` record for the domain itself that points at Cloider, and a target doesn't add any other record. So serving `example.com` and `www.example.com` takes four kinds of resources:
 
 ```hcl title="main.tf"
 variable "web_app_id" {
@@ -86,8 +86,8 @@ resource "cloider_domain" "www" {
   name = "www.example.com"
 }
 
-# DNS: example.com came with an A record that points at Cloider, www needs a
-# CNAME to the free subdomain
+# DNS: example.com came with an ALIAS that points at Cloider, www needs a CNAME
+# to the free subdomain
 resource "cloider_dns_record" "www" {
   domain = cloider_domain.example.name
   type   = "CNAME"
@@ -137,7 +137,7 @@ The provider checks the name's form at plan time: `Example.com` or `example.com.
 - **A domain the account already has.** Creating a `cloider_domain` for a name your account already added (in the dashboard, say) fails with `Domain already added: example.com is already one of your domains. Import it with 'terraform import <address> example.com' to manage it here.` This keeps a later `terraform destroy` from deleting records and routes that this configuration never made.
 - **Deleting a domain** also deletes its DNS records and the targets that route it. Terraform deletes the `cloider_dns_record` and `cloider_target` resources that refer to the domain first, but any records or targets created outside Terraform go too.
 - **DNS records** can only be added to custom domains. Free subdomains are answered by Cloider and don't take records.
-- **The apex A record.** A custom domain comes with an `A` record for the domain itself that points at Cloider, unless it's under another of the account's custom domains. Terraform doesn't manage it, and a `cloider_dns_record` of type `A` or `ALIAS` without a `name` takes it over.
+- **The apex ALIAS record.** A custom domain comes with an `ALIAS` record for the domain itself that points at `cloider.app`, unless it's under another of the account's custom domains. When a `cloider_target` first routes the domain to an app with a free subdomain, the `ALIAS` moves to that subdomain. Terraform doesn't manage it, and a `cloider_dns_record` of type `A`, `AAAA` or `ALIAS` without a `name` takes it over.
 - **HTTPS** certificates are issued automatically for every domain a target routes, see [HTTPS certificates](/domains/https-certificates).
 - **Deleted outside Terraform.** The next refresh removes the domain from state and the plan offers to add it again.
 
@@ -186,6 +186,6 @@ The ID is lower-cased and a trailing dot is removed, so `Example.com.` imports a
 <FAQ items={[
   {q: 'How do I add a custom domain to Cloider with Terraform?', a: 'Add a cloider_domain with name = "example.com", apply, and set the domain\'s nameservers at your registrar to cloider_options\' nameservers. Then add cloider_dns_record resources for the host names you serve and a cloider_target to route each one.'},
   {q: 'How do I claim a free cloider.app subdomain with Terraform?', a: 'Add a cloider_domain whose name ends in a subdomain root, such as acme-web.cloider.app. The provider sees the root and claims it as a free subdomain. It must be one label and not taken by another account.'},
-  {q: 'Why does my custom domain not resolve after adding a target?', a: 'A target doesn\'t add DNS records. The domain itself comes with an A record that points at Cloider; add CNAME records for subdomains such as www with cloider_dns_record, and check that the domain uses Cloider\'s nameservers.'},
+  {q: 'Why does my custom domain not resolve after adding a target?', a: 'A target doesn\'t add DNS records. The domain itself comes with an ALIAS record that points at Cloider; add CNAME records for subdomains such as www with cloider_dns_record, and check that the domain uses Cloider\'s nameservers.'},
   {q: 'Can Terraform manage a domain I already added in the dashboard?', a: 'Yes, by importing it: terraform import cloider_domain.example example.com, or an import block. Creating it instead fails with "Domain already added".'},
 ]} />

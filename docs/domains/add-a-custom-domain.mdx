@@ -19,7 +19,7 @@ provider), pointing the host names at Cloider, routing them with targets, and ch
 | 1 | Add `example.com` to Cloider | Cloider |
 | 2 | Recreate the records the domain already has, such as email records | Cloider |
 | 3 | Change the domain's nameservers to `ns1.cloider.com` to `ns4.cloider.com` | Your registrar |
-| 4 | Point the host names you serve at Cloider with a CNAME or A record | Cloider |
+| 4 | Point the host names you serve at Cloider: an ALIAS for the domain itself, a CNAME for each subdomain | Cloider |
 | 5 | Add a target that routes the domain to an app, a Service or a bucket's website | Cloider |
 | 6 | Wait for DNS and the HTTPS certificate, then check | Your terminal |
 
@@ -34,8 +34,8 @@ are working within an hour or two.
   with a Service to route to, or a public bucket with its [static website](/object-storage/static-websites) on. You can
   add the domain first and the target later.
 - **Write access.** A member with read-only access, or a read-only API token, can't add domains.
-- **A free subdomain you keep.** Step 4 points your host names at one of your free `cloider.app` subdomains, for example
-  the one your app was created with. See [Free subdomains](/domains/free-subdomains).
+- **A free subdomain you keep.** Step 4 points your subdomains, such as `www`, at one of your free `cloider.app`
+  subdomains, for example the one your app was created with. See [Free subdomains](/domains/free-subdomains).
 - New to DNS? Read [DNS basics](/domains/dns-basics) first.
 
 ## Choose how the domain's DNS is hosted
@@ -53,9 +53,10 @@ The rest of this page follows the first option, and the second one has [its own 
 
 ## Step 1: Add the domain to Cloider
 
-Adding the domain reserves it for your account with the status `Pending`, and adds an `A` record for the domain itself
-that points at Cloider (see [step 4](#step-4-point-the-host-names-you-serve-at-cloider)). Cloider doesn't check who owns
-the domain or where its nameservers point at this stage.
+Adding the domain reserves it for your account with the status `Pending`, and adds an `ALIAS` record for the domain
+itself that points at Cloider: at `cloider.app` at first, and at your app's free subdomain once you route the domain to
+the app (see [step 4](#step-4-point-the-host-names-you-serve-at-cloider)). Cloider doesn't check who owns the domain or
+where its nameservers point at this stage.
 
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
@@ -224,8 +225,8 @@ Look up the current records in your current DNS provider's dashboard. The record
 | `CNAME`, `A` | `www`, `mail`, `autodiscover`, ... | Websites and services on subdomains |
 | `CAA` | apex | Which certificate authorities may issue certificates |
 
-The apex already has an `A` record that points at Cloider. If your website stays elsewhere, add its `A` record with a
-blank name: it takes the place of Cloider's.
+The apex already has an `ALIAS` record that points at Cloider. If your website stays elsewhere, add its `A`
+record with a blank name: it takes the place of Cloider's `ALIAS`.
 
 You can also check what a name answers today with `dig`:
 
@@ -286,15 +287,32 @@ point: the same place every `cloider.app` subdomain resolves to.
 
 | Host name | Record on `example.com` | Value |
 | --- | --- | --- |
-| `example.com` (the apex) | `A` with a blank name, added with the domain in step 1 | Cloider's HTTPS entry point |
+| `example.com` (the apex) | `ALIAS` with a blank name, added with the domain in step 1 | Your app's free subdomain, such as `acme-web.cloider.app`, or `cloider.app` for an app without one |
 | `www.example.com`, `shop.example.com`, any subdomain | `CNAME` with the name `www`, `shop`, ... | A free subdomain you hold, such as `acme-web.cloider.app.` |
 
-The apex record is on the domain's **DNS records** list like any other, so you can change or delete it. A CNAME can't be
-used at the apex, which is a rule of DNS itself; to point the apex at a host name elsewhere, use an
-[`ALIAS` record](/domains/dns-records#alias-record). While the apex record still points at Cloider, an `A` or `ALIAS`
-record you add with a blank name takes its place instead of being refused as a second one.
+For the apex, use an [`ALIAS` record](/domains/dns-records#alias-record) to your app's free subdomain, or to
+`cloider.app` if the app has none. A CNAME can't be used at the apex, which is a rule of DNS itself, and an `ALIAS` does
+the same job: Cloider's nameservers answer it with the current address of its target, so you never copy an IP address
+into your records.
 
-Add a CNAME for each subdomain. With the CLI:
+Cloider sets this up for you. The domain is added with an `ALIAS` to `cloider.app`, and when a target first routes it to
+an app that has a free subdomain ([step 5](#step-5-route-the-domain-with-a-target)), the `ALIAS` moves to that
+subdomain. An `ALIAS` you changed to point anywhere else is left as it is.
+
+The apex record is on the domain's **DNS records** list like any other, so you can change or delete it. While it still
+points at Cloider, an `A`, `AAAA` or `ALIAS` record you add with a blank name takes its place instead of being refused
+next to it. If the apex has no record that points at Cloider, for example because you deleted it, add the `ALIAS`
+yourself:
+
+```bash
+cloider dns create example.com --type ALIAS --value acme-web.cloider.app
+```
+
+```text title="Output"
+✓ Added ALIAS record @ -> acme-web.cloider.app
+```
+
+Then add a CNAME for each subdomain. With the CLI:
 
 ```bash
 cloider dns create example.com --type CNAME --name www --value acme-web.cloider.app. --ttl 3600
@@ -304,9 +322,16 @@ cloider dns create example.com --type CNAME --name www --value acme-web.cloider.
 ✓ Added CNAME record www -> acme-web.cloider.app.
 ```
 
-In Terraform:
+In Terraform, where declaring the apex `ALIAS` also brings it under Terraform's management:
 
 ```hcl title="main.tf"
+resource "cloider_dns_record" "apex" {
+  domain = cloider_domain.example.name
+  type   = "ALIAS"
+  values = ["acme-web.cloider.app"]
+  ttl    = 300
+}
+
 resource "cloider_dns_record" "www" {
   domain = cloider_domain.example.name
   type   = "CNAME"
@@ -316,9 +341,9 @@ resource "cloider_dns_record" "www" {
 }
 ```
 
-:::note[Prefer CNAME records]
-An A record stores a copy of an address, while a CNAME follows the free subdomain automatically. Use a CNAME for every
-name except the apex.
+:::note[Prefer ALIAS and CNAME records]
+An `A` record stores a copy of Cloider's address, while an `ALIAS` or a `CNAME` follows it automatically. Use an
+`ALIAS` for the apex and a `CNAME` for every other name.
 :::
 
 ## Step 5: Route the domain with a target
@@ -491,17 +516,21 @@ other. If you want `www` to redirect to the apex, do it in your app.
 
 ## Keep your current DNS provider
 
-You can serve a domain from Cloider without moving its DNS. Skip step 3, and add the step 4 records at your current
-DNS provider instead of in Cloider:
+You can serve a domain from Cloider without moving its DNS. Skip step 3, and add the records that point at Cloider at
+your current DNS provider instead of in Cloider:
 
 1. Add the domain to Cloider (step 1).
-2. At your DNS provider, add a CNAME for each subdomain you serve, pointing at a free subdomain you hold, such as
-   `acme-web.cloider.app`, and an A record for the apex with the address that subdomain resolves to (`dig +short
-   acme-web.cloider.app A`).
+2. Add the records below at your DNS provider.
 3. Add targets in Cloider (step 5) and wait for the certificate (step 6).
 
-Some providers, such as Cloudflare, accept a CNAME at the apex (Cloudflare calls it CNAME flattening), which saves you
-from copying an address.
+| Host name | Record at your DNS provider | Value |
+| --- | --- | --- |
+| `example.com` (the apex) | `A` with a blank name or `@` | `195.181.240.88` |
+| `www.example.com`, `shop.example.com`, any subdomain | `CNAME` with the name `www`, `shop`, ... | A free subdomain you hold, such as `acme-web.cloider.app.` |
+
+`195.181.240.88` is Cloider's HTTPS entry point, the address `cloider.app` and every free subdomain resolve to. If your
+provider can point the apex at a host name (an `ALIAS` or `ANAME` record, or CNAME flattening at Cloudflare), point it at
+your app's free subdomain, or `cloider.app`, instead of adding the `A` record, so it follows Cloider's address on its own.
 
 :::warning[Use DNS only mode with proxying providers]
 If your DNS provider can proxy traffic, as Cloudflare does with the orange cloud, set the records that point at Cloider
@@ -535,10 +564,10 @@ More cases, with `dig` and `nslookup` checks, are in [Domains troubleshooting](/
 - [HTTPS certificates](/domains/https-certificates): how certificates are issued and renewed.
 
 <FAQ items={[
-  {q: 'How do I connect my own domain to a Cloider app?', a: 'Add the domain in Domains, change its nameservers at your registrar to ns1.cloider.com through ns4.cloider.com, add a CNAME to one of your free cloider.app subdomains for each subdomain (the domain itself already has an A record that points at Cloider), then add a target that routes the domain to the app.'},
-  {q: 'Do I have to move my DNS to Cloider?', a: 'No. You can keep your current DNS provider and add the CNAME and A records that point at Cloider there. Moving DNS to Cloider lets you manage records next to your apps and with Terraform.'},
+  {q: 'How do I connect my own domain to a Cloider app?', a: 'Add the domain in Domains, change its nameservers at your registrar to ns1.cloider.com through ns4.cloider.com, add a CNAME to one of your free cloider.app subdomains for each subdomain (the domain itself already has an ALIAS record that points at Cloider), then add a target that routes the domain to the app.'},
+  {q: 'Do I have to move my DNS to Cloider?', a: 'No. You can keep your current DNS provider and point the domain at Cloider there: an A record to 195.181.240.88 for the domain itself, or an ALIAS to the app\'s free subdomain if the provider has one, and a CNAME to a free cloider.app subdomain for each subdomain. Moving DNS to Cloider lets you manage records next to your apps and with Terraform.'},
   {q: 'Does Cloider verify that I own the domain?', a: 'Cloider doesn\'t run an ownership check when you add a domain. A domain only serves traffic from Cloider once its DNS points at Cloider, which only its owner can arrange.'},
-  {q: 'Why can\'t I use a CNAME for example.com itself?', a: 'DNS doesn\'t allow a CNAME at the apex of a domain, because the apex must also hold other records. Use an A record for the apex, which Cloider adds when you add the domain, or an ALIAS record to point it at a host name elsewhere, and CNAME records for subdomains such as www.'},
+  {q: 'Why can\'t I use a CNAME for example.com itself?', a: 'DNS doesn\'t allow a CNAME at the apex of a domain, because the apex must also hold other records. Use an ALIAS record for the apex, which Cloider adds when you add the domain and points at your app\'s free subdomain once you route the domain to the app, and CNAME records for subdomains such as www. At a DNS provider without ALIAS records, use an A record to 195.181.240.88.'},
   {q: 'How long does it take for my custom domain to work?', a: 'Usually under an hour or two after you change the nameservers, and up to 48 hours in the worst case. The HTTPS certificate is issued a minute or two after the domain resolves to Cloider.'},
   {q: 'Can I add a subdomain like shop.example.com without adding example.com?', a: 'Yes. Add shop.example.com as a custom domain and route it with a target, and add a CNAME for shop at whichever DNS provider hosts example.com.'},
 ]} />

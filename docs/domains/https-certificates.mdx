@@ -71,7 +71,8 @@ than a few minutes, go through the list.
 
 1. **The domain has a target.** No target, no certificate. Add one, see [Targets](/domains/targets).
 2. **The host name resolves to Cloider.** For a subdomain such as `www`, a `CNAME` to a free subdomain you hold; for the
-   apex, an `A` record with that subdomain's address. See
+   apex, the `ALIAS` record it was added with, or an `A` record to `195.181.240.88` at another DNS
+   provider. See
    [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
 3. **Port 80 reaches Cloider.** The challenge runs over plain HTTP. Nothing in front of the domain, such as a proxy or
    CDN, may block, cache or redirect `/.well-known/acme-challenge/`.

@@ -1563,7 +1563,7 @@ Disconnect a git account; apps deploying from it stop deploying on push.
 
 ## Domain, DNS and target tools (domains)
 
-The `domains` toolset claims free `cloider.app` subdomains, adds custom domains, manages a custom domain's [DNS records](/domains/dns-records), and routes paths of a domain to an app or a cluster Service with [targets](/domains/targets). A custom domain comes with an A record for the domain itself that points at Cloider, but a target doesn't add records, so routing a subdomain such as www usually takes a `create_dns_record` too, see [Add a custom domain](/domains/add-a-custom-domain).
+The `domains` toolset claims free `cloider.app` subdomains, adds custom domains, manages a custom domain's [DNS records](/domains/dns-records), and routes paths of a domain to an app or a cluster Service with [targets](/domains/targets). A custom domain comes with an ALIAS record for the domain itself that points at Cloider, but a target doesn't add records, so routing a subdomain such as www usually takes a `create_dns_record` too, see [Add a custom domain](/domains/add-a-custom-domain).
 
 There is no tool that lists a domain's targets. Keep the id from `create_domain_target`'s answer, or list them with `cloider target list <domain> -o wide`.
 

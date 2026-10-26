@@ -73,7 +73,7 @@ dig example.com A
 Work through the causes:
 
 1. **The name has no record in Cloider.** Cloider answers `NXDOMAIN` for a name of the domain that has no records.
-   The domain itself gets an `A` record when it's added, but a target doesn't add records: add a `CNAME` for `www` and
+   The domain itself gets an `ALIAS` record when it's added, but a target doesn't add records: add a `CNAME` for `www` and
    other subdomains. See
    [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
 2. **The record name includes the domain.** A record named `www.example.com` on `example.com` answers for
@@ -159,10 +159,10 @@ CNAME records cannot be used for the root domain (record name cannot be empty)
 DNS doesn't allow a `CNAME` on the domain itself, because the apex must also hold other records (such as `MX` and
 `NS`). The options:
 
-- **Use an `ALIAS` record for the apex**, with the same target the `CNAME` would have had. Cloider's nameservers answer
-  it with the target's current addresses. See [ALIAS record](/domains/dns-records#alias-record).
-- **Use an `A` record for the apex** with the address your free subdomain resolves to (`dig +short acme-web.cloider.app`),
-  and a `CNAME` for `www`. See
+- **Use an `ALIAS` record for the apex**, to your app's free subdomain (or `cloider.app`) for a domain served by
+  Cloider, or to the target the `CNAME` would have had. Cloider's nameservers answer it with the target's current addresses. See
+  [ALIAS record](/domains/dns-records#alias-record).
+- **Use an `A` record for the apex** with Cloider's address, `195.181.240.88`, and a `CNAME` for `www`. See
   [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
 - **Serve the site on `www`** and keep the apex for email and a simple redirect from your app.
 - **Keep DNS at a provider with CNAME flattening**, such as Cloudflare, which accepts a CNAME at the apex. See
@@ -317,8 +317,8 @@ Open a [support request](/account/support) with the domain name, the output of t
 - [Reference troubleshooting](/reference/troubleshooting): problems across all products.
 
 <FAQ items={[
-  {q: 'Why does my domain return NXDOMAIN on Cloider?', a: 'Usually because the name has no record in Cloider. The domain itself gets an A record when you add it, but a target doesn\'t create DNS records: add a CNAME for www and other subdomains. Also check that the registry lists ns1.cloider.com to ns4.cloider.com.'},
+  {q: 'Why does my domain return NXDOMAIN on Cloider?', a: 'Usually because the name has no record in Cloider. The domain itself gets an ALIAS record that points at Cloider when you add it, but a target doesn\'t create DNS records: add a CNAME for www and other subdomains. Also check that the registry lists ns1.cloider.com to ns4.cloider.com.'},
   {q: 'How do I check whether my nameserver change worked?', a: 'Ask the registry: dig example.com NS @a.gtld-servers.net +noall +authority for .com domains, or dig +trace example.com for any TLD. It should list ns1.cloider.com to ns4.cloider.com.'},
-  {q: 'Why can\'t I add a CNAME for my root domain?', a: 'DNS doesn\'t allow a CNAME at the apex. Use an A record for example.com, and a CNAME for www.example.com.'},
+  {q: 'Why can\'t I add a CNAME for my root domain?', a: 'DNS doesn\'t allow a CNAME at the apex. Use an ALIAS record for example.com, which Cloider adds when you add the domain and points at your app\'s free subdomain once you route the domain to the app, and a CNAME for www.example.com. At a DNS provider without ALIAS records, use an A record to 195.181.240.88.'},
   {q: 'Why does my custom domain show a certificate warning?', a: 'Its certificate isn\'t issued yet, so Cloider answers with its *.cloider.app certificate. Check that the domain has a target, resolves to Cloider, is reachable on port 80 and has no CAA record that blocks Let\'s Encrypt.'},
 ]} />

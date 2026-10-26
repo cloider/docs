@@ -431,7 +431,7 @@ cloider domain create example.com
 cloider dns create example.com --type MX --value "10 mx1.mail.example.net." --ttl 3600
 cloider dns create example.com --type TXT --value "v=spf1 include:mail.example.net ~all" --ttl 3600
 
-# Web traffic to the app: www by CNAME. The apex already has an A record that points at Cloider, added with the domain
+# Web traffic to the app: www by CNAME. The apex already has an ALIAS record that points at Cloider, added with the domain
 cloider dns create example.com --type CNAME --name www --value api-q2v8.cloider.app. --ttl 300
 
 cloider target create example.com --app api

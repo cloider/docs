@@ -391,10 +391,8 @@ add or edit records.
 
 An `A` record maps a name to one or more IPv4 addresses.
 
-A custom domain gets an `A` record for the domain itself that points at Cloider when it's added, unless it's under
-another of the account's custom domains (such as `www.example.com` next to `example.com`). While that record still points at
-Cloider, an `A` or [`ALIAS`](#alias-record) record you add with a blank name takes its place instead of being refused
-as a second one.
+To point the domain itself at Cloider, use the [`ALIAS`](#alias-record) record a custom domain comes with rather than
+an `A` record with Cloider's address: the `ALIAS` follows the address on its own.
 
 | | |
 | --- | --- |
@@ -461,11 +459,17 @@ allow a `CNAME`. Cloider's nameservers look up the target's IPv4 and IPv6 addres
 for the name with them, so resolvers only ever see addresses. Other records at the same name, such as `MX` and `TXT`,
 keep working.
 
+A custom domain gets an `ALIAS` record for the domain itself when it's added, unless it's under another of the
+account's custom domains (such as `www.example.com` next to `example.com`). It points at `cloider.app` until a target
+routes the domain to an app, then at that app's free subdomain, such as `acme-web.cloider.app`, or it stays on
+`cloider.app` if the app has none. Only an `ALIAS` that still points at `cloider.app` is moved. It's the recommended way
+to point the domain at Cloider.
+
 | | |
 | --- | --- |
 | **Value** | Exactly one domain name; the trailing dot is optional |
 | **Example** | `myapp.herokuapp.com` |
-| **Common uses** | The apex of a domain pointing at a hosting service, load balancer or CDN that gives you a host name, not an IP address |
+| **Common uses** | The apex of a domain served by Cloider (your app's free subdomain, or `cloider.app`), or pointing at a hosting service, load balancer or CDN that gives you a host name, not an IP address |
 
 ```bash
 cloider dns create example.com --type ALIAS --value myapp.herokuapp.com
@@ -496,8 +500,9 @@ Rules:
 - A full name with at least one dot: `Invalid domain name: web. ALIAS must point to a domain name like 'myapp.herokuapp.com'`.
 - Not its own name: `An ALIAS record can't point to its own name`.
 - No `A`, `AAAA` or `CNAME` record at the same name, in either direction (see
-  [Rules for every record](#rules-for-every-record)). An `ALIAS` with a blank name replaces the `A` record the domain
-  was created with while it still points at Cloider, the same way an `A` record does.
+  [Rules for every record](#rules-for-every-record)). The record the domain was created with is the exception: while it
+  still points at Cloider (`cloider.app` or a name under it), an `A`, `AAAA` or `ALIAS` with a blank name takes its
+  place instead of being refused.
 
 To check what it answers, ask for the `A` record: `dig @ns1.cloider.com example.com A +short`. There is no `ALIAS`
 type in DNS itself, so `dig` can't ask for one.

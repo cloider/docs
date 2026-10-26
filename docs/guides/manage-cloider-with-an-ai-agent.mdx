@@ -302,9 +302,9 @@ Serve the api app on example.com and www.example.com.
 {"domain": "example.com"}
 ```
 
-The answer lists Cloider's nameservers, which you set at your registrar yourself. The domain comes with an `A` record
-for the apex that points at Cloider, but a target doesn't add DNS records, so the agent adds a `CNAME` for `www` to the
-app's free subdomain:
+The answer lists Cloider's nameservers, which you set at your registrar yourself. The domain comes with an `ALIAS`
+record for the apex that points at Cloider, but a target doesn't add DNS records, so the agent adds a `CNAME` for `www`
+to the app's free subdomain:
 
 ```json title="Tool call: create_dns_record"
 {"domain": "example.com", "type": "CNAME", "name": "www", "value": "api-q2v8.cloider.app.", "ttl": 3600}

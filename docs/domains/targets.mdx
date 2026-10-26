@@ -684,6 +684,6 @@ More cases are in [Domains troubleshooting](/domains/troubleshooting).
   {q: 'Can one domain route to several apps?', a: 'Yes. Add one target per path, for example / to the web app, /api to a cluster Service and /docs to a docs app. The longest matching path wins.'},
   {q: 'How do I strip a path prefix before it reaches my app?', a: 'Set the target path. A target with path /api and target path / forwards /api/orders as /orders.'},
   {q: 'Do I need an Ingress or a load balancer?', a: 'No. Targets replace both for HTTP traffic. Ingress objects inside a Cloider cluster aren\'t served. Use a LoadBalancer Service only for traffic that isn\'t HTTP.'},
-  {q: 'Does a target create DNS records?', a: 'No. A free subdomain already resolves to Cloider. For a custom domain, add a CNAME or A record that points the host name at Cloider.'},
+  {q: 'Does a target create DNS records?', a: 'No. A free subdomain already resolves to Cloider, and a custom domain comes with an ALIAS record for the domain itself, which the first target to an app points at the app\'s free subdomain. For other host names of a custom domain, add a CNAME or A record that points at Cloider.'},
   {q: 'What happens to a target when I pause my app or cluster?', a: 'The target stays, but requests fail until you resume the app or cluster. You don\'t need to recreate it.'},
 ]} />

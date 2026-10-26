@@ -131,7 +131,7 @@ curl -X POST https://cloider.com/api/domains \
 {"domain_name": "example.com", "domain_type": "CustomDomain", "status": "Pending", "created_at": "2026-10-20T10:12:09.441027Z"}
 ```
 
-Adding a domain the account already has returns the existing domain with `200`, so this request is safe to repeat. A new custom domain also gets an `A` record for the domain itself that points at Cloider, unless it's under another of the account's custom domains; it's listed with the domain's [DNS records](/api/endpoints/dns-records). After adding a custom domain, set its nameservers at your registrar to the ones in `GET /options` `nameservers` (`ns1.cloider.com` to `ns4.cloider.com`); see [Nameservers](/domains/nameservers).
+Adding a domain the account already has returns the existing domain with `200`, so this request is safe to repeat. A new custom domain also gets an `ALIAS` record for the domain itself that points at `cloider.app` (and, once a target routes the domain to an app with a free subdomain, at that subdomain), unless it's under another of the account's custom domains; it's listed with the domain's [DNS records](/api/endpoints/dns-records). After adding a custom domain, set its nameservers at your registrar to the ones in `GET /options` `nameservers` (`ns1.cloider.com` to `ns4.cloider.com`); see [Nameservers](/domains/nameservers).
 
 | Status | Field | Message |
 | --- | --- | --- |

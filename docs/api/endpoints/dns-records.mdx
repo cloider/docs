@@ -55,7 +55,7 @@ A domain has at most one record of each type for each name. To give `www` two IP
 
 Several names can use the same address: an `A` record for `www` and one for the domain itself can both hold `203.0.113.10`.
 
-One exception to one record per name and type: while the `A` record a custom domain was added with still points at Cloider, creating an `A` record with an empty `record_name` updates that record and answers with it, rather than refusing a second one.
+One exception to these rules: while the `ALIAS` record a custom domain was added with still points at Cloider (`cloider.app` or a name under it), creating an `A`, `AAAA` or `ALIAS` record with an empty `record_name` deletes it and creates the new record in its place, rather than refusing it.
 
 ### Values per type
 

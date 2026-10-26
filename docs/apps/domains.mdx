@@ -126,8 +126,8 @@ the host names you serve, and add a target to the app.
    nameservers to use. See [Add a custom domain](/domains/add-a-custom-domain).
 2. **Change the nameservers** at your registrar to the ones Cloider shows, and wait for the change to propagate. See
    [Nameservers](/domains/nameservers).
-3. **Add DNS records** for the subdomains you serve. The domain itself comes with an `A` record that points at Cloider,
-   but a target doesn't add records. Point `www` (or any subdomain) at your app's free subdomain with a `CNAME`, as
+3. **Add DNS records** for the subdomains you serve. The domain itself comes with an `ALIAS` record that points at
+   Cloider, and the target in step 4 points it at the app's free subdomain, but a target doesn't add records. Point `www` (or any subdomain) at your app's free subdomain with a `CNAME`, as
    [Add a custom domain](/domains/add-a-custom-domain) shows step by step.
 4. **Route it to the app** with a target, as shown below. The app must have deployed: its status must be `Ready` (or
    `Paused`).

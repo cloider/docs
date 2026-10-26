@@ -271,7 +271,7 @@ variable "subdomain" {
 }
 
 variable "apex_ipv4" {
-  description = "Addresses for the apex A record. Empty keeps the A record the domain was added with, which points at Cloider."
+  description = "Addresses for the apex A record. Empty keeps the ALIAS record the domain was added with, which points at Cloider."
   type        = list(string)
   default     = []
 }
@@ -388,7 +388,7 @@ resource "cloider_domain" "free" {
   name = "${var.subdomain}.${data.cloider_options.current.subdomain_roots[0]}"
 }
 
-# The domain comes with an A record that points at Cloider; this one takes its place when apex_ipv4 is set
+# The domain comes with an ALIAS record that points at Cloider; this one takes its place when apex_ipv4 is set
 resource "cloider_dns_record" "apex" {
   count = length(var.apex_ipv4) > 0 ? 1 : 0
 
@@ -430,7 +430,7 @@ resource "cloider_target" "web" {
 ```
 
 - The `www` record is a `CNAME` to the free subdomain, so it follows Cloider's entry point automatically. The apex
-  can't have a `CNAME` (a rule of DNS). It keeps the `A` record it was added with, which points at Cloider, unless you
+  can't have a `CNAME` (a rule of DNS). It keeps the `ALIAS` record it was added with, which points at Cloider, unless you
   set `apex_ipv4`.
 - The SPF record `v=spf1 -all` says the domain sends no email. Replace it with your mail provider's value if it does,
   and add `MX` records the same way. See [Email DNS records](/domains/email-dns-records).
@@ -732,7 +732,7 @@ out of git.
 
 ## Part 5: Point the domain at Cloider
 
-The apex already points at Cloider with the `A` record the domain was added with, and `www` with its `CNAME`.
+The apex already points at Cloider with the `ALIAS` record the domain was added with, and `www` with its `CNAME`.
 
 1. **Recreate your existing records** (email, verification) as `cloider_dns_record` resources before the switch, or
    they stop resolving. See [Add a custom domain](/domains/add-a-custom-domain). If your website stays elsewhere, set
@@ -902,5 +902,5 @@ More in the [Terraform provider overview](/terraform/overview) and [Domains trou
   {q: 'Can I store Terraform state in a Cloider bucket?', a: 'Yes. Use the s3 backend with the bucket, a key, region eu-central-2, endpoints = { s3 = "https://s3.eu-central-2.cloider.com" }, use_path_style, use_lockfile and the three skip_ settings, with a Cloider bucket key in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. Create that bucket in a separate configuration.'},
   {q: 'How do I deploy into a Cloider cluster with the Kubernetes provider?', a: 'Configure the kubernetes provider with host, cluster_ca_certificate, client_certificate and client_key from the cloider_cluster resource\'s kube_config, or from the cloider_cluster data source in another configuration. In one configuration, apply -target=cloider_cluster.<name> first.'},
   {q: 'Why does Terraform need two applies the first time?', a: 'The kubernetes provider is configured from the cluster\'s kube_config, which doesn\'t exist until the cluster is created. Creating the cluster with -target first lets the second apply plan the Kubernetes resources. Later applies need only terraform apply.'},
-  {q: 'Does a target create the DNS record for my domain?', a: 'No. A custom domain comes with an A record for the domain itself that points at Cloider, but a target adds nothing, so add a cloider_dns_record for every other name: a CNAME to a free cloider.app subdomain for www and other subdomains.'},
+  {q: 'Does a target create the DNS record for my domain?', a: 'No. A custom domain comes with an ALIAS record for the domain itself that points at Cloider, but a target adds nothing, so add a cloider_dns_record for every other name: a CNAME to a free cloider.app subdomain for www and other subdomains.'},
 ]} />
