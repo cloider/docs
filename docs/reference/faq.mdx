@@ -63,7 +63,7 @@ Read more: [Kubernetes overview](/kubernetes/overview), [Create your first clust
 
 <FAQ title="" items={[
   {q: 'Which databases does Cloider offer?', a: 'PostgreSQL 18, MySQL 9, MongoDB 8 and Redis 8, each on a plan from Hobby to Pro.'},
-  {q: 'Are databases backed up?', a: 'Yes, daily. You can list backups and restore one from the dashboard, the CLI, the API or MCP.'},
+  {q: 'Are databases backed up?', a: 'Yes. Every database gets a full backup every 14 days, and every change is recorded too, so it can be restored to any second of the last 14 days. You restore into a new database from the dashboard, the CLI, the API or MCP.'},
   {q: 'How do I control who can connect to a database?', a: 'With trusted sources: the addresses and Cloider resources allowed to connect. You can also turn on SSL/TLS for the database.'},
   {q: 'Can I make a database bigger?', a: 'Yes. Resize it to a larger plan. Plans can only go up.'}
 ]} />

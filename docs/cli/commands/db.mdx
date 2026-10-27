@@ -486,31 +486,30 @@ The exit code is the client's own, `124` when `--timeout` stopped it. See [exit 
 
 ## cloider db backups
 
-List the database's automatic daily backups, newest first.
+List a database's backups, newest first, and the start of its point-in-time window.
 
 ```text
 cloider db backups <database> [flags]
 ```
+
+A database has a full backup every 14 days plus every change recorded since, so it has no listed backups. The command prints where its window starts instead:
 
 ```bash
 cloider db backups orders-db
 ```
 
 ```text title="Output"
-BACKUP             TAKEN
-2026-10-19_02-00   2026-10-19 02:00 UTC
-2026-10-18_02-00   2026-10-18 02:00 UTC
-2026-10-17_02-00   2026-10-17 02:00 UTC
+Nothing to show.
 
-Restore one into a new database with `cloider db restore orders-db 2026-10-19_02-00`.
-Or any moment from 2026-10-12 01:31:07 UTC until now with `cloider db restore orders-db --time <time>`.
+Restore the newest full backup plus every change since with `cloider db restore orders-db`,
+or any moment from 2026-10-13 01:31:07 UTC until now with `cloider db restore orders-db --time <time>`.
 ```
 
-The **BACKUP** column is the backup's name in `YYYY-MM-DD_HH-MM` form (UTC), which `cloider db restore` takes. For a PostgreSQL, MySQL or MongoDB database the last line gives the start of its [point-in-time window](/databases/backups-and-restore#restore-to-a-point-in-time). `-o json` prints the backup names only, as a JSON array. See [Backups and restore](/databases/backups-and-restore). MCP tool: `list_database_backups`.
+Snapshots of a Redis database taken before point-in-time recovery are listed in a **BACKUP** column, by the name `cloider db restore` takes (`YYYY-MM-DD_HH-MM`, UTC), until they expire, around mid-November 2026. `-o json` prints the names only, as a JSON array, `[]` when there are none. See [Backups and restore](/databases/backups-and-restore). MCP tool: `list_database_backups`.
 
 ## cloider db restore
 
-Restore a backup into a **new** database, a copy of this one as it was when the backup was taken. A PostgreSQL, MySQL or MongoDB database can instead be restored to any moment of the last 7 days with `--time`. The original database is left as it is.
+Restore a backup into a **new** database, a fork of this one as it was then. The original database is left as it is. Without a backup or `--time` it restores the newest: the newest full backup plus every change since. A database can also be restored to any moment of the last 14 days with `--time`, for example right before a mistake.
 
 ```text
 cloider db restore <database> [backup] [flags]
@@ -518,32 +517,32 @@ cloider db restore <database> [backup] [flags]
 
 | Argument | Description |
 | --- | --- |
-| `<database>` | Name or id of the database the backup belongs to |
-| `[backup]` | The backup to restore, `YYYY-MM-DD_HH-MM`, as `cloider db backups` lists it. Can also be given with `--backup`. Leave it out with `--time` |
+| `<database>` | Name or id of the database to restore |
+| `[backup]` | A Redis snapshot taken before point-in-time recovery, `YYYY-MM-DD_HH-MM`, as `cloider db backups` lists it, until it expires. Can also be given with `--backup`. Leave it out for the newest, or with `--time` |
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--backup` | string | | Backup to restore, `YYYY-MM-DD_HH-MM` |
-| `--time` | string | | PostgreSQL, MySQL and MongoDB only: restore to this moment instead of a backup. RFC 3339 (`2026-10-25T14:29:00Z`), or `"YYYY-MM-DD HH:MM:SS"` taken as UTC |
+| `--time` | string | | Restore to this moment instead of the newest. RFC 3339 (`2026-10-25T14:29:00Z`), or `"YYYY-MM-DD HH:MM:SS"` taken as UTC |
 | `-w, --wait` | bool | `false` | Wait until the new database is `Ready` |
 | `--timeout` | duration | `15m0s` | How long `--wait` waits |
 
-The command asks `Restore backup ... of ... into a new database? [y/N]`. Pass `--yes` to skip it (required without a terminal).
+The command asks `Restore ... into a new database? [y/N]`. Pass `--yes` to skip it (required without a terminal).
 
 ```bash
-cloider db restore orders-db 2026-10-18_02-00 --wait
+cloider db restore orders-db --wait
 ```
 
 ```text title="Output"
-Restore backup 2026-10-18_02-00 of orders-db into a new database? [y/N] y
-✓ Restoring orders-db from 2026-10-18_02-00 into a new database orders-db-2026-10-18-02-00
-✓ The restored database is ready: `cloider db get orders-db-2026-10-18-02-00`
+Restore orders-db from the newest backup into a new database? [y/N] y
+✓ Restoring orders-db from the newest backup into a new database orders-db-2026-10-27-09-12-03
+✓ The restored database is ready: `cloider db get orders-db-2026-10-27-09-12-03`
 ```
 
 To a point in time:
 
 ```bash
-cloider db restore orders-db --time "2026-10-25 14:29:00" --wait
+cloider db restore orders-db --time 2026-10-25T14:29:00Z --wait
 ```
 
 ```text title="Output"
@@ -552,7 +551,7 @@ Restore orders-db as of 2026-10-25 14:29:00 UTC into a new database? [y/N] y
 ✓ The restored database is ready: `cloider db get orders-db-2026-10-25-14-29-00`
 ```
 
-The new database is named after the original and the backup, `<name>-<backup>` with the underscore turned into a dash, or `<name>-YYYY-MM-DD-HH-MM-SS` for a point in time (plus `-1`, `-2` if that name is taken). It has the same user, password, plan, version, trusted sources and SSL setting as the original. `-q` prints its id and `-o json` prints `{"hashed_id", "database_label"}`. MCP tool: `restore_database_backup`.
+The new database is named after the original and the moment restored to, `<name>-YYYY-MM-DD-HH-MM-SS` (plus `-1`, `-2` if that name is taken). It has the same user, password, plan, version, trusted sources and SSL setting as the original. `-q` prints its id and `-o json` prints `{"hashed_id", "database_label"}`. MCP tool: `restore_database_backup`.
 
 ## cloider db resize
 
@@ -728,6 +727,6 @@ Early in the day, before anything was recorded, it says `No usage recorded for t
   {q: 'How do I connect to a Cloider database from my terminal?', a: 'Run cloider db connect orders-db, which starts psql, mysql, redis-cli or mongosh already logged in, if the client is installed and the trusted sources allow your IP. cloider db shell orders-db opens the client in Cloider\'s terminal with nothing installed.'},
   {q: 'How do I run a SQL query from a script?', a: 'Use cloider db exec orders-db "SELECT count(*) FROM orders", or cloider db exec -i orders-db < migration.sql for a script. It exits with the client\'s exit code, and -o json returns exit_code, stdout and stderr in one object.'},
   {q: 'How do I get a database password with the CLI?', a: 'cloider db password orders-db prints the password of the database user to stdout. cloider db get orders-db shows the host, port, database name and user.'},
-  {q: 'How do I restore a database backup?', a: 'List backups with cloider db backups orders-db, then run cloider db restore orders-db 2026-10-18_02-00 --wait. The backup is restored into a new database; the original is not changed.'},
+  {q: 'How do I restore a database backup?', a: 'Run cloider db restore orders-db --wait to restore the newest full backup plus every change since, or add --time 2026-10-25T14:29:00Z for a moment of the last 14 days. The backup is restored into a new database; the original is not changed.'},
   {q: 'How do I allow my IP address to connect to a database?', a: 'Run cloider db trusted-sources orders-db --add-my-ip. It looks up this machine\'s public IPv4 address and adds it to the database\'s trusted sources.'}
 ]} />

@@ -222,7 +222,7 @@ Cloider provisions the database in the background. Its status goes through these
 1. **`Creating`**: Cloider creates the database server, its storage volume, the user and password, the TLS certificate (when SSL is on), the public and private endpoints and the firewall rules for your trusted sources.
 2. **`Ready`**: the database accepts connections. Its page in the dashboard opens, and the Terminal tab appears.
 
-Creation usually takes a few minutes. The first backup is taken on the next daily backup run, so the Backups tab says "You can restore a backup after the first backup is completed." until then.
+Creation usually takes a few minutes. The first full backup is taken the first night after the database is created, so the Backups tab says "You can restore a backup after the first full backup is completed." until then.
 
 ## Verify
 

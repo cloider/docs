@@ -2,52 +2,73 @@
 title: Database backups and restore
 sidebar_label: Backups and restore
 sidebar_position: 10
-description: How Cloider backs up PostgreSQL, MySQL, MongoDB and Redis databases daily, how to list backups, how to restore one into a new database, and how to restore PostgreSQL, MySQL and MongoDB to any point in time.
-keywords: [database backup, restore database, point in time, point-in-time recovery, pitr, fork database, cloider db backups, cloider db restore, pg_dump, mysqldump, mongodump, oplog]
+description: How Cloider backs up PostgreSQL, MySQL, MongoDB and Redis, and how to restore the newest data or a point in time of the last 14 days into a new database.
+keywords: [database backup, restore database, point in time, point-in-time recovery, pitr, fork database, cloider db backups, cloider db restore, wal, binlog, oplog, aof, redis backup]
 ---
 
-Cloider backs up every database automatically once a day and keeps at least the last 7 daily backups. You can restore any listed backup into a **new database**, a copy of your database as it was when the backup was taken, while the original keeps running untouched. A PostgreSQL, MySQL or MongoDB database can also be restored to [any second of the last 7 days](#restore-to-a-point-in-time). Backups are included in the database's price.
+Cloider backs up every database automatically, with nothing to set up. Every database gets a full backup every 14 days, and every change in between is recorded as it happens, so you can restore your data as it is now or as it was at [any second of the last 14 days](#how-far-back-can-i-restore). A restore always creates a **new database**, and the original keeps running untouched. Backups are included in the database's price.
 
 ## At a glance
 
 | | |
 | --- | --- |
-| **Schedule** | Once a day, at night (UTC). No setup needed |
-| **Retention** | At least the last 7 daily backups of each database |
-| **Naming** | The time the backup was taken, in UTC: `YYYY-MM-DD_HH-MM`, for example `2026-10-18_02-00` |
-| **What a restore brings back** | Your main database's data and objects. For Redis, the whole server. See [what is restored](#what-is-restored-and-what-isnt) |
+| **Backups** | A full backup every 14 days, at night (UTC), plus every change recorded continuously. No setup needed |
+| **Restore window** | Any second of the last 14 days, up to the moment you restore. See [how far back](#how-far-back-can-i-restore) |
+| **Restore options** | **Newest full backup plus incremental**, your data as it is now (the default), or **Specific date & time**, any second of the window in UTC |
+| **What a restore brings back** | The whole server: every database, user and grant, or for Redis every key and its expiry time. See [what is restored](#what-is-restored-and-what-isnt) |
 | **Restore** | Into a new database (a fork) with the same name, user, password, plan, version, trusted sources and SSL mode |
-| **Point in time** | PostgreSQL, MySQL and MongoDB: any second of the last 7 days, also into a new database. See [point-in-time restore](#restore-to-a-point-in-time) |
 | **Cost** | Backups are free. A restored database is a new database, billed by its plan |
-| **Deleting the database** | Deletes its backups too |
+| **Deleting the database** | Deletes its backups and recorded changes too |
 | **Managed with** | The **Backups** tab, `cloider db backups` and `cloider db restore`, the API and MCP. Not Terraform |
 
 ## How do Cloider database backups work?
 
-Every night, Cloider backs up each running database, with nothing for you to set up. Each backup is kept apart from the database's own storage, and is named after the moment it was taken, in UTC. Older backups are removed automatically, and at least the last 7 daily backups of each database are always kept. What a restore brings back depends on the engine, see [what is restored and what isn't](#what-is-restored-and-what-isnt).
+Cloider backs up each running database automatically. Backups are kept apart from the database's own storage, and older ones are removed automatically.
 
-A backup captures the data as it was while the backup ran. It isn't continuous: changes written after the last backup are only in the database itself until the next night. PostgreSQL, MySQL and MongoDB are the exception: their changes are also archived continuously, so they can be restored to any second, see [point-in-time restore](#restore-to-a-point-in-time).
+### Full backups and recorded changes
 
-:::note[Paused databases]
-A paused database isn't running, so it can't be backed up. The backups taken before you paused it stay available, and daily backups start again once you resume it.
+Every 14 days, at night (UTC), Cloider takes a full backup of the whole server. In between, every change written to the database is recorded continuously: PostgreSQL's write-ahead log (WAL), MySQL's binary log, MongoDB's oplog and Redis's append-only file (AOF). Combined, they allow a consistent recovery to a specific point in time, called point-in-time recovery (PITR).
+
+There is no list of backups to pick from. A restore starts from the full backup taken before the moment you want and replays the recorded changes up to it, so both restore options are point-in-time restores of the whole server.
+
+### How far back can I restore?
+
+The last 14 days, up to the moment you restore. Cloider keeps the full backup and the changes it needs to reach back that far, and removes older ones automatically. Deleting a database deletes all of its backups.
+
+A new database's window opens with its first full backup, which is taken the first night after the database is created. Until then the **Backups** tab shows "You can restore a backup after the first full backup is completed."
+
+### Redis
+
+Redis records every write in its append-only file (AOF), with a timestamp for each second, and Cloider archives the new writes about once a minute. The full backup every 14 days is an AOF rewrite.
+
+:::note[Switching the AOF off]
+Your Redis user has full rights, so it can switch the AOF or its timestamps off with `CONFIG SET appendonly no` or `CONFIG SET aof-timestamp-enabled no`. Cloider switches them back on within about a minute and takes a new full backup. The restore window then starts at that backup.
 :::
 
-## List backups
+Snapshots of a Redis database taken before it had point-in-time recovery, named `YYYY-MM-DD_HH-MM`, are still listed by `cloider db backups`, and you can restore one by name with `cloider db restore <database> <name>` until they expire, around mid-November 2026.
+
+:::note[Paused databases]
+A paused database isn't running, so no full backups are taken and there are no changes to record. To restore it, [resume](/databases/pause-resume-and-delete) it first.
+:::
+
+## See what you can restore
+
+The **Backups** tab, `cloider db backups` and the API show the start of the restore window.
 
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
 1. Open the database and go to the **Backups** tab.
-2. Under **Restore a Backup**, the **Date** calendar shows the days that have a backup. Days without one can't be selected.
-3. Pick a day. **Time** shows the backups of that day, in your local time. The latest backup is selected by default.
+2. **Summary** says how the database is backed up.
+3. Under **Restore a Backup**, pick **Specific date & time**. The hint under **Time (UTC)** gives the start of the window, for example "Restorable from Oct 13, 2026 at 01:31:07 UTC."
 
-A new database shows "You can restore a backup after the first backup is completed." until its first nightly backup has run.
+A new database shows "You can restore a backup after the first full backup is completed." until its first full backup has run.
 
 <Screenshot
   src="/img/screenshots/databases/detail-backups.webp"
   url="/dashboard/databases/orders-db-p0q9zm"
-  alt="The Backups tab of orders-db with the Restore a Backup calendar showing the days that have backups, the time of the selected backup and the Restore button"
-  caption="Pick a day and a time, then click Restore."
+  alt="The Backups tab of orders-db with the Summary of how it is backed up, and under Restore a Backup the Newest full backup plus incremental option selected, the Specific date & time option and the Restore button"
+  caption="The newest full backup plus incremental is selected by default."
 />
 
 </TabItem>
@@ -58,19 +79,13 @@ cloider db backups orders-db
 ```
 
 ```text title="Output"
-BACKUP            TAKEN
-2026-10-19_02-00  2026-10-19 02:00 UTC
-2026-10-18_02-00  2026-10-18 02:00 UTC
-2026-10-17_02-00  2026-10-17 02:00 UTC
-2026-10-16_02-00  2026-10-16 02:00 UTC
-2026-10-15_02-00  2026-10-15 02:00 UTC
-2026-10-14_02-00  2026-10-14 02:00 UTC
-2026-10-13_02-00  2026-10-13 02:00 UTC
+Nothing to show.
 
-Restore one into a new database with `cloider db restore orders-db 2026-10-19_02-00`.
+Restore the newest full backup plus every change since with `cloider db restore orders-db`,
+or any moment from 2026-10-13 01:31:07 UTC until now with `cloider db restore orders-db --time <time>`.
 ```
 
-Backups are listed newest first. `-o json` prints the names as a JSON array.
+There are no backups to list, so `-o json` prints `[]`. The last line gives the start of the window.
 
 </TabItem>
 <TabItem value="terraform" label="Terraform">
@@ -80,26 +95,28 @@ The Terraform provider doesn't list or restore backups. Use the dashboard, the C
 </TabItem>
 <TabItem value="api" label="API">
 
+The window of a database:
+
 ```bash
-curl "https://cloider.com/api/database/backups?id=p0q9zm" \
+curl https://cloider.com/api/databases/p0q9zm/pitr-window \
   -H "Authorization: Bearer $CLOIDER_TOKEN"
 ```
 
 ```json title="Response"
-["2026-10-19_02-00", "2026-10-18_02-00", "2026-10-17_02-00", "2026-10-16_02-00", "2026-10-15_02-00", "2026-10-14_02-00", "2026-10-13_02-00"]
+{"available": true, "earliest": "2026-10-13T01:31:07Z", "latest": "2026-10-27T09:12:03Z"}
 ```
 
-The backup names are `YYYY-MM-DD_HH-MM` in UTC, newest first. Note the path: `/api/database/backups` (singular), with the id in the `id` query parameter.
+`latest` is the time of the request. Before the first full backup, the response is `{"available": false}`.
 
 </TabItem>
 <TabItem value="mcp" label="MCP">
 
 ```text title="Prompt"
-Which backups does orders-db have?
+Which backups does cache have?
 ```
 
 ```json title="Tool call: list_database_backups"
-{"database": "orders-db"}
+{"database": "cache"}
 ```
 
 </TabItem>
@@ -107,19 +124,35 @@ Which backups does orders-db have?
 
 ## Restore a backup into a new database
 
-Restoring creates a new database, called a fork, from the backup you choose. Your current database isn't changed or stopped. Use the fork to recover deleted rows, inspect old data, test a migration on real data or replace the original.
+Restoring creates a new database, called a fork, and leaves your current database running unchanged. Use the fork to recover deleted rows, inspect old data, test a migration on real data or replace the original.
+
+Every database has two restore options:
+
+| Option | What the new database holds | CLI | API body |
+| --- | --- | --- | --- |
+| **Newest full backup plus incremental** (the default) | The newest full backup plus every change since: your data as it is at the moment you restore | `cloider db restore orders-db` | `{"latest": true}` |
+| **Specific date & time** | Your data as it was at any second of the window, picked in UTC, for example the second before a `DROP TABLE` or a bad migration | `--time 2026-10-25T14:29:00Z` | `{"target_time": "2026-10-25T14:29:00Z"}` |
+
+| | |
+| --- | --- |
+| **Precision** | To the second: everything committed by the time you pick is restored, nothing after it. MySQL counts a statement at the second it started, so one still running at that time is restored too. Redis restores to the end of the second you pick, so writes made during that second are kept |
+| **Requirement** | The database must be running, not paused, for both options |
+| **Duration** | Cloider loads the full backup taken before your time, then replays the changes after it, up to about 4 weeks of them. Minutes for most databases, longer for busy ones |
 
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
-1. On the **Backups** tab, pick the **Date** and the **Time** of the backup.
-2. Click **Restore**.
-3. The **Restore Backup** dialog says: "This creates a new database forked from the backup taken on ... Your current database is left untouched." Click **Create fork**.
+1. Open the database and go to the **Backups** tab.
+2. Under **Restore a Backup**, keep **Newest full backup plus incremental** to restore your data as it is now, or pick **Specific date & time**. Then choose the day in the **Date** calendar, where only days inside the window can be selected, and enter the time in **Time (UTC)** as `HH:mm:ss`.
+3. Click **Restore**.
+4. The **Restore Backup** dialog says what the new database will hold, for example "This creates a new database with your data as it was on Oct 25, 2026 at 14:29:00 UTC. Your current database is left untouched. Continue?" Click **Create fork**.
+
+A time outside the window shows "Pick a moment from Oct 13, 2026 at 01:31:07 UTC on." or "Pick a moment in the past." under **Time (UTC)**, and **Restore** stays disabled.
 
 <Screenshot
   src="/img/screenshots/databases/restore-dialog.webp"
   url="/dashboard/databases/orders-db-p0q9zm"
-  alt="The Restore Backup dialog explaining that a new database is forked from the selected backup and the current database is left untouched, with Cancel and Create fork buttons"
+  alt="The Restore Backup dialog saying a new database is created from the newest full backup plus every change since, with the data as it is now, and the current database is left untouched, with Cancel and Create fork buttons"
   caption="Restoring always creates a new database."
 />
 
@@ -128,17 +161,33 @@ The dashboard takes you to the Databases list, where the new database is highlig
 </TabItem>
 <TabItem value="cli" label="CLI">
 
+Without a backup or `--time`, `cloider db restore` restores the newest:
+
 ```bash
-cloider db restore orders-db 2026-10-18_02-00 --wait
+cloider db restore orders-db --wait
 ```
 
 ```text title="Output"
-Restore backup 2026-10-18_02-00 of orders-db into a new database? [y/N] y
-✓ Restoring orders-db from 2026-10-18_02-00 into a new database orders-db-2026-10-18-02-00
-✓ The restored database is ready: `cloider db get orders-db-2026-10-18-02-00`
+Restore orders-db from the newest backup into a new database? [y/N] y
+✓ Restoring orders-db from the newest backup into a new database orders-db-2026-10-27-09-12-03
+✓ The restored database is ready: `cloider db get orders-db-2026-10-27-09-12-03`
 ```
 
-The backup can also be given as `--backup 2026-10-18_02-00`. In scripts, add `--yes` to skip the question, and `-q` to print only the new database's id.
+To a point in time:
+
+```bash
+cloider db restore orders-db --time 2026-10-25T14:29:00Z --wait
+```
+
+```text title="Output"
+Restore orders-db as of 2026-10-25 14:29:00 UTC into a new database? [y/N] y
+✓ Restoring orders-db from 2026-10-25 14:29:00 UTC into a new database orders-db-2026-10-25-14-29-00
+✓ The restored database is ready: `cloider db get orders-db-2026-10-25-14-29-00`
+```
+
+`--time` takes RFC 3339 with any offset, or `"YYYY-MM-DD HH:MM:SS"` in UTC.
+
+In scripts, add `--yes` to skip the question, and `-q` to print only the new database's id.
 
 </TabItem>
 <TabItem value="terraform" label="Terraform">
@@ -159,145 +208,22 @@ import {
 curl -X POST https://cloider.com/api/databases/p0q9zm/restore \
   -H "Authorization: Bearer $CLOIDER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"backup": "2026-10-18_02-00"}'
+  -d '{"latest": true}'
 ```
 
 ```json title="Response"
-{"hashed_id": "w4t6yb", "database_label": "orders-db-2026-10-18-02-00"}
+{"hashed_id": "w4t6yb", "database_label": "orders-db-2026-10-27-09-12-03"}
 ```
 
-`backup` must be one of the names from `GET /api/database/backups`, exactly. Poll `GET /api/databases/w4t6yb/status` until the new database is `Ready`.
+The body takes exactly one of these fields:
 
-</TabItem>
-<TabItem value="mcp" label="MCP">
-
-```text title="Prompt"
-Restore yesterday's backup of orders-db into a new database.
-```
-
-The agent lists the backups, then calls `restore_database_backup`:
-
-```json title="Tool call: restore_database_backup"
-{"database": "orders-db", "backup": "2026-10-18_02-00", "wait": true}
-```
-
-</TabItem>
-</Tabs>
-
-### What the new database gets
-
-| Property | Value in the restored database |
+| Field | Restores |
 | --- | --- |
-| Label | The original's label plus the backup time, for example `orders-db-2026-10-18-02-00` (with `-1`, `-2` added if taken) |
-| Name, user, password | The same as the original |
-| Engine, version, plan | The same as the original |
-| Trusted sources, SSL mode | The same as the original |
-| Id, host and port | New. The host is `<name>-<new id>.db.cloider.com`, and the port is newly assigned |
-| Data | The backup's data, see below |
-| Backups | Its own, starting with the next nightly run |
+| `latest` | `true`: the newest, the newest full backup plus every change since |
+| `target_time` | This moment, RFC 3339, for example `2026-10-25T14:29:00Z`. It must be inside the [window](#see-what-you-can-restore) |
+| `backup` | A Redis snapshot taken before point-in-time recovery, by its name from `GET /api/database/backups`, until it expires, see [Redis](#redis) |
 
-Because the name, user and password are the same, switching an app to the restored database only means changing the host and the port in its connection string.
-
-### What is restored and what isn't
-
-| Engine | Restored | Not restored |
-| --- | --- | --- |
-| PostgreSQL | The tables, data, indexes, views, functions and other objects of the database named after your Cloider database (for example `orders-db`). They are owned by the database user | Other databases you created on the server, roles you created, ownership and grants |
-| MySQL | The tables, data, views, routines and triggers of the database named after your Cloider database. `DEFINER` clauses are removed, so views, routines and triggers run as the database user | Other databases you created, accounts you created and their grants |
-| MongoDB | The collections, documents and indexes of the database named after your Cloider database | Other databases you created, users and roles you created |
-| Redis | The whole snapshot: all 16 logical databases, every key and its expiry time | ACL users you created yourself |
-
-A restore keeps going past statements that fail, such as an object that needs privileges the database user doesn't have, so the new database always comes up. Check the objects you depend on after a restore.
-
-A [point-in-time restore](#restore-to-a-point-in-time) works differently and brings back the whole PostgreSQL, MySQL or MongoDB server: every database, role, user or account, and grant.
-
-## Restore to a point in time
-
-Besides the nightly backups, Cloider archives every change of a PostgreSQL, MySQL or MongoDB database as it happens. You can restore the database to any second of the last 7 days, for example to the second before a `DROP TABLE` or a bad migration. Like a backup restore, this creates a new database and leaves the original running untouched.
-
-| | |
-| --- | --- |
-| **Engines** | PostgreSQL, MySQL, MongoDB |
-| **Window** | From about 7 days ago until the moment you restore. It starts with the first nightly backup after the database was created |
-| **Precision** | To the second: everything committed by the time you pick is restored, nothing after it. MySQL counts a statement at the second it started, so one still running at that time is restored too |
-| **What a restore brings back** | The whole server as it was then: every database, role, user or account, password and grant |
-| **Requirement** | The database must be running, not paused |
-| **Duration** | Longer than a backup restore: Cloider loads the nightly backup taken before your time, then replays the changes after it. Minutes for most databases |
-
-<Tabs groupId="interface" queryString>
-<TabItem value="dashboard" label="Dashboard" default>
-
-1. Open the database and go to the **Backups** tab.
-2. Under **Restore to a Point in Time**, pick the date and time, in your local time. Only moments inside the window can be picked.
-3. Click **Restore to this time**, then **Create fork** in the dialog.
-
-The dashboard takes you to the Databases list, where the new database shows **Creating** until it is ready.
-
-</TabItem>
-<TabItem value="cli" label="CLI">
-
-`cloider db backups` shows where the window starts:
-
-```bash
-cloider db backups orders-db
-```
-
-```text title="Output"
-BACKUP            TAKEN
-2026-10-25_02-00  2026-10-25 02:00 UTC
-...
-
-Restore one into a new database with `cloider db restore orders-db 2026-10-25_02-00`.
-Or any moment from 2026-10-18 01:31:07 UTC until now with `cloider db restore orders-db --time <time>`.
-```
-
-```bash
-cloider db restore orders-db --time 2026-10-25T14:29:00Z --wait
-```
-
-```text title="Output"
-Restore orders-db as of 2026-10-25 14:29:00 UTC into a new database? [y/N] y
-✓ Restoring orders-db from 2026-10-25 14:29:00 UTC into a new database orders-db-2026-10-25-14-29-00
-✓ The restored database is ready: `cloider db get orders-db-2026-10-25-14-29-00`
-```
-
-`--time` takes RFC 3339 with any offset, or `"YYYY-MM-DD HH:MM:SS"` in UTC.
-
-</TabItem>
-<TabItem value="terraform" label="Terraform">
-
-The Terraform provider can't restore databases. Restore with the dashboard, the CLI or the API, then [import](/terraform/guides/import-existing-resources) the new database if you want Terraform to manage it.
-
-</TabItem>
-<TabItem value="api" label="API">
-
-Get the window:
-
-```bash
-curl https://cloider.com/api/databases/p0q9zm/pitr-window \
-  -H "Authorization: Bearer $CLOIDER_TOKEN"
-```
-
-```json title="Response"
-{"available": true, "earliest": "2026-10-18T01:31:07Z", "latest": "2026-10-25T14:35:12Z"}
-```
-
-`latest` is the time of the request. Before the first nightly backup, and for other engines, the response is `{"available": false}`.
-
-Restore with `target_time` instead of `backup`:
-
-```bash
-curl -X POST https://cloider.com/api/databases/p0q9zm/restore \
-  -H "Authorization: Bearer $CLOIDER_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"target_time": "2026-10-25T14:29:00Z"}'
-```
-
-```json title="Response"
-{"hashed_id": "w4t6yb", "database_label": "orders-db-2026-10-25-14-29-00"}
-```
-
-`target_time` is RFC 3339. Send either `backup` or `target_time`, not both. Poll `GET /api/databases/w4t6yb/status` until the new database is `Ready`.
+Poll `GET /api/databases/w4t6yb/status` until the new database is `Ready`.
 
 </TabItem>
 <TabItem value="mcp" label="MCP">
@@ -310,20 +236,51 @@ Restore orders-db to how it was at 14:29 UTC today, before the migration.
 {"database": "orders-db", "time": "2026-10-25T14:29:00Z", "wait": true}
 ```
 
+Without `backup` or `time`, the tool restores the newest:
+
+```json title="Tool call: restore_database_backup"
+{"database": "orders-db", "wait": true}
+```
+
 </TabItem>
 </Tabs>
 
+### What the new database gets
+
+| Property | Value in the restored database |
+| --- | --- |
+| Label | The original's label plus the moment restored to, for example `orders-db-2026-10-27-09-12-03` (with `-1`, `-2` added if taken) |
+| Name, user, password | The same as the original |
+| Engine, version, plan | The same as the original |
+| Trusted sources, SSL mode | The same as the original |
+| Id, host and port | New. The host is `<name>-<new id>.db.cloider.com`, and the port is newly assigned |
+| Data | The whole server as it was at that moment, see below |
+| Backups | Its own, starting with its first full backup the first night after it is created |
+
+Because the name, user and password are the same, switching an app to the restored database only means changing the host and the port in its connection string.
+
+### What is restored and what isn't
+
+| Engine | Restored | Not restored |
+| --- | --- | --- |
+| PostgreSQL | The whole server: every database, role, password, ownership and grant | Changes committed after the moment restored to |
+| MySQL | The whole server: every database with its views, routines and triggers, every account, password and grant | Statements started after the moment restored to |
+| MongoDB | The whole server: every database, collection, index, user and role | Writes after the moment restored to |
+| Redis | The whole server: all 16 logical databases, every key and its expiry time | Writes after the end of the second restored to, ACL users you created yourself (`ACL SETUSER`), `CONFIG SET` changes |
+
+Redis expiry times are absolute, so a key whose time to live ran out since the moment restored to is gone in the new database, as it is in the original.
+
 ## Replace a database with a backup
 
-Cloider doesn't overwrite a running database with a backup. To go back to a backup:
+Cloider doesn't overwrite a running database with a backup. To go back to earlier data:
 
-**Option 1: switch to the restored database.** Restore the backup, check the data, then point your app at the new database (only the host and port change) and delete the old one when you no longer need it. This is the quickest way, with no copying.
+**Option 1: switch to the restored database.** Restore into a new database, check the data, then point your app at the new database (only the host and port change) and delete the old one when you no longer need it. This is the quickest way, with no copying.
 
-**Option 2: copy the data back.** Restore the backup into a new database, then copy what you need into the original with the engine's tools. For example, to replace one PostgreSQL table:
+**Option 2: copy the data back.** Restore into a new database, then copy what you need into the original with the engine's tools. For example, to replace one PostgreSQL table:
 
 ```bash
 # Dump one table from the restored database
-PGPASSWORD="$(cloider db password orders-db-2026-10-18-02-00)" \
+PGPASSWORD="$(cloider db password orders-db-2026-10-25-14-29-00)" \
   pg_dump -h orders-db-w4t6yb.db.cloider.com -p 21388 -U orders_db_user -d orders-db \
   --data-only --table=public.orders -Fc -f orders.dump
 
@@ -338,7 +295,7 @@ Both databases must trust your IP for this, see [trusted sources](/databases/tru
 
 ## Make your own backups
 
-The daily backups protect against mistakes and failures within the retention window. For longer retention, copies outside Cloider, or a backup right before a risky migration, export the data yourself with the engine's tools. Each of these runs from your machine against the public host:
+Cloider's backups protect against mistakes and failures within the restore window. For longer retention, copies outside Cloider, or a file you can download, export the data yourself with the engine's tools. Each of these runs from your machine against the public host:
 
 ```bash
 # PostgreSQL: custom format dump of one database
@@ -363,41 +320,37 @@ To keep them off your machine, upload them to a Cloider bucket. The guide [back 
 
 ## Troubleshooting
 
-### You can restore a backup after the first backup is completed.
+### You can restore a backup after the first full backup is completed.
 
-The database was created after the last nightly backup run. Its first backup is taken the next night.
+The database is new. Its first full backup is taken the first night after it is created, and the restore window opens then.
+
+### Point-in-time recovery isn't available for this database yet. It starts after its first full backup!
+
+The same, through the CLI or the API: a new database has no full backup to replay changes onto yet. Try again after its first night.
+
+### The database must be running to restore it to a point in time!
+
+Both restore options need the database running, and it is paused or still changing. [Resume](/databases/pause-resume-and-delete) it, or wait until it is **Ready**, then restore.
+
+### Pick a point in time between ... UTC and now!
+
+The time is before the start of the window or in the future. The window starts 14 days back, or at the database's first full backup if that is more recent, see `cloider db backups` or `GET /api/databases/<id>/pitr-window`.
+
+### Choose one of the newest backup, a backup or a point in time!
+
+The API request sets more than one of `latest`, `backup` and `target_time`. Send exactly one.
 
 ### Invalid backup selected!
 
-The `backup` value isn't in the `YYYY-MM-DD_HH-MM` format. Copy a name from `cloider db backups` or `GET /api/database/backups`.
+The request sets none of `latest`, `backup` and `target_time`, or `backup` isn't in the `YYYY-MM-DD_HH-MM` format. Send `{"latest": true}` or a `target_time`.
 
 ### Free plan users can not create more than one database. UPGRADE NOW!
 
 A restore creates a database, and accounts on the free plan can have only one. Delete the other database first or upgrade, see [billing](/account/billing).
 
-### The restored database is missing some objects
+### The moment I need is outside the window
 
-Only the main database is restored, without other databases, roles or users you created yourself, and statements that need more privileges than the database user has are skipped. Recreate those objects in the new database.
-
-### The backup I need is no longer listed
-
-Older backups are removed automatically once newer ones exist. For longer retention, [make your own backups](#make-your-own-backups).
-
-### Point-in-time recovery isn't available for this database yet. It starts after its first nightly backup!
-
-The database was created after the last nightly run, so there is no backup to replay changes onto yet. The window opens the next night.
-
-### Pick a point in time between ... UTC and now!
-
-The time is before the start of the window or in the future. The window starts about 7 days back, see `cloider db backups` or `GET /api/databases/<id>/pitr-window`.
-
-### The database must be running to restore it to a point in time!
-
-The database is paused or still changing. [Resume](/databases/pause-resume-and-delete) it, or wait until it is **Ready**, then restore.
-
-### Point-in-time recovery is only available for PostgreSQL, MySQL and MongoDB databases!
-
-Redis databases are restored from their [daily backups](#restore-a-backup-into-a-new-database).
+Full backups that fall out of the window, and the changes recorded before them, are removed automatically. For Redis, switching the AOF off also moves the start of the window, see [Redis](#redis). For longer retention, [make your own backups](#make-your-own-backups).
 
 ### The restored database shows Failed
 
@@ -410,10 +363,10 @@ The restore didn't complete, so the new database doesn't hold a usable copy. You
 - [Run queries with cloider db exec](/databases/terminal-and-exec)
 
 <FAQ items={[
-  {q: 'How often are Cloider databases backed up?', a: 'Once a day, at night (UTC). Backups start automatically when a database is created, with no setup and no extra cost.'},
-  {q: 'How long are database backups kept?', a: 'At least the last 7 daily backups of each database are kept. The Backups tab and cloider db backups <database> list exactly which backups are available.'},
-  {q: 'Does restoring a backup overwrite my database?', a: 'No. A restore always creates a new database from the backup, with the same name, user, password and plan. The original database keeps running unchanged.'},
-  {q: 'What happens to backups when I delete a database?', a: 'They are deleted with it. Restore or export anything you want to keep before deleting a database.'},
-  {q: 'Can I restore a database to a specific minute?', a: 'For PostgreSQL, MySQL and MongoDB, yes: any second of the last 7 days, into a new database. Redis is restored from its daily backups.'},
-  {q: 'Can I download a Cloider backup file?', a: 'The daily backups can only be restored into a new database. To get a file, export the data yourself with pg_dump, mysqldump, mongodump or redis-cli --rdb.'}
+  {q: 'How often are Cloider databases backed up?', a: 'Every database gets a full backup every 14 days, and every change in between is recorded continuously. Backups start automatically when a database is created, with no setup and no extra cost.'},
+  {q: 'How far back can I restore a database?', a: 'Any second of the last 14 days, up to the moment you restore. cloider db backups <database> shows where the window starts.'},
+  {q: 'Does restoring a backup overwrite my database?', a: 'No. A restore always creates a new database, with the same name, user, password and plan. The original database keeps running unchanged.'},
+  {q: 'What happens to backups when I delete a database?', a: 'They are deleted with it, together with its recorded changes. Restore or export anything you want to keep before deleting a database.'},
+  {q: 'Can I restore a database to a specific time?', a: 'Yes: any second of the last 14 days, picked in UTC, into a new database. Without a time, Cloider restores the newest full backup plus every change since, your data as it is now.'},
+  {q: 'Can I download a Cloider backup file?', a: 'No. Cloider\'s backups can only be restored into a new database. To get a file, export the data yourself with pg_dump, mysqldump, mongodump or redis-cli --rdb.'}
 ]} />

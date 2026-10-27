@@ -6,8 +6,9 @@ description: Run a nightly pg_dump or mysqldump of a Cloider database as a Kuber
 keywords: [pg_dump to s3, mysqldump to s3, kubernetes cronjob backup, database backup bucket, rclone s3 backup, restore pg_dump, postgres backup kubernetes, mysql backup kubernetes]
 ---
 
-Cloider already backs up every managed database once a day and keeps at least the last 7 backups, which you can
-restore into a new database. This guide adds backups that **you** own: a nightly logical dump (`pg_dump` for
+Cloider already backs up every managed database, with a full backup every 14 days plus every change in between,
+so you can restore any second of the last 14 days into a new database. This guide adds
+backups that **you** own: a nightly logical dump (`pg_dump` for
 PostgreSQL, `mysqldump` for MySQL) that runs as a Kubernetes **CronJob** on a Cloider cluster and is uploaded to a
 Cloider **bucket**, kept as long as you decide, downloadable as a file, and restorable anywhere. You also test a
 restore, because a backup is only proven by restoring it.
@@ -25,16 +26,16 @@ restore, because a backup is only proven by restoring it.
 
 ## Why back up a database yourself?
 
-| | Cloider's daily backups | Your own dumps in a bucket (this guide) |
+| | Cloider's backups | Your own dumps in a bucket (this guide) |
 | --- | --- | --- |
 | **Setup** | None | One CronJob |
-| **Retention** | At least the last 7 daily backups | As long as you decide, with a lifecycle rule |
+| **Retention** | The last 14 days, any second of them | As long as you decide, with a lifecycle rule |
 | **Restore** | Into a new Cloider database, in one click or command | Anywhere: a Cloider database, another provider, your laptop |
 | **Download a file** | No | Yes |
 | **Survives deleting the database** | No, backups are deleted with it | Yes, they are in a separate bucket |
-| **Schedule** | Once a day | Any cron schedule |
+| **Schedule** | A full backup every 14 days, every change recorded in between | Any cron schedule |
 
-Use both: the built-in backups for a quick restore of yesterday's data, and your own dumps for long retention,
+Use both: the built-in backups for a quick restore of recent data, to the second, and your own dumps for long retention,
 compliance, migrations and protection against deleting the database by mistake. See
 [Backups and restore](/databases/backups-and-restore).
 
@@ -716,13 +717,13 @@ More in [Database troubleshooting](/databases/troubleshooting) and [Kubernetes t
 
 ## Next steps
 
-- [Backups and restore](/databases/backups-and-restore): Cloider's own daily backups and one-click restores.
+- [Backups and restore](/databases/backups-and-restore): Cloider's own backups and point-in-time restores.
 - [Data protection](/object-storage/data-protection): make the backup bucket safe from leaked keys.
 - [Lifecycle rules](/object-storage/lifecycle-rules): tiered retention per prefix.
 - [Migrate to Cloider](/guides/migrate-to-cloider): the same dump and restore tools for moving databases.
 
 <FAQ items={[
-  {q: 'Does Cloider back up my database automatically?', a: 'Yes. Every managed database is backed up once a day, and at least the last 7 backups are kept. You restore one into a new database from the Backups tab or with cloider db restore. The backups can\'t be downloaded and are deleted with the database, which is why you may want your own dumps as well.'},
+  {q: 'Does Cloider back up my database automatically?', a: 'Yes. Every managed database gets a full backup every 14 days, and every change in between is recorded, so any second of the last 14 days can be restored. You restore into a new database from the Backups tab or with cloider db restore. The backups can\'t be downloaded and are deleted with the database, which is why you may want your own dumps as well.'},
   {q: 'How do I run pg_dump on a schedule on Cloider?', a: 'Create a Kubernetes CronJob on a Cloider cluster with a postgres image whose version matches the server, give it the database\'s private host, port, user, password and database name through a Secret, and add the cluster to the database\'s trusted sources.'},
   {q: 'How do I upload a database dump to a Cloider bucket?', a: 'Use any S3 tool with a bucket access key, the endpoint https://s3.eu-central-2.cloider.com and the region eu-central-2. This guide uses rclone, configured with RCLONE_CONFIG_CLOIDER_* environment variables, to copy the dump into the bucket.'},
   {q: 'How long are my own backups kept?', a: 'As long as you decide. A lifecycle rule on the bucket deletes objects under a prefix a number of days after they were written, for example 30. Without a rule, dumps are kept until you delete them, and billed by the GiB stored.'},

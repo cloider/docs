@@ -207,16 +207,16 @@ How many orders were created in orders-db in the last 24 hours, and which tables
 `database_exec` runs next to the database, logged in, so it works without changing trusted sources. It is marked destructive because a query can change data.
 
 ```text title="Prompt"
-Someone deleted rows from orders-db this morning. Restore last night's backup into a new database so I can compare.
+Someone deleted rows from orders-db at 09:15 UTC this morning. Restore it to 09:14 into a new database so I can compare.
 ```
 
-**Tools:** `list_database_backups`, `restore_database_backup`
+**Tools:** `restore_database_backup`
 
 ```json title="Tool call: restore_database_backup"
-{"database": "orders-db", "backup": "2026-10-20_02-00", "wait": true}
+{"database": "orders-db", "time": "2026-10-20T09:14:00Z", "wait": true}
 ```
 
-The restore creates a new database, a fork of `orders-db` as it was at the backup. The original is left as it is.
+The restore creates a new database, a fork of `orders-db` as it was at 09:14 UTC. The original is left as it is.
 
 ```text title="Prompt"
 orders-db is slow. Check its CPU, memory and connections, and resize it to the next plan if it's at its limits.
@@ -379,7 +379,7 @@ Open a support request: our orders-db restore has been running for an hour. Mark
 **Tools:** `create_support_ticket`
 
 ```json title="Tool call: create_support_ticket"
-{"subject": "Database restore running for an hour", "description": "Restoring the 2026-10-20_02-00 backup of orders-db started an hour ago and hasn't finished.", "impact": "PartiallyBlocked", "service": "Database", "attachments": ["/Users/alex/restore.log"]}
+{"subject": "Database restore running for an hour", "description": "Restoring orders-db to 2026-10-20 09:14 UTC into a new database started an hour ago and hasn't finished.", "impact": "PartiallyBlocked", "service": "Database", "attachments": ["/Users/alex/restore.log"]}
 ```
 
 ```text title="Prompt"

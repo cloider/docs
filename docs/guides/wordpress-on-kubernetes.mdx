@@ -7,7 +7,7 @@ keywords: [wordpress kubernetes, wordpress managed mysql, wordpress persistentvo
 ---
 
 In this guide you run WordPress on a Cloider Kubernetes cluster the production friendly way: the WordPress container
-runs as a Kubernetes Deployment, its data lives in a **managed MySQL database** (backed up daily by Cloider), its
+runs as a Kubernetes Deployment, its data lives in a **managed MySQL database** (backed up by Cloider, restorable to any second of the last 14 days), its
 uploads, plugins and themes live on a **PersistentVolumeClaim**, and visitors reach it over **HTTPS** through a domain
 target, with no load balancer to pay for. You get complete manifests you can apply as they are.
 
@@ -476,8 +476,8 @@ See [HTTPS certificates](/domains/https-certificates).
 - **Upgrade WordPress** by changing the image tag (for example to a newer `wordpress:6.x-apache`) and running
   `kubectl apply -f wordpress.yaml`. Back up first. Plugins and themes on the volume are updated from the admin as
   usual.
-- **Backups**: Cloider backs up `shop-db` once a day and keeps at least the last 7 backups, see
-  [Backups and restore](/databases/backups-and-restore). The volume isn't backed up for you. Copy `wp-content` to a
+- **Backups**: Cloider takes a full backup of `shop-db` every 14 days and records every change in between, so any
+  second of the last 14 days can be restored, see [Backups and restore](/databases/backups-and-restore). The volume isn't backed up for you. Copy `wp-content` to a
   bucket on a schedule, as in [Back up a database to a bucket](/guides/back-up-a-database-to-a-bucket), or keep media
   in object storage with an offload plugin.
 - **Connections**: every PHP worker can hold a database connection. Keep an eye on the
@@ -553,5 +553,5 @@ More in [Kubernetes troubleshooting](/kubernetes/troubleshooting) and [Database 
   {q: 'Do I need an Ingress controller for WordPress on Cloider?', a: 'No. Ingress objects aren\'t served on Cloider clusters. Route a domain to the WordPress Service with a target, and Cloider terminates HTTPS with a certificate it manages, without a load balancer charge.'},
   {q: 'Can I run more than one WordPress pod?', a: 'Not with a ReadWriteOnce volume, which only one pod can mount at a time. To scale out, move uploads to object storage with an offload plugin so the pods share nothing on disk.'},
   {q: 'Why does WordPress log everyone out after a restart?', a: 'The official image generates random secret keys when they aren\'t set. Store the eight WORDPRESS_*_KEY and WORDPRESS_*_SALT values in a Secret so they stay the same.'},
-  {q: 'Is my WordPress database backed up?', a: 'Yes. Cloider backs up every managed MySQL database once a day and keeps at least the last 7 backups, which you can restore into a new database. The wp-content volume isn\'t backed up automatically.'},
+  {q: 'Is my WordPress database backed up?', a: 'Yes. Cloider takes a full backup of every managed MySQL database every 14 days and records every change in between, so you can restore any second of the last 14 days into a new database. The wp-content volume isn\'t backed up automatically.'},
 ]} />

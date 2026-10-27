@@ -29,7 +29,7 @@ The **Pause Database** dialog shows the exact monthly amount for your database, 
 
 - The database server is stopped. Nothing can connect to it, over the public host, the private host, the terminal or `cloider db exec`.
 - Its volume and data are kept as they are.
-- No new [backups](/databases/backups-and-restore) are taken, because there is nothing running to back up. The backups taken before the pause stay available, and you can still restore them into a new database.
+- No new [backups](/databases/backups-and-restore) are taken and no changes are recorded, because there is nothing running. A database must be resumed before it can be restored into a new database.
 - [Insights](/databases/insights) aren't sampled.
 - The connection details don't change. Apps that use the database get connection errors until you resume it.
 
@@ -179,7 +179,7 @@ After a resume, the database has the same host, port, user, password and data as
 Deleting a database permanently removes the database, its data, its volume and **all of its backups**. It can't be undone.
 
 :::danger[Deleting is permanent]
-Before you delete a database you might need again, export its data with `pg_dump`, `mysqldump`, `mongodump` or `redis-cli --rdb`, see [make your own backups](/databases/backups-and-restore#make-your-own-backups). Cloider's daily backups are deleted together with the database.
+Before you delete a database you might need again, export its data with `pg_dump`, `mysqldump`, `mongodump` or `redis-cli --rdb`, see [make your own backups](/databases/backups-and-restore#make-your-own-backups). Cloider's backups and recorded changes are deleted together with the database.
 :::
 
 <Tabs groupId="interface" queryString>
@@ -285,6 +285,6 @@ Your role or API token is read-only. The same applies to resuming and deleting.
   {q: 'Do I keep my data when I pause a database?', a: 'Yes. A paused database keeps its volume and all its data. When you resume it, it has the same host, port, user, password and data as before.'},
   {q: 'How much does a paused database cost?', a: 'Only its storage: the plan\'s volume size at the per GB volume rate. The plan\'s CPU and RAM are not billed while it is paused. The Pause Database dialog and cloider pricing show the exact monthly amount.'},
   {q: 'Can I connect to a paused database?', a: 'No. A paused database is stopped, so connections, the browser terminal and cloider db exec all fail until you resume it.'},
-  {q: 'Are backups taken while a database is paused?', a: 'No, a paused database is not running and can\'t be backed up. The backups taken before the pause stay available and can be restored into a new database.'},
+  {q: 'Are backups taken while a database is paused?', a: 'No, a paused database is not running and can\'t be backed up. To restore a paused database into a new database, resume it first.'},
   {q: 'Can I recover a deleted database?', a: 'No. Deleting a database also deletes its backups, so it can\'t be recovered. Export the data before deleting a database you might need again.'}
 ]} />

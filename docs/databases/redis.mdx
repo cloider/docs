@@ -6,7 +6,7 @@ description: Use managed Redis 8 on Cloider for caching, sessions and queues. Co
 keywords: [managed redis, redis hosting, redis 8, redis-cli, ioredis, node-redis, redis-py, go-redis, predis, rediss, redis acl, redis tls, sidekiq, celery, bullmq]
 ---
 
-Cloider runs managed **Redis 8**, the in-memory key-value store used for caching, sessions, rate limiting, job queues, leaderboards and pub/sub. Each Redis database is its own server with its own memory and storage, an ACL user created for you, daily snapshots and optional TLS.
+Cloider runs managed **Redis 8**, the in-memory key-value store used for caching, sessions, rate limiting, job queues, leaderboards and pub/sub. Each Redis database is its own server with its own memory and storage, an ACL user created for you, backups with point-in-time restore and optional TLS.
 
 <Logos items={[{src: '/img/logos/redis.svg', alt: 'Redis'}]} />
 
@@ -22,7 +22,7 @@ Cloider runs managed **Redis 8**, the in-memory key-value store used for caching
 | **SSL** | **Off** by default. When on, the server accepts **only** TLS connections |
 | **Client** | `redis-cli` |
 | **Plans** | Hobby (0.25 vCPU, 0.25 GB RAM, 1 GB storage) to Pro (2 vCPU, 8 GB RAM, 32 GB storage), see [plans](/databases/overview#redis-plans) |
-| **Backups** | A daily snapshot of the whole server, restored into a new database |
+| **Backups** | A full backup every 14 days plus every change recorded, restored into a new database as of now or any second of the last 14 days |
 
 ## Create a Redis database
 
@@ -363,7 +363,9 @@ A Redis database on Cloider is one server without replicas, Sentinel or cluster 
 
 ### Backups and restore
 
-Every night, Cloider takes a snapshot of the whole server: all 16 logical databases, every key and its expiry time. A [restore](/databases/backups-and-restore) creates a new database from that snapshot. Treat Redis as a cache or for data your application can rebuild, and keep data you can't lose in [PostgreSQL](/databases/postgresql), [MySQL](/databases/mysql) or [MongoDB](/databases/mongodb).
+Cloider takes a full backup of every Redis database every 14 days and records every change in between from its append-only file (AOF). A [restore](/databases/backups-and-restore) creates a new database with your data as it is now, or as it was at [any second of the last 14 days](/databases/backups-and-restore#how-far-back-can-i-restore), for example right before a bad `FLUSHALL`. It brings back the whole server: all 16 logical databases, every key and its expiry time.
+
+Redis persists with the AOF, written to disk every second, instead of periodic RDB snapshots, so a restart loses at most about a second of writes.
 
 ## Troubleshooting
 

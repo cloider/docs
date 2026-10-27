@@ -98,7 +98,7 @@ A managed database is a PostgreSQL, MySQL, MongoDB or Redis database that Cloide
 - **Engines and versions**: PostgreSQL 18, MySQL 9, MongoDB 8 and Redis 8.
 - **Plans**: Hobby, Starter, Basic, Standard, Plus and Pro, each with a fixed CPU, RAM and storage size. You can [resize](/databases/resize) to a larger plan.
 - **Network access**: each database has a public endpoint under `db.cloider.com` and a list of [trusted sources](/databases/trusted-sources) that controls who can connect, plus optional [SSL/TLS](/databases/ssl-tls).
-- **Backups**: databases are backed up daily and can be restored from the dashboard, CLI, API or MCP. See [Backups and restore](/databases/backups-and-restore).
+- **Backups**: databases get a full backup every 14 days, and every change in between is recorded, so they can be restored to any second of the last 14 days from the dashboard, CLI, API or MCP. See [Backups and restore](/databases/backups-and-restore).
 - **Billing**: a flat monthly price per plan, prorated to the time the database is ready. While paused, only its storage is billed.
 
 Read the [Databases overview](/databases/overview).

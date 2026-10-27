@@ -428,6 +428,7 @@ Every endpoint you can call with an API token, grouped as in the sidebar. The **
 | GET | `/database/password?id=` | The database password, as plain text | Read |
 | GET | `/database/cert?id=` | The CA certificate, as PEM | Read |
 | GET | `/database/backups?id=` | List backups | Read |
+| GET | `/databases/:hashed_id/pitr-window` | The point-in-time window | Read |
 | POST | `/databases/:hashed_id/restore` | Restore a backup | Write |
 | POST | `/databases/:hashed_id/pause` | Pause a database | Write |
 | POST | `/databases/:hashed_id/resume` | Resume a paused database | Write |

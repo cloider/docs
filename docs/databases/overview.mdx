@@ -2,11 +2,11 @@
 title: Managed databases on Cloider
 sidebar_label: Overview
 sidebar_position: 1
-description: Run managed PostgreSQL, MySQL, MongoDB and Redis on Cloider, with daily backups, TLS, IP allowlists and private networking, billed per second by plan.
+description: Run managed PostgreSQL, MySQL, MongoDB and Redis on Cloider, with automatic backups, TLS, IP allowlists and private networking, billed per second by plan.
 keywords: [cloider databases, managed postgresql, managed mysql, managed mongodb, managed redis, database hosting, pay as you go database]
 ---
 
-Cloider runs managed **PostgreSQL**, **MySQL**, **MongoDB** and **Redis** databases for you. You pick an engine and a plan, and Cloider provisions the server, its storage, a public and a private endpoint, TLS certificates, a firewall (trusted sources) and daily backups. You connect with the client or driver you already use.
+Cloider runs managed **PostgreSQL**, **MySQL**, **MongoDB** and **Redis** databases for you. You pick an engine and a plan, and Cloider provisions the server, its storage, a public and a private endpoint, TLS certificates, a firewall (trusted sources) and automatic backups. You connect with the client or driver you already use.
 
 This page explains what a Cloider database is, how to choose an engine and a plan, how databases are billed, and which tools manage them.
 
@@ -22,7 +22,7 @@ This page explains what a Cloider database is, how to choose an engine and a pla
 | **Endpoints** | A public host `<name>-<id>.db.cloider.com` and a private host `<name>-<id>.db.cloider.internal` for your Cloider apps and Kubernetes clusters, both on the database's own port |
 | **Access control** | [Trusted sources](/databases/trusted-sources): anywhere, IPv4 addresses and CIDR ranges, your apps and your clusters |
 | **Encryption** | Optional [SSL/TLS](/databases/ssl-tls) with a certificate signed by Cloider's CA, which you can download |
-| **Backups** | [Daily backups](/databases/backups-and-restore), at least the last 7 kept, restored into a new database. PostgreSQL, MySQL and MongoDB can also be restored to [any second of the last 7 days](/databases/backups-and-restore#restore-to-a-point-in-time) |
+| **Backups** | [A full backup every 14 days](/databases/backups-and-restore) plus every change recorded, restored into a new database as of now or to [any second of the last 14 days](/databases/backups-and-restore#how-far-back-can-i-restore) |
 | **Scaling** | [Resize](/databases/resize) to a larger plan at any time, with a short restart |
 | **Built-in tools** | A [browser terminal and `cloider db exec`](/databases/terminal-and-exec), and [insights](/databases/insights) charts for CPU, memory, storage, disk, network and connections |
 | **Managed with** | The dashboard, the `cloider db` CLI, the `cloider_database` Terraform resource, the REST API and the MCP server |
@@ -38,7 +38,7 @@ On Cloider, each database is its own isolated server with its own storage volume
 - exposing the database on a public endpoint and a private endpoint,
 - filtering connections with your trusted sources list,
 - issuing TLS certificates when you turn SSL on,
-- taking a backup every day and keeping at least the last 7 of them,
+- taking a full backup every 14 days and recording every change in between,
 - collecting usage metrics for the insights charts.
 
 You are responsible for your schema, your data, your queries, and for keeping the password and trusted sources tight. See [security](/concepts/security) for the shared responsibility model.
@@ -250,18 +250,18 @@ orders-db   PostgreSQL 18  Standard  Ready   2026-09-02 14:12
     Allow only your IPs, apps and clusters.
   </Card>
   <Card title="Backups and restore" href="/databases/backups-and-restore" icon="backup-restore">
-    Daily backups and restoring into a new database.
+    Automatic backups, point-in-time restore and restoring into a new database.
   </Card>
 </Cards>
 
 ## Frequently asked questions
 
 <FAQ items={[
-  {q: 'Which databases does Cloider offer?', a: 'Cloider offers managed PostgreSQL 18, MySQL 9, MongoDB 8 and Redis 8. Each database is its own server with its own storage, a public and a private endpoint, optional TLS, an IP allowlist and daily backups.'},
+  {q: 'Which databases does Cloider offer?', a: 'Cloider offers managed PostgreSQL 18, MySQL 9, MongoDB 8 and Redis 8. Each database is its own server with its own storage, a public and a private endpoint, optional TLS, an IP allowlist and automatic backups.'},
   {q: 'How much does a Cloider database cost?', a: 'A database is billed by its plan\'s monthly price, charged per second while it is Ready. Prices for each engine and plan are on cloider.com/#pricing and in the dashboard when you create a database. Connections, traffic and backups are not charged separately.'},
   {q: 'Do I pay for a paused database?', a: 'Yes, but only for its storage. A paused database is charged for its plan\'s volume size at the per GB volume rate, and not for CPU or RAM. A deleted database costs nothing.'},
   {q: 'Can I change the plan of a database later?', a: 'Yes, you can resize a database to a larger plan at any time from the Resize tab, with cloider db resize, Terraform or the API. The data is kept and the database restarts briefly. A database can\'t be moved to a smaller plan.'},
-  {q: 'Are Cloider databases backed up?', a: 'Yes. Every database is backed up once a day, and at least the last 7 daily backups are kept. You can restore any of them into a new database from the Backups tab or with cloider db restore. Deleting a database also deletes its backups.'},
+  {q: 'Are Cloider databases backed up?', a: 'Yes. Every database gets a full backup every 14 days, and every change in between is recorded. You can restore the newest data, or any second of the last 14 days, into a new database from the Backups tab or with cloider db restore. Deleting a database also deletes its backups.'},
   {q: 'Can my Cloider app or Kubernetes cluster reach the database privately?', a: 'Yes. Every database has a private host ending in .db.cloider.internal that your Cloider apps and Kubernetes clusters can use. Add the app or cluster to the database\'s trusted sources.'},
-  {q: 'Does Cloider support high availability or read replicas for databases?', a: 'No. Each Cloider database runs as a single server. Daily backups protect the data, and a backup can be restored into a new database.'}
+  {q: 'Does Cloider support high availability or read replicas for databases?', a: 'No. Each Cloider database runs as a single server. Automatic backups protect the data, and a backup can be restored into a new database.'}
 ]} />

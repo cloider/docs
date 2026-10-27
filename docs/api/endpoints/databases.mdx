@@ -25,6 +25,7 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | PUT | [`/databases/:hashed_id/plan`](#resize-to-a-larger-plan) | Write |
 | PUT | [`/databases/:hashed_id/label`](#rename-a-database) | Write |
 | GET | [`/database/backups?id=`](#list-backups) | Read |
+| GET | [`/databases/:hashed_id/pitr-window`](#get-the-point-in-time-window) | Read |
 | POST | [`/databases/:hashed_id/restore`](#restore-a-backup) | Write |
 | POST | [`/databases/:hashed_id/pause`](#pause-a-database) | Write |
 | POST | [`/databases/:hashed_id/resume`](#resume-a-database) | Write |
@@ -447,7 +448,7 @@ Errors are on `database_label`: the naming rules (`Database label can not be upp
 GET /database/backups?id=:hashed_id
 ```
 
-Returns the database's backups, newest first, as a list of timestamps in the form `YYYY-MM-DD_HH-MM` (UTC). Backups are taken daily. A new database has no backups until its first one has run.
+Returns the backups you can restore by name, newest first, as a list of timestamps in the form `YYYY-MM-DD_HH-MM` (UTC). Databases are restored from their [point-in-time window](#get-the-point-in-time-window), so the list is empty, apart from Redis snapshots taken before point-in-time recovery, which are listed until they expire, around mid-November 2026.
 
 **Access:** any token.
 
@@ -461,10 +462,31 @@ curl "https://cloider.com/api/database/backups?id=d7f2m" \
 ```
 
 ```json title="Response"
-["2026-10-20_02-00", "2026-10-19_02-00", "2026-10-18_02-00"]
+[]
 ```
 
 `404 Not Found` and `403 Forbidden` (plain text) as for the password; `502 Failed to fetch database backups` when the list can't be read. See [Backups and restore](/databases/backups-and-restore).
+
+## Get the point-in-time window
+
+```http
+GET /databases/:hashed_id/pitr-window
+```
+
+Returns the moments a database can be restored to: from `earliest`, 14 days back or the first full backup if that is more recent, until `latest`, the time of the request. Before the database's first full backup, the response is `{"available": false}`.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/databases/d7f2m/pitr-window \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{"available": true, "earliest": "2026-10-13T01:31:07Z", "latest": "2026-10-27T09:12:03Z"}
+```
+
+`502 Failed to fetch the point-in-time window` when the window can't be read.
 
 ## Restore a backup
 
@@ -472,34 +494,44 @@ curl "https://cloider.com/api/database/backups?id=d7f2m" \
 POST /databases/:hashed_id/restore
 ```
 
-Restores a backup into a **new** database. The source database isn't touched: Cloider creates a copy with the same engine, version, plan, user, trusted sources and SSL setting, seeded from the backup, and labels it `<source label>-<backup date>`. Point your application at the new database when it is `Ready`.
+Restores a backup into a **new** database. The source database isn't touched: Cloider creates a copy with the same engine, version, plan, user, trusted sources and SSL setting, seeded from the backup, and labels it `<source label>-<moment restored to>`. Point your application at the new database when it is `Ready`.
 
 **Access:** Read & Write token.
 
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `backup` | string | Yes | A timestamp from [`GET /database/backups`](#list-backups), for example `2026-10-19_02-00` |
+The body takes exactly one of these fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `latest` | boolean | `true` restores the newest: the newest full backup plus every change since |
+| `target_time` | string | The moment to restore to, RFC 3339, inside the [point-in-time window](#get-the-point-in-time-window), for example `2026-10-25T14:29:00Z` |
+| `backup` | string | A Redis snapshot taken before point-in-time recovery, from [`GET /database/backups`](#list-backups), until it expires |
 
 ```bash
 curl -X POST https://cloider.com/api/databases/d7f2m/restore \
   -H "Authorization: Bearer $CLOIDER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"backup": "2026-10-19_02-00"}'
+  -d '{"latest": true}'
 ```
 
 ```json title="Response"
-{"hashed_id": "h3k9w", "database_label": "orders-db-2026-10-19-02-00"}
+{"hashed_id": "h3k9w", "database_label": "orders-db-2026-10-27-09-12-03"}
 ```
 
-Poll `GET /databases/h3k9w/status` until it is `Ready`. The restored database is a separate database, billed like any other, so delete it when you don't need it any more. On the Free plan, which allows one database, a restore is refused.
+Poll `GET /databases/h3k9w/status` until it is `Ready`. The restored database is a separate database, billed like any other, so delete it when you don't need it any more. On the Free plan, which allows one database, a restore is refused. A database must be `Ready` to be restored with `latest` or `target_time`.
 
 | Status | Message |
 | --- | --- |
-| `400` | `Invalid backup selected!` (not in the `YYYY-MM-DD_HH-MM` form) |
+| `400` | `Choose one of the newest backup, a backup or a point in time!` (more than one field) |
+| `400` | `Invalid backup selected!` (no field, or `backup` not in the `YYYY-MM-DD_HH-MM` form) |
+| `400` | `Invalid point in time, use RFC 3339 like 2026-10-25T14:30:00Z!` |
+| `400` | `The database must be running to restore it to a point in time!` |
+| `400` | `Point-in-time recovery isn't available for this database yet. It starts after its first full backup!` |
+| `400` | `Pick a point in time between 2026-10-13 01:31:07 UTC and now!` |
 | `400` | `Free plan users can not create more than one database. UPGRADE NOW!` |
 | `400` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
 | `403` | `This API token is read only!` |
 | `404` | `Not Found` (plain text) |
+| `502` | `Couldn't read the point-in-time window, try again later!` |
 
 ## Pause a database
 

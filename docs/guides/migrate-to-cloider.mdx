@@ -53,7 +53,7 @@ flowchart LR
 | --- | --- | --- |
 | A web service built from git or a Dockerfile (Heroku, Render, Railway, App Runner, Cloud Run, a VM) | An [app](/apps/overview) | Built with your Dockerfile or a buildpack. One container per app, which must answer on its port |
 | Several services, workers, cron jobs, or prebuilt images | A [Kubernetes cluster](/kubernetes/overview) | Standard Kubernetes: Deployments, CronJobs, Services |
-| Managed PostgreSQL, MySQL, MongoDB or Redis | A [managed database](/databases/overview) | Same engines, one primary server, daily backups |
+| Managed PostgreSQL, MySQL, MongoDB or Redis | A [managed database](/databases/overview) | Same engines, one primary server, automatic backups with point-in-time restore |
 | S3, Spaces, R2, B2 or another S3 compatible store | A [bucket](/object-storage/overview) | S3 API at `https://s3.eu-central-2.cloider.com` |
 | Docker Hub, GHCR, ECR, GitLab registry | A [registry project](/container-registry/overview) | `registry.cloider.com/<project>/<repository>:<tag>` |
 | DNS at your registrar or a DNS host | [Cloider DNS](/domains/overview), or keep your current DNS | Targets route names to apps and Services with automatic HTTPS |

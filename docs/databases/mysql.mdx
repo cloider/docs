@@ -6,7 +6,7 @@ description: "Use managed MySQL 9 on Cloider: connection limits per plan, TLS, c
 keywords: [managed mysql, mysql hosting, mysql 9, mysql client, mysql2, pymysql, go-sql-driver, pdo mysql, laravel mysql, connector/j, caching_sha2_password, max_connections]
 ---
 
-Cloider runs managed **MySQL 9**, the open source relational database used by WordPress, Laravel, Drupal and many other applications. Each MySQL database is its own server with its own storage, a database and a user created for you, server settings tuned to its plan, daily backups and optional TLS.
+Cloider runs managed **MySQL 9**, the open source relational database used by WordPress, Laravel, Drupal and many other applications. Each MySQL database is its own server with its own storage, a database and a user created for you, server settings tuned to its plan, backups with point-in-time restore and optional TLS.
 
 <Logos items={[{src: '/img/logos/mysql.svg', alt: 'MySQL'}]} />
 
@@ -24,7 +24,7 @@ Cloider runs managed **MySQL 9**, the open source relational database used by Wo
 | **SSL** | On by default. With SSL off, TLS is turned off on the server |
 | **Max connections** | 20 (Hobby) to 200 (Pro), see [server settings per plan](#server-settings-per-plan) |
 | **Client** | `mysql` |
-| **Backups** | Daily, restored into a new database |
+| **Backups** | A full backup every 14 days plus every change recorded, restored into a new database as of now or any second of the last 14 days |
 
 ## Create a MySQL database
 
@@ -448,7 +448,7 @@ MySQL 9 uses `utf8mb4` by default, which stores every Unicode character, emoji i
 
 ### Backups and restore
 
-Cloider backs up every MySQL database each night. A [restore](/databases/backups-and-restore) creates a new database with the tables, data, views, routines and triggers of your main database (`shop-db`). `DEFINER` clauses are removed during the restore, so views, routines and triggers are defined by the database user. Other databases and accounts you created aren't restored.
+Cloider takes a full backup of every MySQL database every 14 days and records every change in between from its binary log. A [restore](/databases/backups-and-restore) creates a new database with your data as it is now, or as it was at any second of the last 14 days, for example right before a bad `DELETE`. It brings back the whole server: every database with its views, routines and triggers, every account and grant.
 
 ## Import an existing MySQL database
 

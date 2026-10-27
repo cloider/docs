@@ -6,7 +6,7 @@ description: Use managed MongoDB 8 on Cloider. Connect with mongosh, Node.js, Mo
 keywords: [managed mongodb, mongodb hosting, mongodb 8, mongosh, mongoose, pymongo, mongo go driver, mongodb tls, tlsCAFile, mongodb connection string, directConnection, mongodb transactions, change streams]
 ---
 
-Cloider runs managed **MongoDB 8**, the document database that stores JSON-like documents in collections. Each MongoDB database is its own server with its own storage, a database and a user created for you, daily backups, point-in-time restore and optional TLS. This page covers what is specific to MongoDB on Cloider and how to connect from the shell and from code.
+Cloider runs managed **MongoDB 8**, the document database that stores JSON-like documents in collections. Each MongoDB database is its own server with its own storage, a database and a user created for you, backups with point-in-time restore and optional TLS. This page covers what is specific to MongoDB on Cloider and how to connect from the shell and from code.
 
 <Logos items={[{src: '/img/logos/mongodb.svg', alt: 'MongoDB'}]} />
 
@@ -22,7 +22,7 @@ Cloider runs managed **MongoDB 8**, the document database that stores JSON-like 
 | **SSL** | On by default. The server accepts TLS and, for compatibility, unencrypted connections too |
 | **Client** | `mongosh` |
 | **Plans** | Hobby (0.25 vCPU, 0.5 GB RAM, 2 GB storage) to Pro (3 vCPU, 6 GB RAM, 24 GB storage), see [plans](/databases/overview#mongodb-plans) |
-| **Backups** | Daily, restored into a new database, and any second of the last 7 days |
+| **Backups** | A full backup every 14 days plus every change recorded, restored into a new database as of now or any second of the last 14 days |
 
 ## Create a MongoDB database
 
@@ -249,7 +249,7 @@ puts client[:products].find(sku: "ACME-001").first
 
 ### A single-member replica set
 
-A Cloider MongoDB database runs as a replica set named `rs0` with one member, the primary. Its oplog is what makes [point-in-time restore](/databases/backups-and-restore#restore-to-a-point-in-time) possible, and features that MongoDB only offers on replica sets work:
+A Cloider MongoDB database runs as a replica set named `rs0` with one member, the primary. Its oplog is what makes [point-in-time restore](/databases/backups-and-restore#restore-a-backup-into-a-new-database) possible, and features that MongoDB only offers on replica sets work:
 
 - **Multi-document transactions** (`session.withTransaction()`, `startTransaction`).
 - **Change streams** (`collection.watch()`).
@@ -273,9 +273,7 @@ MongoDB's storage engine, WiredTiger, keeps frequently used data and indexes in 
 
 ### Backups and restore
 
-Cloider backs up every MongoDB database each night. A [restore](/databases/backups-and-restore) creates a new database with the collections, documents and indexes of your main database (`catalog-db`). Other databases, and users and roles you created, aren't restored.
-
-Every change is also archived as it happens, so you can restore a MongoDB database to [any second of the last 7 days](/databases/backups-and-restore#restore-to-a-point-in-time), for example right before a bad `deleteMany`. That restore brings back the whole server, every database, user and role included.
+Cloider takes a full backup of every MongoDB database every 14 days and records every change in between from its oplog. A [restore](/databases/backups-and-restore) creates a new database with your data as it is now, or as it was at [any second of the last 14 days](/databases/backups-and-restore#how-far-back-can-i-restore), for example right before a bad `deleteMany`. It brings back the whole server, every database, user and role included.
 
 ## Common tasks
 

@@ -31,7 +31,7 @@ const products = [
     category: 'Data',
     icon: 'database-outline',
     href: '/databases/overview',
-    desc: 'PostgreSQL, MySQL, MongoDB and Redis with daily backups, SSL and trusted sources.',
+    desc: 'PostgreSQL, MySQL, MongoDB and Redis with automatic backups, SSL and trusted sources.',
   },
   {
     name: 'Object Storage',
