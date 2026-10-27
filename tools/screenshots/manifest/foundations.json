@@ -5,6 +5,7 @@
     {"file": "account/change-role.webp", "route": "/dashboard/access-control", "state": "Change member role dialog for sam@acme.com with the Access role selector open on Admin and Restricted", "actions": "Members tab, open the three dots menu of a member, click Change role"},
     {"file": "account/api-token-created.webp", "route": "/dashboard/access-control?tab=api-tokens", "state": "API token generated dialog with the warning to copy the token now, a fake token cldr_xxxxxxxxxxxxxxxxxxxxxxxx, the Try it curl command and the I've saved the token button", "actions": "API Tokens tab, Generate API token, type a description, click Generate API token"},
     {"file": "account/invoice.webp", "route": "/dashboard/billing", "state": "Invoice dialog for one month with items Cluster production (Compute, Persistent Volumes, LoadBalancer lines), Database orders-db and App blog, subtotals and Total Amount", "actions": "click a month in the Invoices list"},
-    {"file": "account/usage-resource.webp", "route": "/dashboard/usage", "state": "Usage page with the production cluster's tab open: daily cost chart for the last days, month to date cost and forecast", "actions": "click the production cluster tab next to Summary"}
+    {"file": "account/usage-resource.webp", "route": "/dashboard/usage", "state": "Usage page with the production cluster's tab open: daily cost chart for the last days, month to date cost and forecast", "actions": "click the production cluster tab next to Summary"},
+    {"file": "account/access-roles-info.webp", "route": "/dashboard/access-control", "state": "the access roles information dialog explaining Owner, Admin and Restricted", "actions": "Add New Member, click Information about access roles"}
   ]
 }

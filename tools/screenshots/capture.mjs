@@ -204,6 +204,7 @@ async function newPage(browser, viewport, shot) {
   if (session != 'anonymous') {
     await context.addCookies([{ name: 'shots_session', value: session, domain: SITE_HOST, path: '/' }])
   }
+  if (shot.ready) await context.addCookies([{ name: 'shots_ready', value: '1', domain: SITE_HOST, path: '/' }])
   await context.addInitScript((css) => {
     const add = () => {
       const style = document.createElement('style')
@@ -297,7 +298,7 @@ async function capture(browser, viewport, shot) {
   if (action === null) return { skipped: 'not feasible, see shots.mjs' }
   if (!action && shot.actions) return { skipped: 'no action script in shots.mjs' }
 
-  const spec = { session: action?.session, route: action?.route ?? shot.route }
+  const spec = { session: action?.session, ready: action?.ready, route: action?.route ?? shot.route }
   // a shot can ask for a taller page when what it has to show doesn't fit in 900px
   viewport = { ...viewport, ...action?.viewport }
   const { context, page } = await newPage(browser, viewport, spec)

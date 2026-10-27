@@ -459,6 +459,12 @@ export function databaseBackups() {
   })
 }
 
+// the range a fork can start from, earliest clamped to 14 days back like the api
+export function pitrWindow() {
+  const second = (iso) => iso.slice(0, 19) + 'Z'
+  return { available: true, earliest: second(new Date(NOW.getTime() - 14 * DAY).toISOString()), latest: second(ago(0, 0, 1)) }
+}
+
 const insightStat = (avg, spread) => ({ avg: round(avg), max: round(avg + spread), min: round(Math.max(0, avg - spread)) })
 
 export function databaseInsights(hashedId) {
@@ -501,16 +507,25 @@ export function databaseInsights(hashedId) {
 
 // ---------- buckets ----------
 
+// the one region there is (common/buckets)
 export const bucketRegions = [
-  { code: 'eu-central', name: 'Europe (Frankfurt)', endpoint: 'https://s3.eu-central.cloider.com' },
-  { code: 'us-east', name: 'US East (Virginia)', endpoint: 'https://s3.us-east.cloider.com' },
+  { code: 'eu-central-2', name: 'Europe', endpoint: 'https://s3.eu-central-2.cloider.com' },
 ]
+
+const s3Endpoint = bucketRegions[0].endpoint
+
+// a bucket's own address is <bucket>.<endpoint host>, its website <bucket>.s3-website.<region>...
+const bucketFields = (name, website) => ({
+  region: 'eu-central-2', endpoint: s3Endpoint, url: `https://${name}.s3.eu-central-2.cloider.com`,
+  website: !!website, website_index: website ? 'index.html' : '', website_error: website?.error ?? '',
+  website_url: website ? `https://${name}.s3-website.eu-central-2.cloider.com` : '',
+})
 
 export const buckets = [
   {
-    hashed_id: 'k6b2n', bucket_name: 'acme-assets', region: 'eu-central', public: true, status: 'Ready',
+    hashed_id: 'k6b2n', bucket_name: 'acme-assets', public: true, status: 'Ready',
     size_bytes: 4831838208, size_sampled_at: ago(0, 0, 4),
-    endpoint: 'https://s3.eu-central.cloider.com', url: 'https://s3.eu-central.cloider.com/acme-assets',
+    ...bucketFields('acme-assets'),
     policy: JSON.stringify({
       Version: '2012-10-17',
       Statement: [{
@@ -519,19 +534,56 @@ export const buckets = [
         Principal: { AWS: ['CLDRK7Q2M9X4P8VB3N6T'] },
         Action: ['s3:PutObject', 's3:DeleteObject'],
         Resource: ['arn:aws:s3:::acme-assets/releases/*'],
+      }, {
+        Sid: 'CiDeployOnlyFromOffice',
+        Effect: 'Deny',
+        Principal: { AWS: ['CLDRK7Q2M9X4P8VB3N6T'] },
+        Action: ['s3:GetObject*', 's3:PutObject*', 's3:DeleteObject*', 's3:List*'],
+        Resource: ['arn:aws:s3:::acme-assets', 'arn:aws:s3:::acme-assets/*'],
+        Condition: { NotIpAddress: { 'aws:SourceIp': ['203.0.113.0/24'] } },
       }],
     }, null, 2),
     created_at: ago(70),
   },
   {
-    hashed_id: 'q3w9d', bucket_name: 'acme-backups', region: 'eu-central', public: false, status: 'Ready',
+    hashed_id: 'q3w9d', bucket_name: 'acme-backups', public: false, status: 'Ready',
     size_bytes: 61203283968, size_sampled_at: ago(0, 0, 4),
-    endpoint: 'https://s3.eu-central.cloider.com', url: 'https://s3.eu-central.cloider.com/acme-backups',
+    ...bucketFields('acme-backups'),
     policy: null, created_at: ago(58),
+  },
+  {
+    hashed_id: 's3w8q', bucket_name: 'acme-site', public: true, status: 'Ready',
+    size_bytes: 3355443, size_sampled_at: ago(0, 0, 4),
+    ...bucketFields('acme-site', { error: '404.html' }),
+    domains: [{ domain_name: 'acme-site.cloider.app', domain_type: 'Subdomain' }],
+    policy: null, created_at: ago(12),
   },
 ]
 
-export const bucketVersioning = { k6b2n: 'Enabled', q3w9d: 'Suspended' }
+// what GET /buckets/:id/website answers, off the bucket's own fields
+export function bucketWebsite(bucket) {
+  return { enabled: bucket.website, index_document: bucket.website_index, error_document: bucket.website_error, url: bucket.website_url }
+}
+
+// The rules as the dashboard lists them, the api leaves its own CloiderDashboard rule out
+export const bucketCors = {
+  k6b2n: [
+    {
+      id: 'app', allowed_origins: ['https://app.example.com'], allowed_methods: ['GET', 'PUT'],
+      allowed_headers: ['Content-Type'], expose_headers: ['ETag'], max_age_seconds: 3600,
+    },
+    {
+      id: 'local', allowed_origins: ['http://localhost:3000'], allowed_methods: ['GET', 'PUT'],
+      allowed_headers: ['Content-Type'], expose_headers: [], max_age_seconds: 0,
+    },
+    {
+      id: 'anyone-reads', allowed_origins: ['*'], allowed_methods: ['GET', 'HEAD'],
+      allowed_headers: [], expose_headers: [], max_age_seconds: 0,
+    },
+  ],
+}
+
+export const bucketVersioning = { k6b2n: 'Enabled', q3w9d: 'Suspended', s3w8q: '' }
 
 export const bucketLifecycle = {
   k6b2n: {
@@ -721,19 +773,27 @@ export const domains = [
   { domain_name: 'blog-x7k2.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(46) },
   { domain_name: 'api-m2p9.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(31) },
   { domain_name: 'web-q4m8.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(24) },
+  { domain_name: 'acme-site.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(11) },
 ]
 
 const appTarget = (hashed_id, domain_name, app, path, days) => ({
   hashed_id, domain_name, target_type: 'App', cluster_id: '', cluster_name: '',
-  app_id: app.hashed_id, app_name: app.app_name, app_label: app.app_label,
+  app_id: app.hashed_id, app_name: app.app_name, app_label: app.app_label, bucket_id: '', bucket_name: '',
   namespace: `app-${app.app_name}-${app.hashed_id}`, service: 'app', port: app.port, protocol: 'TCP',
   path, target_path: '', created_at: ago(days),
 })
 
 const clusterTarget = (hashed_id, domain_name, cluster, namespace, service, port, path, days) => ({
   hashed_id, domain_name, target_type: 'Cluster', cluster_id: cluster.hashed_id, cluster_name: cluster.cluster_name,
-  app_id: '', app_name: '', app_label: '', namespace, service, port, protocol: 'TCP',
+  app_id: '', app_name: '', app_label: '', bucket_id: '', bucket_name: '', namespace, service, port, protocol: 'TCP',
   path, target_path: '', created_at: ago(days),
+})
+
+// always the whole domain, at /
+const bucketTarget = (hashed_id, domain_name, bucket, days) => ({
+  hashed_id, domain_name, target_type: 'Bucket', cluster_id: '', cluster_name: '',
+  app_id: '', app_name: '', app_label: '', bucket_id: bucket.hashed_id, bucket_name: bucket.bucket_name,
+  namespace: '', service: '', port: 0, protocol: 'TCP', path: '/', target_path: '/', created_at: ago(days),
 })
 
 export const targets = {
@@ -747,6 +807,7 @@ export const targets = {
   'blog-x7k2.cloider.app': [appTarget('tg7d8', 'blog-x7k2.cloider.app', apps[0], '/', 46)],
   'api-m2p9.cloider.app': [appTarget('tg9e0', 'api-m2p9.cloider.app', apps[1], '/', 31)],
   'web-q4m8.cloider.app': [appTarget('tg2f3', 'web-q4m8.cloider.app', apps[2], '/', 24)],
+  'acme-site.cloider.app': [bucketTarget('tg4h5', 'acme-site.cloider.app', buckets[2], 11)],
 }
 
 let recordId = 4100
@@ -915,7 +976,18 @@ function appUsage(app, scale) {
     const cpu = round(wave(i, 90 * scale, 30 * scale, 0.7), 0)
     const memory = round(wave(i, 310 * scale, 40 * scale, 1.7), 0)
     const compute_cost = round(Math.max(cpu, memory / 3.072) / 1000 * 35 / 30 * f, 4)
-    return { date: dayDate(offset), total_cost: compute_cost, total_time_seconds: Math.round(SECONDS_PER_DAY * f), metrics: { cpu, memory, compute_cost } }
+    const requests_by = {
+      '2xx': Math.round(wave(i, 14200 * scale, 3600 * scale, 0.4) * f),
+      '3xx': Math.round(wave(i, 1300 * scale, 300 * scale, 1.1) * f),
+      '4xx': Math.round(wave(i, 420 * scale, 160 * scale, 2.2) * f),
+      '5xx': Math.round(Math.max(0, wave(i, 18 * scale, 14 * scale, 0.9)) * f),
+    }
+    const requests = Object.values(requests_by).reduce((a, b) => a + b, 0)
+    const bytes_out = Math.round(requests * wave(i, 46000, 6000, 1.3))
+    return {
+      date: dayDate(offset), total_cost: compute_cost, total_time_seconds: Math.round(SECONDS_PER_DAY * f),
+      metrics: { cpu, memory, compute_cost, requests, requests_by, bytes_out },
+    }
   })
   const total = daily.reduce((s, d) => s + d.total_cost, 0)
   const perDay = total / (monthDays.length - 1 + dayFraction(todayIndex))
@@ -987,7 +1059,7 @@ export function usage() {
     ],
     databases: databases.filter(d => d.status != 'Paused').map(databaseUsage),
     apps: [appUsage(apps[0], 1.4), appUsage(apps[1], 1)],
-    buckets: [storageUsage(buckets[0], 4.5, 0.03), storageUsage(buckets[1], 57, 1.1)],
+    buckets: [storageUsage(buckets[0], 4.5, 0.03), storageUsage(buckets[1], 57, 1.1), storageUsage(buckets[2], 0.01, 0)],
     registry_projects: [storageUsage(registries[0], 3.1, 0.02), storageUsage(registries[1], 1.2, 0.03)],
   }
 }

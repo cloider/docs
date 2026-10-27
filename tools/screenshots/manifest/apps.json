@@ -2,6 +2,8 @@
   "shots": [
     {"file": "apps/actions-menu.webp", "route": "/dashboard/apps", "state": "Apps list with blog, api and web; the actions menu of blog open, showing Pause, Resume and Delete", "actions": "click the three dots in the Actions column of blog"},
     {"file": "apps/pause-dialog.webp", "route": "/dashboard/apps", "state": "Pause App dialog for blog (a Ready app with a cloider.app address), with Cancel and Pause app buttons", "actions": "open blog's actions menu, click Pause"},
-    {"file": "apps/delete-dialog.webp", "route": "/dashboard/apps", "state": "Delete App dialog, first step, for blog: the warning, Delete this subdomain too with blog-x7k2.cloider.app ticked, and the I want to delete the app button", "actions": "open blog's actions menu, click Delete"}
+    {"file": "apps/delete-dialog.webp", "route": "/dashboard/apps", "state": "Delete App dialog, first step, for blog: the warning, Delete this subdomain too with blog-x7k2.cloider.app ticked, and the I want to delete the app button", "actions": "open blog's actions menu, click Delete"},
+    {"file": "apps/resume-dialog.webp", "route": "/dashboard/apps", "state": "Resume App dialog for the paused web app, with Cancel and Resume app buttons", "actions": "open web's actions menu, click Resume"},
+    {"file": "apps/insights-traffic.webp", "route": "/dashboard/apps/:app", "state": "Insights tab scrolled to the traffic: Requests (Today), Requests (This Month), Server Errors (This Month) and Data Out (This Month) cards, the Requests chart stacked by 2xx, 3xx, 4xx and 5xx and the Data Out chart", "actions": "Insights tab, scroll to Requests (Today)"}
   ]
 }

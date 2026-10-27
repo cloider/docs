@@ -77,7 +77,8 @@ For an app target you only choose the app: Cloider routes to the app's port itse
 
 - A domain in your account: a [free subdomain](/domains/free-subdomains) or a
   [custom domain](/domains/add-a-custom-domain).
-- **For an app target**: an app that has deployed. Its status must be `Ready` or `Paused`.
+- **For an app target**: an app that has deployed. The dashboard offers only `Ready` apps; the CLI, Terraform, the API
+  and MCP also accept a `Paused` one.
 - **For a cluster target**: a cluster with a Service to route to. List them with `cloider cluster services <cluster>`
   or in the dashboard's target dialog. See [Deploy a workload](/kubernetes/deploy-a-workload).
 - **For a bucket target**: a public bucket in the **Ready** state with its static website on. See
@@ -91,15 +92,22 @@ For an app target you only choose the app: Cloider routes to the app's port itse
 
 1. Open **Domains** in the sidebar and click the domain.
 2. In the **Targets** section, click **Add target**. The **Add a new target** dialog opens.
-3. Choose **App** as the **Target type** and pick the app in **App**.
+3. Choose **App** as the **Target type**. The **App** list shows each app with its port and status, and only `Ready`
+   apps can be picked. The first `Ready` app is picked for you, and the line under the list says where requests go,
+   for example **routes to blog on port 3000**.
 4. Keep **Path** as `/` to route the whole domain, or type a path such as `/blog`.
-5. Leave **Target path** empty to forward requests as they are made. See [Rewrite the path](#rewrite-the-path).
-6. Click **Save**.
+5. **Target path** copies what you type in **Path** until you change it yourself. Keep it equal to the path to forward
+   requests as they are made, or see [Rewrite the path](#rewrite-the-path).
+6. Click **Save**. The dialog closes and the target appears in the **Targets** list.
+
+You don't choose a cluster, namespace, Service or port for an app: Cloider routes to the app's own port. If no app is
+`Ready` yet, the dialog says **None of your apps are Ready yet. Wait for an app to finish deploying before adding an
+App target.**
 
 <Screenshot
   src="/img/screenshots/domains/targets.webp"
   url="/dashboard/domains/example.com"
-  alt="The Targets section of example.com with an App target routing / to the web app and a Cluster target routing /api to the api Service in the shop namespace"
+  alt="The Targets section of example.com with an App target routing / to the blog app on port 3000 over TCP and a Cluster target routing /shop to the storefront Service in the shop namespace of the production cluster on port 80"
   caption="Targets on one domain can point at apps and at cluster Services."
 />
 
@@ -176,16 +184,19 @@ Route example.com to the web app, and example.com/blog to the blog app.
 <TabItem value="dashboard" label="Dashboard" default>
 
 1. Open the domain under **Domains** and click **Add target**.
-2. Choose **Cluster** as the **Target type**.
+2. Choose **Cluster** as the **Target type**. It is the type the dialog opens on when you have a cluster with a Service.
 3. Pick the **Cluster**, then the **Namespace**, the **Service** and the **Port**. The lists show the Services that
-   exist in the cluster right now.
-4. Set **Path** and, if needed, **Target path**.
+   exist in the cluster right now, and each list starts on its first entry. A port reads like `80 TCP`.
+4. Set **Path**. **Target path** follows it until you change it.
 5. Click **Save**.
+
+If the cluster you pick has no Services, the dialog says **The selected cluster "staging" has no Kubernetes services.
+You need to deploy at least one service to this cluster before adding targets.** and the other fields stay disabled.
 
 <Screenshot
   src="/img/screenshots/domains/target-form.webp"
   url="/dashboard/domains/example.com"
-  alt="The Add a new target dialog with Target type Cluster, cluster production, namespace shop, Service api, port 80 and path /api"
+  alt="The Add a new target dialog for example.com with Target type Cluster, Cluster production, Namespace shop, Service api, Port 80 TCP, Path /api and Target path /api, with the Cancel and Save buttons"
   caption="A cluster target: pick the cluster, namespace, Service and port, then the path."
 />
 
@@ -294,10 +305,23 @@ Turn the bucket's website on first.
 <TabItem value="dashboard" label="Dashboard" default>
 
 1. Open the domain under **Domains** and click **Add target**.
-2. Choose **Bucket** as the **Target type** and pick the bucket in **Bucket**. Buckets whose website is off are marked
-   **website off** and can't be picked.
-3. **Path** and **Target path** stay `/`.
+2. Choose **Bucket** as the **Target type**. The **Bucket** list shows your buckets, and only `Ready` buckets with their
+   website on can be picked: one whose website is off is marked **website off**, and one that isn't `Ready` shows its
+   status. The first bucket that can be picked is picked for you, and the line under the list reads, for example,
+   **serves the acme-site website**.
+3. **Path** and **Target path** are set to `/` and can't be changed.
 4. Click **Save**.
+
+If no bucket has its website on, the dialog says **None of your buckets has its website on. Turn it on from a bucket's
+Settings before adding a Bucket target.** Turn it on as described in
+[Static websites](/object-storage/static-websites#turn-on-the-website).
+
+<Screenshot
+  src="/img/screenshots/domains/target-form-bucket.webp"
+  url="/dashboard/domains/acme-site.cloider.app"
+  alt="The Edit target dialog of acme-site.cloider.app with Target type Bucket, the acme-site bucket picked in Bucket, and Path and Target path fixed at /"
+  caption="A Bucket target: pick the bucket, and its website is served at the root of the domain."
+/>
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -365,9 +389,21 @@ works once its certificate is issued.
 <TabItem value="dashboard" label="Dashboard" default>
 
 The **Targets** section of the domain's page lists each target with its **Type** (**App**, **Bucket** or
-**Cluster**), **Name**, **Namespace**, **Service**, **Port**, **Protocol**, **Path** (with a link that opens it) and
-**Target path**. Namespace and Service are only shown for cluster targets, and Port and Protocol not for bucket
-targets. Each row's **Actions** menu has **URL**, **Edit** and **Delete**.
+**Cluster**), **Name** (the app, bucket or cluster), **Namespace**, **Service**, **Port**, **Protocol**, **Path** (with
+a link that opens it) and **Target path**. Namespace and Service are only shown for cluster targets, and Port and
+Protocol not for bucket targets. Each row's **Actions** menu has **URL**, which copies the address of the route, such
+as `https://example.com/shop`, **Edit** and **Delete**.
+
+A warning icon next to a name explains, on hover, why a target won't serve as set up, for example **App is Paused -
+requests will fail until it is Ready.** or **The bucket's website is off - requests will fail until it is turned on.**
+A target whose app, bucket, cluster or Service no longer exists is greyed out, and its **Edit** action is disabled.
+
+<Screenshot
+  src="/img/screenshots/domains/bucket-target.webp"
+  url="/dashboard/domains/acme-site.cloider.app"
+  alt="The domain page of acme-site.cloider.app with one Bucket target named acme-site at the path /, with dashes in the Namespace, Service, Port and Protocol columns"
+  caption="A free subdomain serving the acme-site bucket's website through a Bucket target."
+/>
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -385,6 +421,9 @@ example.com/       app web                   /             -
 
 A bucket target shows as `website of bucket <name>`. Add `-o wide` for the `ID` column, which `update` and `delete`
 take.
+
+`cloider domain get example.com` shows the domain's type, status and creation time with the same table of targets
+under it.
 
 </TabItem>
 <TabItem value="terraform" label="Terraform">
@@ -418,6 +457,8 @@ curl -G https://cloider.com/api/targets \
     "app_id": "",
     "app_name": "",
     "app_label": "",
+    "bucket_id": "",
+    "bucket_name": "",
     "namespace": "shop",
     "service": "api",
     "port": 80,
@@ -430,7 +471,10 @@ curl -G https://cloider.com/api/targets \
 ```
 
 Targets are listed newest first. `domain_name` is required, and a domain that isn't yours answers `403` with
-`You don't have permission to access targets for this domain`.
+`You don't have permission to access targets for this domain`. App and Bucket targets come back with an empty
+`namespace` and `service`.
+
+`GET /api/domains/example.com` returns the domain itself with the same list in `targets`.
 
 </TabItem>
 <TabItem value="mcp" label="MCP">
@@ -439,8 +483,12 @@ Targets are listed newest first. `domain_name` is required, and a domain that is
 Which targets does example.com have?
 ```
 
-No MCP tool lists a domain's targets with their ids. Find the id with `cloider target list example.com -o wide` or in
-the dashboard, then pass it to `update_domain_target` or `delete_domain_target`.
+```json title="Tool call: get_domain"
+{"domain": "example.com"}
+```
+
+The answer is the domain with its targets, including each target's `hashed_id`, which `update_domain_target` and
+`delete_domain_target` take as `target_id`.
 
 </TabItem>
 </Tabs>

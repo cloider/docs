@@ -35,9 +35,18 @@ to a [Cloider app](/apps/overview), to a Service in a [Kubernetes cluster](/kube
 <Screenshot
   src="/img/screenshots/domains/list.webp"
   url="/dashboard/domains"
-  alt="The Domains page listing example.com as a Domain and blog.cloider.app as a Subdomain, both Active"
-  caption="The Domains page lists your active free subdomains and custom domains."
+  alt="The Domains page listing six domains, all Active: example.com of type Domain, and blog.cloider.app, blog-x7k2.cloider.app, api-m2p9.cloider.app, web-q4m8.cloider.app and acme-site.cloider.app of type Subdomain, with the Learn more about domains link and the Add Domain button"
+  caption="The Domains page lists your free subdomains and custom domains with their status."
 />
+
+Open **Domains** in the sidebar to see every domain of the account with its **Domain name**, **Type** (**Domain** for a
+custom domain, **Subdomain** for a free one) and **Status**. Click a name to open the domain's page, or the icon next to
+it to open the address in a new tab. **Add Domain** opens a menu with **Subdomain** and **Custom Domain**, and each
+row's actions menu has **Delete**. An account without domains sees an **Add Domain** button in the middle of the page
+instead of the list.
+
+A domain's page has a **Targets** section. A custom domain's page also has **DNS records**, **Name servers** and
+**Delete domain** sections. Every section has a **Learn more** link to the matching page of these docs.
 
 ## The three building blocks
 
@@ -59,6 +68,13 @@ flowchart LR
 3. **Targets**: routes from a path of a domain (`/`, `/api`, `/blog`) to an app or to a Service in a cluster, or from
    the whole domain to a bucket's static website. A target is what makes a domain serve something over HTTPS. See
    [Targets](/domains/targets).
+
+<Screenshot
+  src="/img/screenshots/domains/targets.webp"
+  url="/dashboard/domains/example.com"
+  alt="The example.com domain page: the Targets section with an App target routing / to the blog app on port 3000 and a Cluster target routing /shop to the storefront Service in the shop namespace of the production cluster, and below it the DNS records list starting with A @ 203.0.113.10 and CNAME www"
+  caption="A custom domain's page: its targets, then its DNS records."
+/>
 
 If DNS is new to you, read [DNS basics](/domains/dns-basics) first. It explains domains, subdomains, records, TTL,
 nameservers and propagation in plain words, with examples.
@@ -112,9 +128,10 @@ straight from the bucket. See
 
 ## Who can manage domains?
 
-Every member of an account can see its domains, DNS records and targets. Members with read-only access can't add,
-change or delete them: the API answers, for example, `You have read-only access to this account, you can not create
-domains!`. API tokens with read access are limited the same way. See
+Every member of an account can see its domains, DNS records and targets. Members with the **Restricted** role, who
+have read-only access, can't add, change or delete them: the dashboard hides **Add Domain**, **Add target** and **Add
+DNS record** for them and disables the delete and edit actions, and the API answers, for example, `You have read-only
+access to this account, you can not create domains!`. API tokens with read access are limited the same way. See
 [Accounts and roles](/concepts/accounts-and-roles) and [API tokens](/account/api-tokens).
 
 A suspended account can't add domains, records or targets until it is back on a paid plan.
@@ -126,6 +143,7 @@ Everything on these pages can be done from five tools. The pages show each task 
 | Task | Dashboard | CLI | Terraform | API | MCP tool |
 | --- | --- | --- | --- | --- | --- |
 | List domains | **Domains** | `cloider domain list` | | `GET /api/domains` | `list_domains` |
+| Show a domain and its targets | Click the domain | `cloider domain get` | | `GET /api/domains/<domain>` | `get_domain` |
 | Check a free subdomain | Live check on **Create App** | `cloider domain check` | | `GET /api/domains/availability` | `check_domain_availability` |
 | Add a domain | **Add Domain** | `cloider domain create` | `cloider_domain` | `POST /api/domains` | `create_domain` |
 | Delete a domain | **Delete domain** | `cloider domain delete` | `cloider_domain` | `DELETE /api/domains/<domain>` | `delete_domain` |

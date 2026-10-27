@@ -4,6 +4,7 @@
 //
 //   route    overrides the listed route (query strings, a different demo resource)
 //   session  shots_session cookie: jane (default), trial, choose, anonymous
+//   ready    true serves every database as Ready, for a running engine the demo holds paused
 //   run      (page, h) => steps after the page settles, h is the helpers in capture.mjs
 //   viewport { height } for a page taller than the listed viewport
 //   wait     ms to wait after run, before the screenshot
@@ -98,6 +99,22 @@ export const actions = {
   },
   'apps/detail-overview.webp': { run: (page, h) => h.tab('Overview') },
   'apps/detail-insights.webp': { run: (page, h) => h.tab('Insights'), wait: 1200 },
+  'apps/insights-traffic.webp': {
+    async run(page, h) {
+      await h.tab('Insights')
+      await h.scrollTo('Requests (Today)', 24)
+    },
+    // the four traffic cards and both traffic charts
+    viewport: { height: 1000 },
+    wait: 1200,
+  },
+  'apps/resume-dialog.webp': {
+    async run(page, h) {
+      await h.rowMenu('web')
+      await h.menuItem('Resume')
+      await h.dialog()
+    },
+  },
   'apps/detail-builds.webp': { run: (page, h) => h.tab('Builds') },
   'apps/build-logs.webp': {
     async run(page, h) {
@@ -218,6 +235,24 @@ export const actions = {
       await page.evaluate(() => document.activeElement?.blur())
     },
   },
+  'databases/backups-pick-time.webp': { run: pickRestoreTime },
+  'databases/restore-dialog-time.webp': {
+    async run(page, h) {
+      await pickRestoreTime(page, h)
+      await page.getByRole('button', { name: 'Restore', exact: true }).click()
+      await page.locator('.p-confirmdialog').waitFor()
+    },
+  },
+  'databases/resume-dialog.webp': {
+    async run(page, h) {
+      await h.rowMenu('cache')
+      await h.menuItem('Resume')
+      await h.dialog()
+    },
+  },
+  'databases/overview-mysql.webp': { run: (page, h) => h.tab('Overview') },
+  'databases/overview-mongodb.webp': { run: (page, h) => h.tab('Overview') },
+  'databases/overview-redis.webp': { ready: true, run: (page, h) => h.tab('Overview') },
   'databases/restore-dialog.webp': {
     async run(page, h) {
       await h.tab('Backups')
@@ -244,7 +279,72 @@ export const actions = {
     },
   },
   'object-storage/detail-usage.webp': { run: (page, h) => h.tab('Usage'), wait: 1200 },
-  'object-storage/detail-policy.webp': { run: (page, h) => h.tab('Policy') },
+  'object-storage/detail-policy.webp': {
+    async run(page, h) {
+      await h.tab('Permissions')
+      // the editor opens scrolled to the end of a long policy
+      await page.locator('textarea').first().evaluate(el => { el.scrollTop = 0 })
+    },
+  },
+  'object-storage/policy-examples.webp': {
+    async run(page, h) {
+      await h.tab('Permissions')
+      await page.getByRole('button', { name: 'Examples' }).click()
+      await page.locator('.p-menu, .p-tieredmenu').first().waitFor()
+    },
+  },
+  'object-storage/cors.webp': {
+    async run(page, h) {
+      await h.tab('Permissions')
+      await h.tab('CORS')
+    },
+  },
+  'object-storage/cors-rule-form.webp': {
+    async run(page, h) {
+      await h.tab('Permissions')
+      await h.tab('CORS')
+      await page.getByRole('button', { name: 'Add rule' }).click()
+      const dialog = await h.dialog()
+      const field = (label) => dialog.locator('label', { has: page.locator(`span.font-medium:text-is("${label}")`) })
+      await dialog.locator('input').first().fill('uploads')
+      await field('Allowed origins').locator('textarea').fill('https://app.example.com')
+      await dialog.locator('label:has(input[value=HEAD])').click()
+      await dialog.locator('label:has(input[value=PUT])').click()
+      await dialog.locator('textarea').nth(1).fill('Content-Type')
+      await dialog.locator('textarea').nth(2).fill('ETag')
+      // InputNumber formats as it is typed, fill() leaves it empty
+      await dialog.locator('.p-inputnumber input').pressSequentially('3600')
+      await dialog.locator('.p-dialog-title').click()
+      await dialog.locator('.p-dialog-content').evaluate(el => { el.scrollTop = 0 })
+    },
+    // the whole form, ID to Max age
+    viewport: { height: 1100 },
+  },
+  'object-storage/cors-json.webp': {
+    async run(page, h) {
+      await h.tab('Permissions')
+      await h.tab('CORS')
+      await page.getByRole('button', { name: 'Edit JSON' }).click()
+      await h.dialog()
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
+  'object-storage/website-settings.webp': {
+    async run(page, h) {
+      await h.tab('Settings')
+      await h.scrollTo('Static Website', 24)
+    },
+  },
+  'object-storage/create-website.webp': {
+    async run(page) {
+      await page.locator('input[name=bucket_name]').fill('acme-site')
+      // ToggleSwitch drops its name, so the switches are found by their labels
+      const toggle = (label) => page.locator('label', { has: page.getByText(label, { exact: true }) }).locator('.p-toggleswitch')
+      await toggle('Public read access').click()
+      await toggle('Static website').click()
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
   'object-storage/detail-lifecycle.webp': { run: (page, h) => h.tab('Lifecycle') },
   'object-storage/detail-settings.webp': { run: (page, h) => h.tab('Settings') },
   'object-storage/access-keys.webp': { route: '/dashboard/access-control?tab=s3-credentials' },
@@ -321,6 +421,51 @@ export const actions = {
   'container-registry/detail-usage.webp': { run: (page, h) => h.tab('Usage'), wait: 1200 },
   'container-registry/detail-settings.webp': { run: (page, h) => h.tab('Settings') },
   'container-registry/tokens.webp': { route: '/dashboard/access-control?tab=registry-tokens' },
+  'container-registry/token-create.webp': { run: fillRegistryToken },
+  'container-registry/token-created.webp': {
+    async run(page, h) {
+      const dialog = await fillRegistryToken(page, h)
+      await dialog.getByRole('button', { name: 'Create token' }).click()
+      await page.getByRole('button', { name: "I've saved the secret" }).waitFor()
+      await h.sleep(300)
+    },
+  },
+  'container-registry/delete-dialog.webp': {
+    async run(page, h) {
+      await h.tab('Settings')
+      await page.getByRole('button', { name: 'Delete project' }).click()
+      const dialog = await h.dialog()
+      await dialog.getByRole('button', { name: 'I want to delete the project' }).click()
+      await dialog.locator('input').fill('acme')
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
+  'container-registry/retention-rule-form.webp': {
+    async run(page, h) {
+      await h.tab('Policy')
+      await page.getByRole('button', { name: 'Add rule' }).first().click()
+      const dialog = await h.dialog()
+      await dialog.locator('input.font-mono').nth(1).fill('v*')
+      await dialog.getByText('Untagged images too').click()
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
+  'container-registry/immutability-rule-form.webp': {
+    async run(page, h) {
+      await h.tab('Policy')
+      await page.getByRole('button', { name: 'Add rule' }).last().click()
+      const dialog = await h.dialog()
+      await dialog.locator('input.font-mono').nth(0).fill('api')
+      await dialog.locator('input.font-mono').nth(1).fill('v*')
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
+  'container-registry/overview-kubernetes.webp': {
+    async run(page, h) {
+      await h.tab('Overview')
+      await h.tab('Kubernetes')
+    },
+  },
 
   // ---------- domains ----------
   // scrolled to the DNS records, the name servers card is right under them
@@ -354,6 +499,26 @@ export const actions = {
       await dialog.locator('input[name=path]').fill('/api')
     },
   },
+  'domains/dns-record-alias.webp': {
+    async run(page, h) {
+      await page.getByRole('button', { name: 'Add DNS record' }).first().click()
+      const dialog = await h.dialog()
+      await h.select('Record type', 'ALIAS', dialog)
+      await dialog.locator('input[name=record_name]').fill('@')
+      await dialog.locator('[name=record_value]').fill('blog-x7k2.cloider.app')
+      await dialog.locator('.p-dialog-title').click()
+    },
+  },
+  'domains/target-form-bucket.webp': {
+    async run(page, h) {
+      await h.rowMenu('acme-site')
+      await h.menuItem('Edit')
+      await h.dialog()
+      await h.settle()
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
+  'domains/bucket-target.webp': {},
   'domains/delete-dialog.webp': {
     async run(page, h) {
       await page.getByRole('button', { name: 'Delete domain' }).click()
@@ -382,6 +547,14 @@ export const actions = {
       const dialog = await h.dialog()
       await dialog.locator('.p-select').click()
       await page.locator('.p-select-overlay').waitFor()
+    },
+  },
+  'account/access-roles-info.webp': {
+    async run(page, h) {
+      await page.getByRole('button', { name: 'Add New Member' }).click()
+      await h.dialog()
+      await page.getByRole('button', { name: 'Information about access roles' }).click()
+      await h.sleep(300)
     },
   },
   'account/api-tokens.webp': { route: '/dashboard/access-control?tab=api-tokens' },
@@ -426,4 +599,30 @@ export const actions = {
       await page.getByText('Copy your token').waitFor()
     },
   },
+}
+
+// Backups tab, Specific date & time: October 17 at 09:41:00 UTC
+async function pickRestoreTime(page, h) {
+  await h.tab('Backups')
+  await page.getByText('Specific date & time', { exact: true }).click()
+  await page.locator('.p-datepicker-panel-inline td:not(.p-datepicker-other-month) span', { hasText: /^17$/ }).first().click()
+  const time = page.locator('.p-datepicker-input').last()
+  await time.fill('09:41:00')
+  await time.press('Tab')
+  await page.evaluate(() => document.activeElement?.blur())
+  await h.sleep(300)
+}
+
+// Registry Tokens tab, Create Token: ci-push, only acme, pull and push, 90 days
+async function fillRegistryToken(page, h) {
+  await page.getByRole('button', { name: 'Create Token' }).click()
+  const dialog = await h.dialog()
+  await dialog.locator('input').first().fill('ci-push')
+  await dialog.getByText('Only specific projects').click()
+  await dialog.locator('.p-multiselect').click()
+  await page.locator('.p-multiselect-overlay .p-multiselect-option', { hasText: 'acme' }).first().click()
+  await dialog.locator('.p-dialog-title').click()
+  await h.select('Expires', '90 days', dialog)
+  await dialog.locator('.p-dialog-title').click()
+  return dialog
 }

@@ -53,6 +53,9 @@ function sessionVariant(req) {
 
 const byId = (list, id) => list.find(item => item.hashed_id == id)
 
+// shots_ready=1 runs every database, for the engine the demo otherwise holds paused
+const databasesFor = (req) => cookies(req).shots_ready ? fx.databases.map(d => ({ ...d, status: 'Ready' })) : fx.databases
+
 // A server-sent events stream that sends the text in a few chunks and then ends,
 // the way the api streams build and app logs (api/controllers/appsController.go)
 function sse(res, text, { end = true } = {}) {
@@ -194,10 +197,10 @@ route('GET', '/billing', (req, res) => ok(res, fx.bills))
 
 // databases
 const engineSlug = { PostgreSQL: 'postgresql', MySQL: 'mysql', Redis: 'redis', MongoDB: 'mongodb' }
-route('GET', '/databases', (req, res) => ok(res, fx.databases))
+route('GET', '/databases', (req, res) => ok(res, databasesFor(req)))
 route('POST', '/databases', (req, res) => ok(res, { hashed_id: 'o2r6p' }))
-route('GET', '/databases/:id', (req, res, p) => byId(fx.databases, p.id) ? ok(res, byId(fx.databases, p.id)) : notFound(res))
-route('GET', '/databases/:id/status', (req, res, p) => ok(res, byId(fx.databases, p.id)?.status ?? 'Terminated'))
+route('GET', '/databases/:id', (req, res, p) => byId(databasesFor(req), p.id) ? ok(res, byId(databasesFor(req), p.id)) : notFound(res))
+route('GET', '/databases/:id/status', (req, res, p) => ok(res, byId(databasesFor(req), p.id)?.status ?? 'Terminated'))
 route('GET', '/databases/:id/insights', (req, res, p) => ok(res, fx.databaseInsights(p.id)))
 route('GET', '/databases/:id/terminal', (req, res, p) => {
   const db = byId(fx.databases, p.id)
@@ -216,6 +219,7 @@ for (const field of ['trusted-sources', 'ssl', 'label', 'plan']) {
 route('GET', '/database/password', (req, res) => ok(res, 'demo-password-not-real'))
 route('GET', '/database/cert', (req, res) => ok(res, '-----BEGIN CERTIFICATE-----\nDEMO\n-----END CERTIFICATE-----\n'))
 route('GET', '/database/backups', (req, res) => ok(res, fx.databaseBackups()))
+route('GET', '/databases/:id/pitr-window', (req, res) => ok(res, fx.pitrWindow()))
 
 // buckets
 route('GET', '/buckets', (req, res) => ok(res, fx.buckets))
@@ -244,6 +248,14 @@ route('POST', '/buckets/:id/objects/delete', (req, res) => ok(res, { failed: [] 
 route('POST', '/buckets/:id/objects/restore', (req, res) => ok(res, {}))
 route('POST', '/buckets/:id/objects/versions/delete', (req, res) => ok(res, { failed: [] }))
 route('POST', '/buckets/:id/folders', (req, res) => ok(res, {}))
+route('GET', '/buckets/:id/cors', (req, res, p) => ok(res, { rules: fx.bucketCors[p.id] ?? [] }))
+route('PUT', '/buckets/:id/cors', async (req, res) => ok(res, { rules: (await readBody(req)).rules ?? [] }))
+route('GET', '/buckets/:id/website', (req, res, p) => byId(fx.buckets, p.id) ? ok(res, fx.bucketWebsite(byId(fx.buckets, p.id))) : notFound(res))
+route('PUT', '/buckets/:id/website', async (req, res, p) => {
+  const body = await readBody(req)
+  const name = byId(fx.buckets, p.id)?.bucket_name ?? 'bucket'
+  ok(res, { ...body, url: body.enabled ? `https://${name}.s3-website.eu-central-2.cloider.com` : '' })
+})
 route('GET', '/bucket-keys', (req, res) => ok(res, fx.bucketKeys))
 route('POST', '/bucket-keys', async (req, res) => {
   const body = await readBody(req)

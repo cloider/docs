@@ -1,0 +1,10 @@
+{
+  "shots": [
+    {"file": "container-registry/token-create.webp", "route": "/dashboard/access-control?tab=registry-tokens", "state": "Create Token dialog: name ci-push, Only specific projects with acme, Pull & push, an expiry picked", "actions": "Registry Tokens tab, Create Token, fill the form"},
+    {"file": "container-registry/token-created.webp", "route": "/dashboard/access-control?tab=registry-tokens", "state": "Token created dialog with the username, the fictional secret, the docker login command, Download JSON and I've saved the secret", "actions": "create the token from token-create.webp"},
+    {"file": "container-registry/delete-dialog.webp", "route": "/dashboard/registry/:project", "state": "Delete Project dialog, second step, for acme: type acme to confirm, the name typed, Cancel and Delete project", "actions": "Settings tab, Delete project, I want to delete the project, type acme"},
+    {"file": "container-registry/retention-rule-form.webp", "route": "/dashboard/registry/:project", "state": "Add Tag Retention Rule dialog: For the repositories matching **, Keep The most recently pushed 10 images, Tags matching v*, Untagged images too unchecked", "actions": "Policy tab, Add rule under retention rules"},
+    {"file": "container-registry/immutability-rule-form.webp", "route": "/dashboard/registry/:project", "state": "Add rule dialog for an immutability rule: repositories matching api, tags matching v*", "actions": "Policy tab, Add rule under immutability rules"},
+    {"file": "container-registry/overview-kubernetes.webp", "route": "/dashboard/registry/:project", "state": "Overview tab of acme with the Kubernetes tab of the push and pull steps open: the kubectl create secret docker-registry command and the imagePullSecrets snippet", "actions": "Overview tab, click Kubernetes"}
+  ]
+}
