@@ -21,18 +21,22 @@ A load balancer gives a Kubernetes Service its own public IP address. On Cloider
 
 ## Load balancer or domain target?
 
-Cloider has two ways to make a Service reachable from the internet. Pick by protocol:
+Cloider has two ways to make a Service reachable from the internet. Pick by protocol, and by how much you want to run yourself:
 
-| | Domain [target](/kubernetes/expose-services) | `type: LoadBalancer` |
+| | Domain [target](/kubernetes/expose-services) to a Service | `type: LoadBalancer` |
 | --- | --- | --- |
 | **Traffic** | HTTP and HTTPS | Any TCP or UDP port |
-| **Address** | Your domain or a free `*.cloider.app` subdomain | A public IP |
-| **HTTPS certificate** | Automatic | Your app's job |
-| **Several services on one address** | Yes, by path (`/`, `/api`, ...) | One IP per Service |
+| **Address** | Your domain or a free `*.cloider.app` subdomain | A public IP, and a custom domain with a [LoadBalancer target](/domains/targets#point-a-domain-at-a-loadbalancer) |
+| **HTTPS certificate** | Automatic, issued and renewed by Cloider | Yours to issue and renew |
+| **Routing** | By path (`/`, `/api`, ...), with an optional rewrite | Whatever you run behind it, such as your own ingress controller or Gateway API |
+| **Several services on one address** | Yes, by path | One IP per Service, unless your own ingress controller routes them |
 | **Cost** | No load balancer charge | Billed per load balancer |
-| **Typical use** | Websites, APIs, dashboards | Databases you run yourself, MQTT, game servers, SMTP, gRPC without HTTP routing, custom TCP protocols |
+| **Typical use** | Websites, APIs, dashboards | Databases you run yourself, MQTT, game servers, SMTP, custom TCP protocols, your own ingress controller or Gateway API |
 
-For a website or an HTTP API, a target is simpler and cheaper. Use a load balancer when you need a raw port.
+For a website or an HTTP API, a target is simpler and cheaper. Use a load balancer when you need a raw port, or a
+feature a target doesn't offer, such as routing by header, traffic splits, authentication in the proxy, mTLS or
+certificates of your own. Then you run the ingress controller or Gateway API implementation, its routes and its TLS
+certificates and their renewal yourself.
 
 ## Create a load balancer
 
@@ -230,16 +234,31 @@ nc -vz 203.0.113.25 1883
 
 ## Point a domain at the load balancer
 
-Give the IP a name with an `A` record. If the domain's DNS is hosted on Cloider (see [Domains and DNS](/domains/overview)):
+The simplest way is a [LoadBalancer target](/domains/targets#point-a-domain-at-a-loadbalancer) on a custom domain of
+its own, such as `mqtt.example.com`. It gives the domain an `A` record to the load balancer's IP and keeps the record
+on the IP if the Service is recreated:
+
+```bash
+cloider target create mqtt.example.com --cluster production --loadbalancer default/mqtt
+```
+
+Clients then connect to `mqtt.example.com:1883`. In the dashboard, open the domain, click **Add target** and choose
+**LoadBalancer**. The target takes the whole domain and can't be combined with other targets, and Cloider adds no
+HTTPS: TLS, its certificates and their renewal are yours.
+
+To name the IP under a domain that serves other things, give it an `A` record yourself instead. If the domain's DNS is
+hosted on Cloider (see [Domains and DNS](/domains/overview)):
 
 ```bash
 cloider dns create example.com --type A --name mqtt --value 203.0.113.25 --ttl 300
 ```
 
-Clients then connect to `mqtt.example.com:1883`. See [DNS records](/domains/dns-records) for the dashboard and other tools.
+See [DNS records](/domains/dns-records) for the dashboard and other tools.
 
 :::note[Keep the Service to keep the IP]
-The external IP belongs to the Service. If you delete the Service and create it again, it can get a different IP, and your `A` record must be updated. To change ports or selectors, edit the Service in place (`kubectl apply`) rather than deleting it.
+The external IP belongs to the Service. If you delete the Service and create it again, it can get a different IP: a
+LoadBalancer target follows it, an `A` record of your own must be updated. To change ports or selectors, edit the
+Service in place (`kubectl apply`) rather than deleting it.
 :::
 
 ## Several ports on one load balancer
@@ -346,7 +365,7 @@ kubectl patch service mqtt -n iot -p '{"spec": {"type": "ClusterIP"}}'
 
 **Works for TCP, not for UDP**: check that the Service port has `protocol: UDP` and that the container port matches.
 
-**The IP changed**: the Service was deleted and recreated. Update your DNS record and edit Services in place from now on.
+**The IP changed**: the Service was deleted and recreated. A LoadBalancer target follows the new IP within a minute; update an `A` record of your own, and edit Services in place from now on.
 
 More cases are in [Kubernetes troubleshooting](/kubernetes/troubleshooting).
 

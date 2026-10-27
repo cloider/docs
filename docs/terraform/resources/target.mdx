@@ -12,8 +12,8 @@ The `cloider_target` resource routes a path of a [`cloider_domain`](/terraform/r
 
 | | |
 | --- | --- |
-| **Required arguments** | `domain`, and one of `app_id`, `bucket_id`, or `cluster_id` with `namespace`, `service` and `port` |
-| **Changes in place** | `path`, `target_path`, `cluster_id`, `namespace`, `service`, `port`, `protocol`, `app_id`, `bucket_id` |
+| **Required arguments** | `domain`, and one of `app_id`, `bucket_id`, or `cluster_id` with `namespace`, `service` and `port` or with `loadbalancer` |
+| **Changes in place** | `path`, `target_path`, `cluster_id`, `namespace`, `service`, `port`, `protocol`, `app_id`, `bucket_id`, `loadbalancer` |
 | **Changes that replace the target** | `domain` |
 | **Sensitive attributes** | None |
 | **Timeouts** | None, targets are created immediately |
@@ -94,6 +94,28 @@ resource "cloider_target" "docs" {
 ```
 
 A bucket target needs only `bucket_id`. It takes the whole domain, so leave `path` and `target_path` at `/`, and the bucket must have `website = true`, which needs `public = true`. See [Static websites](/object-storage/static-websites).
+
+### Point a custom domain at a LoadBalancer
+
+```hcl title="main.tf"
+resource "cloider_domain" "games" {
+  name = "play.example.com"
+}
+
+resource "cloider_target" "games" {
+  domain       = cloider_domain.games.name
+  cluster_id   = cloider_cluster.production.id
+  loadbalancer = "games/server"
+}
+```
+
+A LoadBalancer target gives the domain an A record to the IP of the LoadBalancer Service. If the Service is recreated and gets a new IP, the record follows it.
+
+You manage everything behind the LoadBalancer: the ingress controller or Gateway API implementation, its routing rules, and the TLS certificates and their renewal. Cloider sets up no HTTPS and issues no certificate for this target.
+
+The target takes the whole domain and passes on every port and protocol the Service exposes. `path` and `target_path` therefore stay `/`, and the domain can have no other `cloider_target`.
+
+The Service needs an IP before you create the target. For a complete setup, see [Point a domain at a LoadBalancer](/domains/targets#point-a-domain-at-a-loadbalancer).
 
 ### Several paths on one domain
 
@@ -203,21 +225,23 @@ Referring to the Service's attributes makes Terraform create the Service before 
 | `domain` | String | Yes | | **Replaces** the target | The domain to route, a free subdomain or a custom domain |
 | `path` | String | No | `/` | In place | The path on the domain to route, and everything under it. Starts with `/`, then letters, digits and `/ _ . -` |
 | `target_path` | String | No | The value of `path` | In place | The path the request reaches the target with, in place of `path`. Same characters as `path` |
-| `cluster_id` | String | One of `cluster_id`, `app_id` or `bucket_id` | | In place | The id of the `cloider_cluster` whose Service to route to. Requires `namespace`, `service` and `port` |
+| `cluster_id` | String | One of `cluster_id`, `app_id` or `bucket_id` | | In place | The id of the `cloider_cluster` whose Service to route to. Requires `namespace`, `service` and `port`, or `loadbalancer` |
 | `namespace` | String | With `cluster_id` | | In place | The Service's namespace |
 | `service` | String | With `cluster_id` | | In place | The Service's name |
 | `port` | Number | With `cluster_id` | | In place | The Service port to send requests to, `1` to `65535`. It must speak plain HTTP |
 | `protocol` | String | No | `TCP` | In place | The protocol of the Service's port, `TCP` or `UDP`. Only with `cluster_id` |
 | `app_id` | String | One of `cluster_id`, `app_id` or `bucket_id` | | In place | The id of the app to route to |
 | `bucket_id` | String | One of `cluster_id`, `app_id` or `bucket_id` | | In place | The id of the `cloider_bucket` whose static website to serve. The bucket's `website` must be on, and `path` and `target_path` stay `/` |
+| `loadbalancer` | String | With `cluster_id`, in place of `namespace`, `service` and `port` | | In place | The LoadBalancer Service to point the custom domain at, as `<namespace>/<service>`. `path` and `target_path` stay `/` |
 
 Validation at plan time:
 
 - Exactly one of `cluster_id`, `app_id` and `bucket_id` must be set.
-- `cluster_id` requires `namespace`, `service` and `port`, and each of those requires `cluster_id`.
-- `protocol` can't be combined with `app_id` or `bucket_id`.
+- `cluster_id` requires `namespace`, `service` and `port`, or `loadbalancer`, and each of those requires `cluster_id`.
+- `loadbalancer` must be `<namespace>/<service>`, and can't be combined with `namespace`, `service` or `port`.
+- `protocol` can't be combined with `app_id`, `bucket_id` or `loadbalancer`.
 - `path` and `target_path` must match `must start with / and hold only letters, digits and / _ . -`.
-- At apply time, the cluster must be one of yours: `there is no cluster <id>`. A bucket target is refused with `A bucket website is served at the root of its domain, the path must be /` for another path, and with `Turn on the bucket's website first, from its Settings.` when the bucket's website is off.
+- At apply time, the cluster must be one of yours: `there is no cluster <id>`. A bucket target is refused with `A bucket website is served at the root of its domain, the path must be /` for another path, and with `Turn on the bucket's website first, from its Settings.` when the bucket's website is off. A LoadBalancer target is refused with `A LoadBalancer target needs a custom domain.` on a free subdomain, and with `This LoadBalancer has no IP yet. Wait until it gets one, then add the target.` before the Service has an IP.
 
 ## Attribute reference
 
@@ -225,12 +249,13 @@ Validation at plan time:
 | --- | --- | --- |
 | `id` | String | The target's id, such as `t4k9vq` |
 | `created_at` | String | When the target was created, in RFC 3339 |
-| `target_path`, `protocol` | String | The values in use, also when you didn't set them |
+| `target_path`, `protocol` | String | The values in use, also when you didn't set them. `protocol` is null for a LoadBalancer target |
+| `loadbalancer_ip` | String | For a LoadBalancer target, the IP the domain's A record points at. Empty while the LoadBalancer has none |
 
 ## Behavior notes
 
 - **Changing `path` moves `target_path` with it** when you haven't set `target_path`, the same way the API defaults it.
-- **Switching between a cluster, an app and a bucket** (from `cluster_id` to `app_id` or `bucket_id`, or back) updates the same target in place.
+- **Switching between a cluster, an app, a bucket and a LoadBalancer** (from `cluster_id` to `app_id` or `bucket_id`, from `service` to `loadbalancer`, or back) updates the same target in place.
 - **HTTPS** is automatic: Cloider issues a certificate for the domain once it is routed. For a custom domain this needs the DNS record to point at Cloider first. See [HTTPS certificates](/domains/https-certificates).
 - **Name length.** The Service name, namespace and cluster name together can be at most 57 characters long, or the API refuses the target with `Service and namespace names are too long for this cluster (combined limit exceeded)`. Use a shorter Service or namespace name.
 - **Deleting the domain** deletes its targets, and so does deleting a bucket for the targets that serve its website. When the target or its domain is gone, the next refresh removes the target from state.

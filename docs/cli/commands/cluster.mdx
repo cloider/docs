@@ -365,7 +365,7 @@ See [Connect with kubectl](/kubernetes/connect-with-kubectl). MCP tool: `get_clu
 
 ## cloider cluster services
 
-List the Kubernetes Services your clusters expose, with their namespace and ports. These are what a [domain target](/cli/commands/target) can route traffic to.
+List the Kubernetes Services your clusters expose, with their namespace, type, ports and, for a LoadBalancer, its external IP. These are what a [domain target](/cli/commands/target) can route traffic to, and a LoadBalancer with an IP is what a custom domain can [point at](/domains/targets#point-a-domain-at-a-loadbalancer).
 
 ```text
 cloider cluster services [cluster] [flags]
@@ -380,11 +380,12 @@ cloider cluster services
 ```
 
 ```text title="Output"
-CLUSTER      NAMESPACE    SERVICE   PORTS
-staging      default      web       80/TCP
-staging      shop         api       8080/TCP, 9090/TCP
-production   default      web       80/TCP, 443/TCP
-production   monitoring   grafana   3000/TCP
+CLUSTER      NAMESPACE    SERVICE   TYPE           PORTS                EXTERNAL-IP
+staging      default      web       ClusterIP      80/TCP               -
+staging      shop         api       ClusterIP      8080/TCP, 9090/TCP   -
+production   default      web       ClusterIP      80/TCP, 443/TCP      -
+production   games        server    LoadBalancer   25565/TCP            203.0.113.25
+production   monitoring   grafana   ClusterIP      3000/TCP             -
 ```
 
 ```bash
@@ -397,8 +398,8 @@ cloider cluster services staging -o json
     "id": "k3m9x2p7q1",
     "name": "staging",
     "services": [
-      {"service": "web", "namespace": "default", "ports": [{"protocol": "TCP", "port": 80}]},
-      {"service": "api", "namespace": "shop", "ports": [{"protocol": "TCP", "port": 8080}, {"protocol": "TCP", "port": 9090}]}
+      {"service": "web", "namespace": "default", "ports": [{"protocol": "TCP", "port": 80}], "type": "ClusterIP", "ip": ""},
+      {"service": "api", "namespace": "shop", "ports": [{"protocol": "TCP", "port": 8080}, {"protocol": "TCP", "port": 9090}], "type": "ClusterIP", "ip": ""}
     ]
   }
 ]

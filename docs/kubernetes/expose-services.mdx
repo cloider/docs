@@ -277,9 +277,11 @@ Your Service receives plain HTTP: don't configure TLS in the app for traffic tha
 
 Ingress objects you create inside a Cloider cluster aren't served: Cloider doesn't publish them, so they have no effect. Targets do the same job, routing host names and paths to Services with HTTPS, and are managed from the dashboard, CLI, Terraform, API and MCP.
 
+If you need your own ingress controller or Gateway API implementation, for routing, TLS or middleware a target doesn't offer, install it in the cluster, expose it with a [Service of type LoadBalancer](/kubernetes/load-balancers), and point a custom domain at it with a [LoadBalancer target](/domains/targets#point-a-domain-at-a-loadbalancer). Its Ingress or HTTPRoute objects are then served by your controller. You run the controller, its routes and its TLS certificates and their renewal yourself, and the domain can't have any other targets.
+
 When you install a Helm chart that can create an Ingress, disable it (usually `ingress.enabled: false`) and create a target for the chart's Service. See [Helm](/kubernetes/helm).
 
-For non-HTTP traffic, such as raw TCP or UDP, use a [Service of type LoadBalancer](/kubernetes/load-balancers) instead of a target.
+For non-HTTP traffic, such as raw TCP or UDP, use a [Service of type LoadBalancer](/kubernetes/load-balancers), with a [LoadBalancer target](/domains/targets#point-a-domain-at-a-loadbalancer) for its domain.
 
 ## Limits
 

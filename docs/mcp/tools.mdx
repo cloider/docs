@@ -232,7 +232,7 @@ A cluster's kubeconfig, which holds its credentials. Returned as text, or writte
 
 ### list_cluster_services
 
-The services clusters expose, with namespace and ports, which domain targets can route to.
+The services clusters expose, with namespace, type, ports and a LoadBalancer's IP, which domain targets can route to.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1582,7 +1582,7 @@ No parameters.
 
 ### get_domain
 
-Show a domain and its targets, the routes from its paths to apps, bucket websites and cluster services.
+Show a domain and its targets, the routes from its paths to apps, bucket websites and cluster services, or from the whole domain to a LoadBalancer.
 
 :::note
 The answer holds the domain's name, type, status and creation date, and its targets, each with the `hashed_id` that `update_domain_target` and `delete_domain_target` take.
@@ -1690,7 +1690,7 @@ Delete a DNS record.
 
 ### create_domain_target
 
-Route a path of a domain to an app, a bucket's website or a cluster's service. Give app, bucket, or cluster with service.
+Route a path of a domain to an app, a bucket's website or a cluster's service, or point a whole custom domain at a cluster's LoadBalancer. Give app, bucket, or cluster with service or loadbalancer.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1702,6 +1702,7 @@ Route a path of a domain to an app, a bucket's website or a cluster's service. G
 | `app` | string | No | Route to this app. |
 | `bucket` | string | No | Serve this bucket's website, at the domain's root only; see set_bucket_website. |
 | `cluster` | string | No | Route to a service in this cluster. |
+| `loadbalancer` | string | No | With cluster, point the whole custom domain at this LoadBalancer's IP with an A record, as `<namespace>/<service>`; any port and protocol, no HTTPS from Cloider. See list_cluster_services. |
 | `service` | string | No | The cluster's service as `<namespace>/<service>`, see list_cluster_services. |
 | `port` | integer | No | The service's port (default: its only port). |
 | `protocol` | string | No | TCP or UDP (default: the port's own). One of `TCP`, `UDP`. |
@@ -1710,7 +1711,7 @@ Route a path of a domain to an app, a bucket's website or a cluster's service. G
 
 ### update_domain_target
 
-Change a domain's target, keeping what isn't given; app, bucket or cluster moves it to another app, bucket website or service.
+Change a domain's target, keeping what isn't given; app, bucket or cluster moves it to another app, bucket website, service or LoadBalancer.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1723,6 +1724,7 @@ Change a domain's target, keeping what isn't given; app, bucket or cluster moves
 | `app` | string | No | Route to this app. |
 | `bucket` | string | No | Serve this bucket's website, at the domain's root only; see set_bucket_website. |
 | `cluster` | string | No | Route to a service in this cluster. |
+| `loadbalancer` | string | No | With cluster, point the whole custom domain at this LoadBalancer's IP with an A record, as `<namespace>/<service>`; any port and protocol, no HTTPS from Cloider. See list_cluster_services. |
 | `service` | string | No | The cluster's service as `<namespace>/<service>`, see list_cluster_services. |
 | `port` | integer | No | The service's port (default: its only port). |
 | `protocol` | string | No | TCP or UDP (default: the port's own). One of `TCP`, `UDP`. |

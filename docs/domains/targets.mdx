@@ -2,16 +2,17 @@
 title: Route a domain to apps, services and buckets with targets
 sidebar_label: Targets
 sidebar_position: 8
-description: Route a domain or a path of it to a Cloider app, a Kubernetes Service or a bucket's static website over HTTPS with targets, with every field and error.
-keywords: [cloider target, route domain to app, route path to service, bucket website custom domain, path routing, rewrite path, reverse proxy, kubernetes ingress alternative, cloider target create, cloider_target]
+description: Route a domain or a path of it to a Cloider app, a Kubernetes Service or a bucket's static website over HTTPS with targets, or point a custom domain at a LoadBalancer, with every field and error.
+keywords: [cloider target, route domain to app, domain to loadbalancer ip, route path to service, bucket website custom domain, path routing, rewrite path, reverse proxy, kubernetes ingress alternative, cloider target create, cloider_target]
 ---
 
 A target is a route from a domain, or a path of it, to a [Cloider app](/apps/overview), to a Service in a
 [Kubernetes cluster](/kubernetes/overview), or to a bucket's [static website](/object-storage/static-websites). With
 targets, `https://example.com/` can serve the `web` app, `https://example.com/api` a Service in your `production`
 cluster, and `https://example.com/docs` another app, each over HTTPS, while `https://docs.example.com/` serves a
-website straight from a bucket. This page is the complete reference for targets: how they route, every field, path
-rewrites, and the errors you can hit.
+website straight from a bucket. A custom domain can also point straight at a
+[LoadBalancer](/kubernetes/load-balancers) in one of your clusters, for any port and protocol. This page is the
+complete reference for targets: how they route, every field, path rewrites, and the errors you can hit.
 
 For the same topic from the other side, see [Domains for apps](/apps/domains) and
 [Expose Kubernetes services](/kubernetes/expose-services).
@@ -21,14 +22,14 @@ For the same topic from the other side, see [Domains for apps](/apps/domains) an
 | | |
 | --- | --- |
 | **Routes** | A host name and a path prefix, such as `example.com/api` |
-| **To** | An app, a Service port in one of your clusters, or a bucket's static website |
-| **Types** | `App`, `Cluster` and `Bucket` |
-| **Domains** | Free subdomains and custom domains |
-| **Paths** | One target per path per domain. The longest matching path wins. A Bucket target always uses `/` |
+| **To** | An app, a Service port in one of your clusters, a bucket's static website, or a LoadBalancer's IP |
+| **Types** | `App`, `Cluster`, `Bucket` and `LoadBalancer` |
+| **Domains** | Free subdomains and custom domains. A LoadBalancer target needs a custom domain |
+| **Paths** | One target per path per domain. The longest matching path wins. Bucket and LoadBalancer targets always use `/` |
 | **Rewrites** | Optional `target_path` replaces the matched path before the request is forwarded |
-| **Protocol to your code** | Plain HTTP. Cloider terminates HTTPS |
-| **Certificates** | Automatic. See [HTTPS certificates](/domains/https-certificates) |
-| **Cost** | No charge. Targets replace a load balancer and an Ingress controller |
+| **Protocol to your code** | Plain HTTP. Cloider terminates HTTPS. A LoadBalancer target passes every port and protocol straight through |
+| **Certificates** | Automatic. See [HTTPS certificates](/domains/https-certificates). None for a LoadBalancer target: you manage its TLS |
+| **Cost** | No charge. Targets replace a load balancer and an Ingress controller. A LoadBalancer target is free, the LoadBalancer Service it points at is billed |
 | **Tools** | Dashboard, `cloider target`, `cloider_target`, `/api/targets`, MCP |
 
 ## How does a target route a request?
@@ -52,23 +53,27 @@ flowchart LR
 
 Plain `http://` requests are redirected to `https://`.
 
+A LoadBalancer target is the exception: Cloider only answers the domain's DNS lookups with the LoadBalancer's IP, and
+none of the steps above happen. See [Point a domain at a LoadBalancer](#point-a-domain-at-a-loadbalancer).
+
 ## Target fields
 
 | Field (API) | Dashboard | CLI flag | Terraform | Meaning |
 | --- | --- | --- | --- | --- |
 | `domain_name` | the domain's page | `<domain>` argument | `domain` | The domain to route. Its name is the host name served |
-| `target_type` | **Target type** | `--app`, `--bucket` or `--cluster` | `app_id`, `bucket_id` or `cluster_id` | `App`, `Bucket` or `Cluster`. Defaults to `Cluster` in the API |
+| `target_type` | **Target type** | `--app`, `--bucket`, or `--cluster` with `--service` or `--loadbalancer` | `app_id`, `bucket_id`, or `cluster_id` with `service` or `loadbalancer` | `App`, `Bucket`, `Cluster` or `LoadBalancer`. Defaults to `Cluster` in the API |
 | `app_id` | **App** | `--app <name or id>` | `app_id` | The app's id. App targets only |
 | `bucket_id` | **Bucket** | `--bucket <name or id>` | `bucket_id` | The bucket's id. Bucket targets only |
 | `bucket_name` | set for you | set for you | set for you | The bucket's name, shown in lists. Bucket targets only |
-| `cluster_id` | **Cluster** | `--cluster <name or id>` | `cluster_id` | The cluster's id. Cluster targets only |
+| `cluster_id` | **Cluster** | `--cluster <name or id>` | `cluster_id` | The cluster's id. Cluster and LoadBalancer targets only |
 | `cluster_name` | set for you | set for you | set for you | The cluster's name, shown in lists |
-| `namespace` | **Namespace** | `--service <namespace>/<service>` | `namespace` | The Service's namespace. Cluster targets only |
-| `service` | **Service** | `--service <namespace>/<service>` | `service` | The Service's name. Cluster targets only |
+| `namespace` | **Namespace** | `--service` or `--loadbalancer <namespace>/<service>` | `namespace`, or `loadbalancer` | The Service's namespace. Cluster and LoadBalancer targets only |
+| `service` | **Service** | `--service` or `--loadbalancer <namespace>/<service>` | `service`, or `loadbalancer` | The Service's name. Cluster and LoadBalancer targets only |
+| `loadbalancer_ip` | set for you | set for you | `loadbalancer_ip` | The IP the domain's A record points at, empty while the LoadBalancer has none. LoadBalancer targets only |
 | `port` | **Port** | `--port` (default: the Service's only port) | `port` | The Service's port, which must speak HTTP |
 | `protocol` | from the port | `--protocol` (default: the port's own) | `protocol` (default `TCP`) | `TCP` or `UDP`, as the Service declares the port |
-| `path` | **Path** | `--path` (default `/`) | `path` (default `/`) | The path prefix on the domain. Always `/` for Bucket targets |
-| `target_path` | **Target path** | `--target-path` (default: `--path`) | `target_path` (default: `path`) | The path the request is forwarded with. Always `/` for Bucket targets |
+| `path` | **Path** | `--path` (default `/`) | `path` (default `/`) | The path prefix on the domain. Always `/` for Bucket and LoadBalancer targets |
+| `target_path` | **Target path** | `--target-path` (default: `--path`) | `target_path` (default: `path`) | The path the request is forwarded with. Always `/` for Bucket and LoadBalancer targets |
 
 For an app target you only choose the app: Cloider routes to the app's port itself, and the response carries the app's `app_name` and `app_label`. For a bucket target you only choose the bucket, and the response carries its `bucket_name`. Every target has an id, `hashed_id`, such as
 `t4k9vq`, and a `created_at` time.
@@ -83,6 +88,8 @@ For an app target you only choose the app: Cloider routes to the app's port itse
   or in the dashboard's target dialog. See [Deploy a workload](/kubernetes/deploy-a-workload).
 - **For a bucket target**: a public bucket in the **Ready** state with its static website on. See
   [Static websites](/object-storage/static-websites).
+- **For a LoadBalancer target**: a custom domain with no other targets, and a
+  [LoadBalancer Service](/kubernetes/load-balancers) that has an IP, in a cluster that is **Ready** or **Paused**.
 - Write access to the account. Members with read-only access can see targets but not change them.
 
 ## Route a domain to an app
@@ -383,6 +390,153 @@ Serve the acme-site bucket's website on docs.example.com.
 The route starts answering shortly after the target is saved, once Cloider has set it up. For a custom domain, HTTPS
 works once its certificate is issued.
 
+## Point a domain at a LoadBalancer
+
+A LoadBalancer target gives a custom domain an A record to the IP of a
+[LoadBalancer Service](/kubernetes/load-balancers) in one of your clusters. Unlike the other targets, nothing is
+routed through Cloider: clients connect straight to the LoadBalancer, so it carries every port and protocol the Service
+exposes, TCP or UDP.
+
+### When do you need a LoadBalancer target?
+
+You need a LoadBalancer target when a [Cluster target](#route-a-domain-to-a-service-in-a-cluster) can't do what you
+want. A Cluster target forwards HTTP to one Service port per path, with Cloider's HTTPS certificate and an optional
+path rewrite, and nothing more. Use a LoadBalancer target for:
+
+- **Traffic that isn't HTTP**, or several ports on one name: databases you run yourself, MQTT, game servers, SMTP,
+  custom TCP or UDP protocols.
+- **Your own ingress controller or Gateway API implementation**, such as Traefik or Envoy Gateway, for routing and
+  features a Cluster target doesn't offer: routing by header or method, weighted and canary traffic splits,
+  redirects, authentication, rate limits, or your controller's own middleware and annotations.
+- **Your own TLS**: certificates you bring or issue yourself, client certificate authentication (mTLS), or TLS passed
+  through to your pods.
+
+For a plain website or HTTP API, a Cluster target is simpler and has no load balancer charge.
+
+:::warning[With a LoadBalancer target, you run everything behind the domain]
+Cloider only points the domain at the LoadBalancer's IP. Everything a Cluster target does for you becomes yours to set
+up and keep running:
+
+- **The ingress controller or Gateway API implementation**, if you serve HTTP: installing it in the cluster, exposing it
+  with a Service of `type: LoadBalancer`, upgrading it, and keeping it healthy.
+- **The routes**: the Ingress, Gateway and HTTPRoute objects (or your controller's own resources) that send each host
+  name and path to your Services.
+- **The TLS certificates**: issuing them for the domain and renewing them before they expire, for example with
+  cert-manager and Let's Encrypt. Cloider issues no certificate for a LoadBalancer target's domain, and doesn't
+  redirect `http://` to `https://`.
+- **The load balancer's cost**: the LoadBalancer Service is billed per hour like any other, see
+  [Load balancers](/kubernetes/load-balancers).
+:::
+
+### A LoadBalancer target can't share its domain with other targets
+
+A LoadBalancer target takes the whole domain. Its path and target path are always `/`, and it can't be combined with
+any other target on the same domain: the domain's A record sends every request to the LoadBalancer, so an App, Cluster
+or Bucket target there would never be reached. Cloider refuses both orders, a LoadBalancer target on a domain that
+already has targets and any target on a domain that has a LoadBalancer target. Use a domain of its own, such as
+`play.example.com`, next to the domain your website uses. To send more host names to the same ingress controller,
+point each of them at that domain with a `CNAME` record.
+
+### What happens to the domain's DNS records?
+
+- The A record replaces the `ALIAS` record the domain was created with. It shows in the domain's DNS records marked
+  **LoadBalancer target**, with a TTL of 60 seconds, and can only be changed through the target.
+- If the Service is recreated and gets a new IP, the record follows it within about a minute. While the LoadBalancer
+  is gone or has no IP, the domain has no A record.
+- Deleting the target deletes the A record and gives the domain its `ALIAS` back.
+
+<Screenshot
+  src="/img/screenshots/domains/loadbalancer-target.webp"
+  url="/dashboard/domains/play.example.com"
+  alt="The domain page of play.example.com with one LoadBalancer target to the server Service in the games namespace of production at 203.0.113.25, and under it the DNS records with the A record to 203.0.113.25 tagged LoadBalancer target"
+  caption="A LoadBalancer target and the A record it manages."
+/>
+
+### Create a LoadBalancer target
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open the custom domain under **Domains** and click **Add target**.
+2. Choose **LoadBalancer** as the **Target type**. The **LoadBalancer** list shows each LoadBalancer that has an IP,
+   as cluster, namespace and name, with the IP next to it. The line under the list reads, for example,
+   **points play.example.com at 203.0.113.25 on every port and protocol, with no HTTPS from Cloider**.
+3. **Path** and **Target path** are set to `/` and can't be changed.
+4. Click **Save**. The domain's **DNS records** show the new A record right away.
+
+<Screenshot
+  src="/img/screenshots/domains/target-form-loadbalancer.webp"
+  url="/dashboard/domains/play.example.com"
+  alt="The Edit target dialog of play.example.com with Target type LoadBalancer, production · games/server picked in LoadBalancer, the line points play.example.com at 203.0.113.25 on every port and protocol, with no HTTPS from Cloider, and Path and Target path fixed at /"
+  caption="A LoadBalancer target: pick the LoadBalancer, and the whole domain resolves to its IP."
+/>
+
+The **LoadBalancer** type is offered on custom domains only, and can't be picked while the domain has other targets.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider cluster services production
+cloider target create play.example.com --cluster production --loadbalancer games/server
+```
+
+```text title="Output"
+✓ Routed play.example.com/ to LoadBalancer games/server
+```
+
+`cloider cluster services` lists each Service's **TYPE** and **EXTERNAL-IP**. `--loadbalancer` takes
+`<namespace>/<service>`, needs `--cluster`, and can't be combined with `--service`, `--port`, `--protocol`, `--app` or
+`--bucket`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+```hcl title="main.tf"
+resource "cloider_target" "games" {
+  domain       = "play.example.com"
+  cluster_id   = cloider_cluster.production.id
+  loadbalancer = "games/server"
+}
+```
+
+`loadbalancer_ip` is the IP the domain points at.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X POST https://cloider.com/api/targets \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain_name": "play.example.com", "target_type": "LoadBalancer", "cluster_id": "k7m2xq", "namespace": "games", "service": "server"}'
+```
+
+```json title="Response"
+{
+  "hashed_id": "t2l8vd",
+  "domain_name": "play.example.com",
+  "message": "Target created successfully"
+}
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Point play.example.com at the server LoadBalancer in the games namespace of my production cluster.
+```
+
+```json title="Tool call: create_domain_target"
+{"domain": "play.example.com", "cluster": "production", "loadbalancer": "games/server"}
+```
+
+</TabItem>
+</Tabs>
+
+The domain resolves to the LoadBalancer once its nameservers point at Cloider, see
+[Add a custom domain](/domains/add-a-custom-domain).
+
 ## List a domain's targets
 
 <Tabs groupId="interface" queryString>
@@ -673,7 +827,8 @@ Delete the target t7p3xr of example.com.
 | App **redeployed** | Targets stay and keep routing to the new version |
 | App's **port changed** | The route follows the app's port on the next deploy. The dashboard shows **App now listens on port 8080; edit and save this target to update it.** until you save the target |
 | App **deleted** | Its targets are deleted with it. See [Domains for apps](/apps/domains) |
-| Cluster **deleted**, or a Service removed | The targets stay and point at nothing. The dashboard shows **Orphaned targets detected!**. Delete them or point them elsewhere |
+| Cluster **deleted**, or a Service removed | The targets stay and point at nothing. The dashboard shows **Orphaned targets detected!**. Delete them or point them elsewhere. A LoadBalancer target's A record is removed within a minute |
+| LoadBalancer **recreated** with a new IP | The A record follows the new IP within a minute |
 | Bucket's **website turned off** | Refused while targets point at it: `Domains still point at this website, remove their targets first.` |
 | Bucket **made private** | Refused while its website is on: `The bucket's website needs it public, turn the website off first.` |
 | Bucket **deleted** | Its website stops and its targets are deleted with it. The domains stay |
@@ -691,10 +846,15 @@ Delete the target t7p3xr of example.com.
 | A bucket target takes the whole domain: `path` and `target_path` are `/` | `A bucket website is served at the root of its domain, the path must be /`, `A bucket website is served at the root of its domain, the target path must be /` |
 | The bucket is `Ready` with its website on | `This bucket is not ready yet. Wait until it is created, then add the target.`, `Turn on the bucket's website first, from its Settings.` |
 | The port speaks HTTP | Not checked. An HTTPS or non-HTTP port answers with errors |
+| A LoadBalancer target needs a custom domain | `A LoadBalancer target needs a custom domain.` |
+| A LoadBalancer target takes the whole domain | `A LoadBalancer takes the whole domain, the path must be /`, `A LoadBalancer target takes the whole domain. Delete the domain's other targets first, or use another domain.`, `This domain points at a LoadBalancer, which takes the whole domain. Delete that target first, or use another domain.` |
+| The LoadBalancer has an IP | `This LoadBalancer has no IP yet. Wait until it gets one, then add the target.` |
+| The domain has no `A`, `AAAA`, `ALIAS` or `CNAME` record of its own at its root, other than the one it was created with | `The domain has an A, AAAA, ALIAS or CNAME record of its own. Delete it from the domain's DNS records first, then add the target.` |
 | Request bodies | Larger uploads may be refused with `413 Request Entity Too Large`. Upload big files straight to [object storage](/object-storage/overview) instead |
 
 For raw TCP or UDP traffic, such as a database or a game server, use a
-[LoadBalancer Service](/kubernetes/load-balancers) instead of a target.
+[LoadBalancer Service](/kubernetes/load-balancers) and
+[point a custom domain at it](#point-a-domain-at-a-loadbalancer).
 
 ## Troubleshooting
 
@@ -707,6 +867,8 @@ For raw TCP or UDP traffic, such as a database or a game server, use a
 | `This path is already in use on this domain. ...` | Edit or delete the target that has the path |
 | `This app is not ready yet. ...` | Wait for the app's first deploy to finish |
 | `App not found!`, `Bucket not found!` | The id is wrong or belongs to another account. Check `cloider app list -o wide` or `cloider bucket list -o wide` |
+| `LoadBalancer not found! ...` | No Service of type LoadBalancer has that namespace and name in the cluster. Check `cloider cluster services <cluster>` |
+| `This record is managed by the domain's LoadBalancer target, ...` | The A record belongs to the target. Edit or delete the target instead |
 | `404 Not Found` from the API on create | The domain isn't in your account. Add it first; `www.example.com` is a domain of its own |
 | `say where to route to with --app, --bucket or --cluster` (CLI) | Add `--app <app>`, `--bucket <bucket>` or `--cluster <cluster> --service <namespace>/<service>` |
 | `shop/api has several ports (80/TCP, 9090/TCP), pick one with --port` (CLI) | Add `--port 80` |
@@ -714,7 +876,7 @@ For raw TCP or UDP traffic, such as a database or a game server, use a
 | The page shows `404` | The host name reaches Cloider but no target's path matches. Add a target for `/` |
 | `502 Bad Gateway` or `503` | Nothing answers behind the target: the app or cluster is paused, the pods aren't ready, or the port is wrong |
 | Browser certificate warning on a custom domain | The certificate isn't issued yet. See [HTTPS certificates](/domains/https-certificates) |
-| The domain doesn't resolve | Targets don't create DNS records. See [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider) |
+| The domain doesn't resolve | Targets other than LoadBalancer targets don't create DNS records. See [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider) |
 
 More cases are in [Domains troubleshooting](/domains/troubleshooting).
 
@@ -731,7 +893,9 @@ More cases are in [Domains troubleshooting](/domains/troubleshooting).
   {q: 'Can a domain serve a bucket\'s static website?', a: 'Yes. Turn on the bucket\'s static website, then add a target of type Bucket that points the domain at it, for example cloider target create docs.example.com --bucket acme-site. A Bucket target takes the whole domain, at the path /.'},
   {q: 'Can one domain route to several apps?', a: 'Yes. Add one target per path, for example / to the web app, /api to a cluster Service and /docs to a docs app. The longest matching path wins.'},
   {q: 'How do I strip a path prefix before it reaches my app?', a: 'Set the target path. A target with path /api and target path / forwards /api/orders as /orders.'},
-  {q: 'Do I need an Ingress or a load balancer?', a: 'No. Targets replace both for HTTP traffic. Ingress objects inside a Cloider cluster aren\'t served. Use a LoadBalancer Service only for traffic that isn\'t HTTP.'},
-  {q: 'Does a target create DNS records?', a: 'No. A free subdomain already resolves to Cloider, and a custom domain comes with an ALIAS record for the domain itself, which the first target to an app points at the app\'s free subdomain. For other host names of a custom domain, add a CNAME or A record that points at Cloider.'},
+  {q: 'Do I need an Ingress or a load balancer?', a: 'No. Targets replace both for HTTP traffic, and Ingress objects inside a Cloider cluster aren\'t served by Cloider. Use a LoadBalancer Service, with a LoadBalancer target for its domain, for traffic that isn\'t HTTP or for features a Cluster target doesn\'t offer, such as your own ingress controller, Gateway API or TLS.'},
+  {q: 'Who manages TLS certificates for a LoadBalancer target?', a: 'You do. Cloider only gives the domain an A record to the LoadBalancer\'s IP: it issues no certificate, renews none and doesn\'t redirect http to https. Run your own ingress controller or Gateway API implementation behind the LoadBalancer and issue certificates with a tool such as cert-manager.'},
+  {q: 'Does a target create DNS records?', a: 'Only a LoadBalancer target, which gives the domain an A record to the LoadBalancer\'s IP. Otherwise a free subdomain already resolves to Cloider, and a custom domain comes with an ALIAS record for the domain itself, which the first target to an app points at the app\'s free subdomain. For other host names of a custom domain, add a CNAME or A record that points at Cloider.'},
+  {q: 'Can a domain point at a Kubernetes LoadBalancer?', a: 'Yes, a custom domain can. Add a target of type LoadBalancer, for example cloider target create play.example.com --cluster production --loadbalancer games/server. The domain gets an A record to the LoadBalancer\'s IP, which follows the IP if the Service is recreated, and carries every port and protocol. It takes the whole domain and can\'t be combined with other targets, and you manage the ingress controller, routes and TLS certificates behind it.'},
   {q: 'What happens to a target when I pause my app or cluster?', a: 'The target stays, but requests fail until you resume the app or cluster. You don\'t need to recreate it.'},
 ]} />

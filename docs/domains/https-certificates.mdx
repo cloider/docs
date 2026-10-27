@@ -11,6 +11,12 @@ you: free `cloider.app` subdomains use Cloider's own certificate, and custom dom
 Let's Encrypt that is issued and renewed automatically. You never create, upload or renew a certificate. This page
 explains when a certificate is issued, what it needs, and how to check it.
 
+:::note[LoadBalancer targets get no certificate]
+A [LoadBalancer target](/domains/targets#point-a-domain-at-a-loadbalancer) only points the domain at a
+LoadBalancer's IP, so nothing on this page applies to it. You issue and renew its certificates yourself, for example
+with cert-manager in your cluster.
+:::
+
 ## At a glance
 
 | | Free subdomain | Custom domain |

@@ -519,6 +519,17 @@ export const actions = {
     },
   },
   'domains/bucket-target.webp': {},
+  // the target and the A record it manages, in the DNS records under it
+  'domains/loadbalancer-target.webp': { viewport: { height: 1100 } },
+  'domains/target-form-loadbalancer.webp': {
+    async run(page, h) {
+      await h.rowMenu('games')
+      await h.menuItem('Edit')
+      await h.dialog()
+      await h.settle()
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
   'domains/delete-dialog.webp': {
     async run(page, h) {
       await page.getByRole('button', { name: 'Delete domain' }).click()

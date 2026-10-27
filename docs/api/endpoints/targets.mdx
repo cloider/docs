@@ -2,11 +2,11 @@
 title: Targets API endpoints
 sidebar_label: Targets
 sidebar_position: 14
-description: Cloider API reference for targets, route a domain path over HTTPS to an app, a Kubernetes service or a bucket website, list, change and delete them.
+description: Cloider API reference for targets, route a domain path over HTTPS to an app, a Kubernetes service or a bucket website, or a custom domain to a LoadBalancer, list, change and delete them.
 keywords: [cloider target api, route domain to app, expose kubernetes service api, bucket website domain api, ingress api, domain path routing, https routing api]
 ---
 
-A **target** routes requests for a domain and path, such as `https://example.com/` or `https://example.com/api`, to an [app](/apps/overview), to a Service in one of your [Kubernetes clusters](/kubernetes/overview), or to a bucket's [static website](/object-storage/static-websites). Cloider sets up the routing and the HTTPS certificate for you. These endpoints list, create, change and delete targets.
+A **target** routes requests for a domain and path, such as `https://example.com/` or `https://example.com/api`, to an [app](/apps/overview), to a Service in one of your [Kubernetes clusters](/kubernetes/overview), or to a bucket's [static website](/object-storage/static-websites). Cloider sets up the routing and the HTTPS certificate for you. A `LoadBalancer` target instead gives a custom domain an A record to a [LoadBalancer](/kubernetes/load-balancers)'s IP, see [Point a domain at a LoadBalancer](/domains/targets#point-a-domain-at-a-loadbalancer). These endpoints list, create, change and delete targets.
 
 All paths are relative to `https://cloider.com/api`. See [Targets](/domains/targets) for how routing works.
 
@@ -33,6 +33,7 @@ All paths are relative to `https://cloider.com/api`. See [Targets](/domains/targ
   "app_label": "",
   "bucket_id": "",
   "bucket_name": "",
+  "loadbalancer_ip": "",
   "namespace": "shop",
   "service": "api",
   "port": 8080,
@@ -47,12 +48,13 @@ All paths are relative to `https://cloider.com/api`. See [Targets](/domains/targ
 | --- | --- | --- |
 | `hashed_id` | string | The target's id |
 | `domain_name` | string | The domain it routes |
-| `target_type` | string | `App`, `Bucket` or `Cluster` |
-| `cluster_id`, `cluster_name` | string | For a `Cluster` target, the cluster's id and name |
+| `target_type` | string | `App`, `Bucket`, `Cluster` or `LoadBalancer` |
+| `cluster_id`, `cluster_name` | string | For a `Cluster` or `LoadBalancer` target, the cluster's id and name |
 | `app_id`, `app_name`, `app_label` | string | For an `App` target, the app's id, name and label |
 | `bucket_id`, `bucket_name` | string | For a `Bucket` target, the bucket's id and name |
-| `namespace`, `service`, `port`, `protocol` | string, string, integer, string | For a `Cluster` target, the Kubernetes Service in your cluster that requests go to. For an `App` target, `namespace` and `service` are empty, and `port` is the app's port. For a `Bucket` target, `namespace` and `service` are empty too |
-| `path` | string | The path on the domain that is routed, for example `/` or `/api`. Always `/` for a `Bucket` target |
+| `loadbalancer_ip` | string | For a `LoadBalancer` target, the IP the domain's A record points at. Empty while the LoadBalancer has none, when the domain has no A record |
+| `namespace`, `service`, `port`, `protocol` | string, string, integer, string | For a `Cluster` target, the Kubernetes Service in your cluster that requests go to. For an `App` target, `namespace` and `service` are empty, and `port` is the app's port. For a `Bucket` target, `namespace` and `service` are empty too. For a `LoadBalancer` target, `namespace` and `service` name the LoadBalancer, `port` is `0` and `protocol` is empty |
+| `path` | string | The path on the domain that is routed, for example `/` or `/api`. Always `/` for a `Bucket` or `LoadBalancer` target |
 | `target_path` | string | The path requests are sent to on the service. Defaults to `path` |
 | `created_at` | string | When the target was created |
 
@@ -94,19 +96,19 @@ Routes a domain path to an app, a cluster service or a bucket's website. The rou
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain_name` | string | Yes | A domain of the account |
-| `target_type` | string | No | `App`, `Bucket` or `Cluster`. Default `Cluster` |
-| `path` | string | No | The path on the domain. Default `/`. Must start with `/` and use only letters, digits, `/`, `_`, `.` and `-`. Must be `/` for `Bucket` |
+| `target_type` | string | No | `App`, `Bucket`, `Cluster` or `LoadBalancer`. Default `Cluster` |
+| `path` | string | No | The path on the domain. Default `/`. Must start with `/` and use only letters, digits, `/`, `_`, `.` and `-`. Must be `/` for `Bucket` and `LoadBalancer` |
 | `target_path` | string | No | The path on the service. Default: the same as `path`. Same rules |
 | `app_id` | string | For `App` | The app's `hashed_id`. The app must be `Ready` or `Paused` |
 | `bucket_id` | string | For `Bucket` | The bucket's `hashed_id`. The bucket must be `Ready`, with its [static website](/object-storage/static-websites) on |
-| `cluster_id` | string | For `Cluster` | The cluster's `hashed_id` |
+| `cluster_id` | string | For `Cluster` and `LoadBalancer` | The cluster's `hashed_id`. For `LoadBalancer`, the cluster must be `Ready` or `Paused` |
 | `cluster_name` | string | For `Cluster` | The cluster's `cluster_name`, exactly as in `GET /clusters` |
-| `namespace` | string | For `Cluster` | The Service's namespace |
-| `service` | string | For `Cluster` | The Service's name |
+| `namespace` | string | For `Cluster` and `LoadBalancer` | The Service's namespace |
+| `service` | string | For `Cluster` and `LoadBalancer` | The Service's name. For `LoadBalancer`, a Service of type `LoadBalancer` that has an IP |
 | `port` | integer | For `Cluster` | The Service port |
 | `protocol` | string | No | The port's protocol as listed by `GET /clusters/services`, for example `TCP` |
 
-`GET /clusters/services` lists every Service with its namespace and ports; see [Clusters](/api/endpoints/clusters#list-services-in-your-clusters).
+`GET /clusters/services` lists every Service with its namespace, ports, `type` and, for a LoadBalancer, its `ip`; see [Clusters](/api/endpoints/clusters#list-services-in-your-clusters).
 
 <Tabs>
 <TabItem value="app" label="Route to an app" default>
@@ -127,6 +129,18 @@ curl -X POST https://cloider.com/api/targets \
   -H "Content-Type: application/json" \
   -d '{"domain_name": "docs.example.com", "target_type": "Bucket", "bucket_id": "s3w8q"}'
 ```
+
+</TabItem>
+<TabItem value="loadbalancer" label="Point at a LoadBalancer">
+
+```bash
+curl -X POST https://cloider.com/api/targets \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain_name": "play.example.com", "target_type": "LoadBalancer", "cluster_id": "p8w2d", "namespace": "games", "service": "server"}'
+```
+
+The domain must be a custom domain with no other targets. Its A record is created with the target and deleted with it. Cloider issues no certificate for the domain: TLS, and whatever routes requests behind the LoadBalancer, are yours to manage.
 
 </TabItem>
 <TabItem value="cluster" label="Route to a cluster service">
@@ -168,6 +182,9 @@ For a custom domain, the domain's nameservers must point to Cloider for the rout
 | `400` | `bucket_id` | `Bucket is required` |
 | `400` | `path`, `target_path` | `A bucket website is served at the root of its domain, the path must be /`, `A bucket website is served at the root of its domain, the target path must be /` (Bucket targets) |
 | `400` | `service`, `namespace`, `port` | `Service is required`, `Namespace is required`, `Valid port is required` |
+| `400` | `cluster_id`, `service`, `path`, `target_path` | `Cluster is required`, `LoadBalancer is required`, `A LoadBalancer takes the whole domain, the path must be /`, `A LoadBalancer takes the whole domain, the target path must be /` (LoadBalancer targets) |
+| `400` | `_` | `A LoadBalancer target needs a custom domain.`, `A LoadBalancer target takes the whole domain. Delete the domain's other targets first, or use another domain.`, `This domain points at a LoadBalancer, which takes the whole domain. Delete that target first, or use another domain.` |
+| `400` | `_` | `This cluster is not ready yet. Wait until it is running, then add the target.`, `This LoadBalancer has no IP yet. Wait until it gets one, then add the target.`, `The domain has an A, AAAA, ALIAS or CNAME record of its own. Delete it from the domain's DNS records first, then add the target.` |
 | `400` | `_` | `Invalid target type specified` |
 | `400` | `_` | `This path is already in use on this domain. Please choose a different path.` |
 | `400` | `_` | `This app is not ready yet. Wait until it finishes deploying, then add the target.` |
@@ -175,7 +192,7 @@ For a custom domain, the domain's nameservers must point to Cloider for the rout
 | `400` | `_` | `Service and namespace names are too long for this cluster (combined limit exceeded)`, `This app's name is too long to be exposed on a domain.` |
 | `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
 | `403` | `_` | `This API token is read only!` |
-| `404` | `_` | `App not found!`, `Bucket not found!`, or `Not Found` (plain text) for a domain or cluster that isn't the account's |
+| `404` | `_` | `App not found!`, `Bucket not found!`, `LoadBalancer not found! ...`, or `Not Found` (plain text) for a domain or cluster that isn't the account's |
 
 ## Change a target
 

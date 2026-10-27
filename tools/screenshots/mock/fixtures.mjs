@@ -400,21 +400,27 @@ export const clusters = [
   { hashed_id: 'x5h7c', cluster_name: 'sandbox', cluster_label: 'sandbox', cluster_version: '1.33', is_ha: false, status: 'Paused', created_at: ago(140) },
 ]
 
+const svc = (service, namespace, ports, type = 'ClusterIP', ip = '') =>
+  ({ service, namespace, ports: ports.map(port => ({ protocol: 'TCP', port })), type, ip })
+
 export const clusterServices = [
   {
     id: 'p8t2v', name: 'production',
     services: [
-      { service: 'storefront', namespace: 'shop', ports: [{ protocol: 'TCP', port: 80 }] },
-      { service: 'api', namespace: 'shop', ports: [{ protocol: 'TCP', port: 80 }, { protocol: 'TCP', port: 9090 }] },
-      { service: 'grafana', namespace: 'monitoring', ports: [{ protocol: 'TCP', port: 3000 }] },
+      svc('storefront', 'shop', [80]),
+      svc('api', 'shop', [80, 9090]),
+      svc('grafana', 'monitoring', [3000]),
+      // what play.example.com's LoadBalancer target points at
+      svc('server', 'games', [25565], 'LoadBalancer', '203.0.113.25'),
     ],
   },
   {
     id: 's4k9d', name: 'staging',
     services: [
-      { service: 'web', namespace: 'shop', ports: [{ protocol: 'TCP', port: 80 }] },
-      { service: 'api', namespace: 'shop', ports: [{ protocol: 'TCP', port: 80 }] },
-      { service: 'blog', namespace: 'blog', ports: [{ protocol: 'TCP', port: 80 }] },
+      svc('web', 'shop', [80]),
+      svc('api', 'shop', [80]),
+      svc('blog', 'blog', [80]),
+      svc('mqtt', 'iot', [1883], 'LoadBalancer', '203.0.113.26'),
     ],
   },
 ]
@@ -774,26 +780,34 @@ export const domains = [
   { domain_name: 'api-m2p9.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(31) },
   { domain_name: 'web-q4m8.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(24) },
   { domain_name: 'acme-site.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(11) },
+  { domain_name: 'play.example.com', domain_type: 'CustomDomain', status: 'Active', created_at: ago(6) },
 ]
 
 const appTarget = (hashed_id, domain_name, app, path, days) => ({
   hashed_id, domain_name, target_type: 'App', cluster_id: '', cluster_name: '',
   app_id: app.hashed_id, app_name: app.app_name, app_label: app.app_label, bucket_id: '', bucket_name: '',
   namespace: `app-${app.app_name}-${app.hashed_id}`, service: 'app', port: app.port, protocol: 'TCP',
-  path, target_path: '', created_at: ago(days),
+  loadbalancer_ip: '', path, target_path: '', created_at: ago(days),
 })
 
 const clusterTarget = (hashed_id, domain_name, cluster, namespace, service, port, path, days) => ({
   hashed_id, domain_name, target_type: 'Cluster', cluster_id: cluster.hashed_id, cluster_name: cluster.cluster_name,
   app_id: '', app_name: '', app_label: '', bucket_id: '', bucket_name: '', namespace, service, port, protocol: 'TCP',
-  path, target_path: '', created_at: ago(days),
+  loadbalancer_ip: '', path, target_path: '', created_at: ago(days),
 })
 
 // always the whole domain, at /
 const bucketTarget = (hashed_id, domain_name, bucket, days) => ({
   hashed_id, domain_name, target_type: 'Bucket', cluster_id: '', cluster_name: '',
   app_id: '', app_name: '', app_label: '', bucket_id: bucket.hashed_id, bucket_name: bucket.bucket_name,
-  namespace: '', service: '', port: 0, protocol: 'TCP', path: '/', target_path: '/', created_at: ago(days),
+  namespace: '', service: '', port: 0, protocol: 'TCP', loadbalancer_ip: '', path: '/', target_path: '/', created_at: ago(days),
+})
+
+// the whole domain too, an A record to the LoadBalancer's IP with no port or protocol
+const loadbalancerTarget = (hashed_id, domain_name, cluster, namespace, service, ip, days) => ({
+  hashed_id, domain_name, target_type: 'LoadBalancer', cluster_id: cluster.hashed_id, cluster_name: cluster.cluster_name,
+  app_id: '', app_name: '', app_label: '', bucket_id: '', bucket_name: '', namespace, service, port: 0, protocol: '',
+  loadbalancer_ip: ip, path: '/', target_path: '/', created_at: ago(days),
 })
 
 export const targets = {
@@ -808,11 +822,12 @@ export const targets = {
   'api-m2p9.cloider.app': [appTarget('tg9e0', 'api-m2p9.cloider.app', apps[1], '/', 31)],
   'web-q4m8.cloider.app': [appTarget('tg2f3', 'web-q4m8.cloider.app', apps[2], '/', 24)],
   'acme-site.cloider.app': [bucketTarget('tg4h5', 'acme-site.cloider.app', buckets[2], 11)],
+  'play.example.com': [loadbalancerTarget('tg6l7', 'play.example.com', clusters[1], 'games', 'server', '203.0.113.25', 6)],
 }
 
 let recordId = 4100
-const record = (domain_name, record_type, record_name, record_value, ttl, days) => ({
-  id: recordId++, domain_name, record_type, record_name, record_value, ttl,
+const record = (domain_name, record_type, record_name, record_value, ttl, days, target_id = '') => ({
+  id: recordId++, domain_name, record_type, record_name, record_value, ttl, target_id,
   created_at: ago(days), updated_at: ago(days),
 })
 
@@ -824,6 +839,10 @@ export const dnsRecords = {
     record('example.com', 'MX', '@', '10 mail.example.com', 3600, 79),
     record('example.com', 'TXT', '@', 'v=spf1 include:_spf.mail.example ~all', 3600, 79),
     record('example.com', 'TXT', '_dmarc', 'v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com', 3600, 79),
+  ],
+  // the A record the LoadBalancer target manages, in place of the ALIAS the domain came with
+  'play.example.com': [
+    record('play.example.com', 'A', '', '203.0.113.25', 60, 6, 'tg6l7'),
   ],
 }
 
