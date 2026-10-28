@@ -17,10 +17,10 @@ This page lists every tool the Cloider MCP server (`cloider mcp`) offers, groupe
 | [`databases`](#database-tools-databases) | 16 | 6 | 8 | 2 |
 | [`buckets`](#object-storage-tools-buckets) | 29 | 13 | 8 | 9 |
 | [`registry`](#container-registry-tools-registry) | 23 | 8 | 7 | 8 |
-| [`apps`](#app-tools-apps) | 26 | 10 | 12 | 4 |
+| [`apps`](#app-tools-apps) | 28 | 11 | 13 | 4 |
 | [`domains`](#domain-dns-and-target-tools-domains) | 12 | 4 | 5 | 3 |
 | [`support`](#support-tools-support) | 5 | 3 | 2 | 0 |
-| **All** | **126** | **54** | **45** | **28** |
+| **All** | **128** | **55** | **46** | **28** |
 
 - **Read only** tools change nothing. They are the only tools `cloider mcp --read-only` offers.
 - **Changes resources** tools create or update something but don't delete anything.
@@ -1217,9 +1217,9 @@ Delete an immutability rule; the tags it protected can be pushed over and delete
 
 ## App tools (apps)
 
-The `apps` toolset deploys and runs [apps](/apps/overview): deploy a directory from the machine the MCP server runs on, create an app from a GitHub, GitLab or Bitbucket repository or from a Docker image, follow builds, read logs, manage environment variables, build args and build environments, run commands in the app's container, and pause, resume or delete apps. `deploy_app`, `create_app_from_git` and `create_app_from_image` follow the build until the app is up, reporting progress as they go, unless `detach` is set.
+The `apps` toolset deploys and runs [apps](/apps/overview): deploy a directory from the machine the MCP server runs on, create an app from a GitHub, GitLab or Bitbucket repository or from a Docker image, or a [cron job](/apps/cron-jobs) from any of them, follow builds, list and start a cron job's runs, read logs, manage environment variables, build args and build environments, run commands in the app's container, and pause, resume or delete apps. `deploy_app`, `create_app_from_git` and `create_app_from_image` follow the build until the app is up, reporting progress as they go, unless `detach` is set.
 
-Tools: `list_apps`, `get_app`, `deploy_app`, `create_app_from_git`, `create_app_from_image`, `pause_app`, `resume_app`, `delete_app`, `update_app_settings`, `update_app_git`, `update_app_image`, `get_app_deploy_hook`, `get_app_logs`, `list_app_builds`, `get_app_build_logs`, `retry_app_build`, `list_app_variables`, `get_app_variable`, `set_app_variables`, `unset_app_variables`, `app_exec`, `list_git_installations`, `list_git_repositories`, `list_git_branches`, `connect_git_provider`, `disconnect_git_installation`.
+Tools: `list_apps`, `get_app`, `deploy_app`, `create_app_from_git`, `create_app_from_image`, `pause_app`, `resume_app`, `delete_app`, `update_app_settings`, `update_app_git`, `update_app_image`, `get_app_deploy_hook`, `get_app_logs`, `list_app_runs`, `run_app`, `list_app_builds`, `get_app_build_logs`, `retry_app_build`, `list_app_variables`, `get_app_variable`, `set_app_variables`, `unset_app_variables`, `app_exec`, `list_git_installations`, `list_git_repositories`, `list_git_branches`, `connect_git_provider`, `disconnect_git_installation`.
 
 
 ### list_apps
@@ -1234,7 +1234,7 @@ No parameters.
 
 ### get_app
 
-Show an app: status, URL, version, detected language and framework, port, start command, domains, and where it deploys from.
+Show an app: status, URL, version, detected language and framework, port, start command, domains, and where it deploys from. A cron job shows its schedule and next run instead of a URL and port.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1264,7 +1264,8 @@ Deploy a directory on this machine as an app. The first deploy zips it (leaving 
 | `tag` | string | No | For an app created from an image, the tag to deploy, which the app then follows. Needs app. |
 | `name` | string | No | App name for a new app (default: what detection finds, else the directory or repository name). |
 | `port` | integer | No | Port a new app listens on (default: detected, else 8080). |
-| `start_command` | string | No | Command a new app starts with (default: detected). |
+| `start_command` | string | No | Command a new app starts with (default: detected). With a Dockerfile it runs with sh -c in place of its ENTRYPOINT and CMD. |
+| `schedule` | string | No | Create a cron job instead: an app with no port or subdomain, run on this cron schedule in UTC, e.g. 0 3 * * *. See list_app_runs and run_app. |
 | `subdomain` | string | No | Free subdomain a new app is served on, a label or a full name (default: `<name>-<random>`). |
 | `no_subdomain` | boolean | No | Don't claim a free subdomain for a new app. |
 | `env` | object | No | Environment variables of a new app, `{"KEY": "value"}`. |
@@ -1291,7 +1292,8 @@ Create an app that deploys from a GitHub, GitLab or Bitbucket repository, reacha
 | `installation` | string | No | Installation to import through, by id or account (default: the only one). |
 | `name` | string | No | App name for a new app (default: what detection finds, else the directory or repository name). |
 | `port` | integer | No | Port a new app listens on (default: detected, else 8080). |
-| `start_command` | string | No | Command a new app starts with (default: detected). |
+| `start_command` | string | No | Command a new app starts with (default: detected). With a Dockerfile it runs with sh -c in place of its ENTRYPOINT and CMD. |
+| `schedule` | string | No | Create a cron job instead: an app with no port or subdomain, run on this cron schedule in UTC, e.g. 0 3 * * *. See list_app_runs and run_app. |
 | `subdomain` | string | No | Free subdomain a new app is served on, a label or a full name (default: `<name>-<random>`). |
 | `no_subdomain` | boolean | No | Don't claim a free subdomain for a new app. |
 | `env` | object | No | Environment variables of a new app, `{"KEY": "value"}`. |
@@ -1322,6 +1324,8 @@ Create an app that runs a Docker image already built, from any registry, given t
 | `registry_password` | string | No | Token or password for registry_username, ideally one that can only pull. |
 | `name` | string | No | App name (default: the image's name). |
 | `port` | integer | No | Port the image listens on (default: the one it exposes, else 8080). |
+| `start_command` | string | No | Command to run with sh -c in place of the image's ENTRYPOINT and CMD (default: the image's own). |
+| `schedule` | string | No | Create a cron job instead: an app with no port or subdomain, run on this cron schedule in UTC, e.g. 0 3 * * *. See list_app_runs and run_app. |
 | `subdomain` | string | No | Free subdomain the app is served on, a label or a full name (default: `<name>-<random>`). |
 | `no_subdomain` | boolean | No | Don't claim a free subdomain. |
 | `env` | object | No | Environment variables, `{"KEY": "value"}`. |
@@ -1330,7 +1334,7 @@ Create an app that runs a Docker image already built, from any registry, given t
 
 ### pause_app
 
-Stop an app serving, keeping its environment and image.
+Stop an app serving, or a cron job running (a run going now is stopped), keeping its environment and image.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1370,7 +1374,7 @@ Delete an app. Its free subdomains go with it unless keep_domains; a custom doma
 
 ### update_app_settings
 
-Change the port an app listens on, which redeploys the running version, or its start command, which builds it again.
+Change the port an app listens on, or a cron job's schedule, which redeploys the running version, or its start command, which builds it again, or only redeploys it for an app running its own image or built from a Dockerfile, where it replaces their ENTRYPOINT and CMD with sh -c.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1379,7 +1383,8 @@ Change the port an app listens on, which redeploys the running version, or its s
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `app` | string | Yes | Name or id of the app. |
-| `port` | integer | No | Port the app listens on. |
+| `port` | integer | No | Port the app listens on, not for a cron job. |
+| `schedule` | string | No | A cron job's cron schedule, in UTC. |
 | `start_command` | string | No | Command the app starts with, empty for the detected one. |
 | `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
 
@@ -1430,7 +1435,7 @@ The url that deploys an app created from an image when it receives a POST, for C
 
 ### get_app_logs
 
-The latest lines a running app printed.
+The latest lines a running app printed, or a cron job's latest run, or the run named.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1440,6 +1445,32 @@ The latest lines a running app printed.
 | --- | --- | --- | --- |
 | `app` | string | Yes | Name or id of the app. |
 | `lines` | integer | No | Lines of history: 100, 200 (the default), 500 or 1000. |
+| `run` | string | No | A cron job's run to read, by name, see list_app_runs. |
+
+### list_app_runs
+
+A cron job's runs, newest first, with status, whether the schedule or run_app started it, when, how long, and why one failed. The last 5 succeeded and 5 failed are kept; read one's output with get_app_logs and run.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app runs`](/cli/commands/app#cloider-app-runs) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+
+### run_app
+
+Run a cron job now, outside its schedule, on the version it has deployed. Refused while a run is still going. Answers the run's name, or with follow its output, failing when the run fails.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider app run`](/cli/commands/app#cloider-app-run) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `follow` | boolean | No | Print the run's output and wait for it to finish. |
 
 ### list_app_builds
 
@@ -1886,7 +1917,7 @@ Some CLI commands are interactive or only make sense in a terminal, so `cloider 
 - [`cloider mcp` command reference](/cli/commands/mcp)
 
 <FAQ items={[
-  {q: 'How many tools does the Cloider MCP server have?', a: '126 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 54 of them only read, 45 create or change resources, and 28 are destructive, which includes the three exec tools.'},
+  {q: 'How many tools does the Cloider MCP server have?', a: '128 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 55 of them only read, 46 create or change resources, and 28 are destructive, which includes the three exec tools.'},
   {q: 'Which Cloider MCP tools are destructive?', a: 'Every delete tool, the tools that replace a whole setting (bucket policy, lifecycle and CORS rules, retention rules), uploads (which overwrite files with the same key), unsetting app variables, untagging and running retention, disconnecting a git account, and the exec tools app_exec, cluster_exec and database_exec. They all carry destructiveHint, so clients ask before running them.'},
   {q: 'Can the MCP server show a database password?', a: 'Yes, with get_database_password, which is read only. get_database returns the connection details without the password, so a client can let the agent read connection details freely and still ask before it reads the password.'},
   {q: 'Can the agent deploy code from my computer?', a: 'Yes. deploy_app uploads a directory on the machine the MCP server runs on, given as an absolute path in dir, detects the language and port, and follows the build until the app is up.'},

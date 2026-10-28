@@ -26,7 +26,7 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | POST | [`/apps/source/bitbucket`](#import-source-from-a-git-repository) | Write |
 | POST | [`/apps/source/image`](#create-an-app-from-an-image) | Write |
 | POST | [`/apps`](#step-5-create-the-app) | Write |
-| PUT | [`/apps/:hashed_id/settings`](#change-the-port-or-start-command) | Write |
+| PUT | [`/apps/:hashed_id/settings`](#change-the-port-schedule-or-start-command) | Write |
 | PUT | [`/apps/:hashed_id/git`](#change-the-branch-or-auto-deploy) | Write |
 | PUT | [`/apps/:hashed_id/image`](#change-an-image-apps-image-or-login) | Write |
 | POST | [`/apps/:hashed_id/deploy-hook`](#deploy-hook) | Write |
@@ -42,6 +42,8 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | PUT | [`/apps/:hashed_id/build-args`](#replace-build-variables-or-build-arguments) | Write |
 | GET | [`/apps/:hashed_id/build-args/value`](#reveal-a-secret-value) | Read |
 | GET | [`/apps/:hashed_id/logs/stream`](#stream-an-apps-logs) | Read |
+| GET | [`/apps/:hashed_id/runs`](#list-a-cron-jobs-runs) | Read |
+| POST | [`/apps/:hashed_id/runs`](#run-a-cron-job-now) | Write |
 | POST | [`/apps/:hashed_id/exec`](#run-a-command-with-exec) | Write |
 | GET | [`/apps/:hashed_id/terminal`](#web-terminal-endpoints) | Write |
 | POST | [`/apps/:hashed_id/terminal/wake`](#web-terminal-endpoints) | Write |
@@ -59,6 +61,9 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
   "app_label": "blog",
   "port": 8080,
   "start_command": "",
+  "builder": "buildpacks",
+  "schedule": "",
+  "next_run_at": null,
   "status": "Ready",
   "language": "JavaScript",
   "framework": "Next.js",
@@ -92,7 +97,10 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | `app_name` | string | The name you gave it |
 | `app_label` | string | A name unique among the account's apps (`-1`, `-2` appended when taken) |
 | `port` | integer | The port the app listens on. It is passed to the app as the `PORT` environment variable |
-| `start_command` | string | The command a buildpack build starts the app with, or empty to let the source decide |
+| `start_command` | string | The command the app starts with, or empty to let the source or the image decide. A buildpack build has it in its `Procfile`; an image app and a `Dockerfile` build run it with `sh -c` in place of the image's `ENTRYPOINT` and `CMD` |
+| `builder` | string | How the live version was built: `dockerfile`, `buildpacks` or `static`. Empty for an image app, and for a version built before this was recorded |
+| `schedule` | string | A [cron job](/apps/cron-jobs)'s cron schedule, in UTC. Empty for an app that serves on its port. A cron job has no port, URL or domains |
+| `next_run_at` | string or null | When a cron job runs next. `null` for any other app, and for a paused cron job |
 | `status` | string | See [App statuses](#app-statuses) |
 | `language`, `framework` | string | What detection found in the source, for display only |
 | `source_filename`, `source_size` | string, integer | The source archive of the live build |
@@ -118,7 +126,7 @@ An app's status follows its latest build while one runs, so a list of apps shows
 | --- | --- |
 | `Pending` | Waiting for the source to be uploaded |
 | `Queued`, `Building`, `Deploying`, `Starting` | A build is running through its stages |
-| `Ready` | Running and serving its URL |
+| `Ready` | Running and serving its URL, or for a cron job, deployed and running on its schedule |
 | `Failed` | The first build failed. An app that was already running stays `Ready` when a later build fails |
 | `Pausing`, `Paused` | Being stopped, or stopped |
 | `Terminating`, `Terminated` | Being deleted, or deleted |
@@ -320,9 +328,10 @@ Creates the app from a staged source and starts its first build right away. Opti
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `app_name` | string | Yes | 2 to 64 characters: lower case letters, digits and `-`, starting with a letter, not ending with `-` |
-| `port` | integer | Yes | 1 to 65535, the port the app listens on |
+| `port` | integer | Yes, unless `schedule` is set | 1 to 65535, the port the app listens on |
 | `source_token` | string | Yes | The `token` from step 1, or from an import |
-| `start_command` | string | No | One line, up to 1000 characters. Only buildpack builds read it |
+| `start_command` | string | No | One line, up to 1000 characters. A buildpack build writes it into a `Procfile`; an image app and an app built from a `Dockerfile` run it with `sh -c` in place of the image's `ENTRYPOINT` and `CMD` |
+| `schedule` | string | No | Makes the app a [cron job](/apps/cron-jobs) run on this cron schedule, in UTC, for example `0 3 * * *`. Five fields or a shorthand like `@daily`. A cron job takes no `port` or `subdomain` |
 | `subdomain` | string | No | A full free subdomain to claim, for example `blog.cloider.app`. Empty for none |
 | `env_vars` | object list | No | Runtime environment variables, see [Variables](#environment-variables-build-variables-and-build-arguments) |
 | `build_env_vars` | object list | No | Build variables |
@@ -359,6 +368,8 @@ The app is created even when a later part of the request fails. Those failures c
 | `400` | `app_name` | `App name must not be empty`, `App name can not be upper case`, `App name must not have special characters except "-"`, `App name must be at least 2 characters`, `App name must not exceed 64 characters`, and the like |
 | `400` | `port` | `App port must not be empty`, `App port must be between 1 and 65535` |
 | `400` | `start_command` | `Start command must be at most 1000 characters`, `Start command must be a single line` |
+| `400` | `schedule` | `A schedule has five fields: minute, hour, day of month, month and day of week.`, `This schedule never runs, check the day of month and month.`, and a message naming the field that is out of range |
+| `400` | `subdomain` | `A cron job has no port to serve a domain on, leave this empty.` |
 | `400` | `source` | `Your app source is no longer available, upload it again!`, `Your repository is still being fetched, give it a moment and try again!`, or the import's own message |
 | `400` | `subdomain` | `This subdomain is already taken. Please try another one.`, `You already own this subdomain. Connect it to the app from Domains instead.`, and the subdomain naming rules |
 | `400` | `env_vars.<KEY>` | Per variable messages, see [Variables](#environment-variables-build-variables-and-build-arguments) |
@@ -525,20 +536,21 @@ curl -X POST "https://cloider.com/api/deploy-hooks/apps/a8q2w/<secret>?tag=v2"
 | `409` | The app is already deploying, is paused or being deleted, or the account is suspended |
 | `422` | The image can't be read, with the message in `errors._`, for example `ghcr.io/acme/api has no tag v2.` |
 
-## Change the port or start command
+## Change the port, schedule or start command
 
 ```http
 PUT /apps/:hashed_id/settings
 ```
 
-Changes the port the app listens on and its start command. Saving them also applies them to the running app: a changed port redeploys the current image, a changed start command builds the current source again.
+Changes the port the app listens on, or a cron job's schedule, and its start command. Saving them also applies them to the running app: a changed port or schedule redeploys the current image. A changed start command builds the current source again, or only redeploys the current image for an image app and an app built from a `Dockerfile` (`builder` is `dockerfile`), which run it in place of the image's `ENTRYPOINT` and `CMD`.
 
 **Access:** Read & Write token.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `port` | integer | Yes | 1 to 65535. Send the current port to keep it |
+| `port` | integer | Yes, unless the app is a cron job | 1 to 65535. Send the current port to keep it. A cron job ignores it |
 | `start_command` | string | No | One line, up to 1000 characters. Empty clears it |
+| `schedule` | string | No | A cron job's new schedule, in UTC. Empty keeps the one it has. Refused on any other app: an app's kind is fixed when it is created |
 
 ```bash
 curl -X PUT https://cloider.com/api/apps/a8q2w/settings \
@@ -551,7 +563,7 @@ curl -X PUT https://cloider.com/api/apps/a8q2w/settings \
 {"applied": "build"}
 ```
 
-`applied` says what happened: `none` (nothing changed, or the app has never deployed, so its next build picks the settings up), `redeploy` (the port changed and the running image is being redeployed) or `build` (the start command changed and a new build started).
+`applied` says what happened: `none` (nothing changed, or the app has never deployed, so its next build picks the settings up), `redeploy` (the port, the schedule, or the start command of an image or `Dockerfile` app changed and the running image is being redeployed) or `build` (a buildpack app's start command changed and a new build started).
 
 | Status | Message |
 | --- | --- |
@@ -734,6 +746,7 @@ Streams what the app prints to standard output and standard error as [server-sen
 | --- | --- | --- |
 | `lines` | No | How many past lines to start with: `100`, `200`, `500` or `1000`. Default `200` |
 | `follow` | No | `false` to send the past lines and end. Default: follow |
+| `run` | No | A cron job's run to read, by its `name` from [the runs](#list-a-cron-jobs-runs). Without it, a cron job's stream follows its latest run and moves on to each new one. With it, a followed stream ends once that run has finished. `404 Run not found!` on any other app |
 
 ```bash
 curl -N "https://cloider.com/api/apps/a8q2w/logs/stream?lines=100" \
@@ -798,6 +811,73 @@ for await (const chunk of res.body) {
 ```
 
 </details>
+
+## List a cron job's runs
+
+```http
+GET /apps/:hashed_id/runs
+```
+
+Lists a [cron job](/apps/cron-jobs)'s runs, newest first. The last 5 succeeded and 5 failed runs are kept. A cron job that hasn't deployed yet has none.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps/k3v9q/runs -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "name": "app-29885940",
+    "manual": false,
+    "status": "Failed",
+    "exit_code": 1,
+    "message": "Exited with code 1",
+    "created_at": "2026-10-28T03:00:00Z",
+    "started_at": "2026-10-28T03:00:00Z",
+    "finished_at": "2026-10-28T03:00:03Z"
+  }
+]
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | string | The run's name, which [its logs](#stream-an-apps-logs) are read by |
+| `manual` | boolean | Started with [Run now](#run-a-cron-job-now) rather than by the schedule |
+| `status` | string | `Pending`, `Running`, `Succeeded` or `Failed` |
+| `exit_code` | integer or null | The command's exit code, once it has exited |
+| `message` | string | Why a run failed or is stuck, for example `Exited with code 1`, `Stopped after running for 12 hours` or `The image could not be pulled`. Empty otherwise |
+| `created_at`, `started_at`, `finished_at` | string | When the run was created, started and finished. The last two are `null` until then |
+
+| Status | Message |
+| --- | --- |
+| `404` | `This app is not a cron job, it has no runs!` |
+| `400` | `Couldn't read the app's runs, try again!` |
+
+## Run a cron job now
+
+```http
+POST /apps/:hashed_id/runs
+```
+
+Starts a run of a [cron job](/apps/cron-jobs) now, outside its schedule, on the version it has deployed. The schedule is not changed.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/apps/k3v9q/runs -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{"name": "app-manual-1793185200"}
+```
+
+| Status | Message |
+| --- | --- |
+| `409` | `A run is still going, wait for it to finish!` |
+| `409` | `This app is paused. Resume it to run it!`, `This app has not been deployed yet!`, `This app is not a cron job, it has no runs!` |
+| `400` | `Couldn't start the run, try again!` |
 
 ## Run a command with exec
 

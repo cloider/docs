@@ -1,0 +1,297 @@
+---
+title: Run a cron job as an app
+sidebar_label: Cron jobs
+sidebar_position: 3.7
+description: Run a script or any Docker image on a cron schedule with Cloider, with environment variables, logs for each run, Run now and a terminal.
+keywords: [cron job, scheduled job, scheduled task, run on a schedule, cronjob hosting, kubernetes cronjob, run now, cron expression, cloider cron]
+---
+
+A **cron job** is an app that runs on a schedule instead of serving on a port. You create it from a git repository, a
+folder on your computer or a Docker image, exactly like any other app, and pick a schedule such as "every day at 03:00".
+On every run Cloider starts your app's image, runs it until it exits, and keeps its status and output. Between runs
+nothing is running.
+
+A cron job keeps everything an app has: builds and deploys, environment variables, build variables and build
+arguments, the deploy hook of an image app, logs, the web terminal, `cloider app exec`, insights, pause, resume and
+delete.
+
+| | Cron job | Web service |
+| --- | --- | --- |
+| **Runs** | On its schedule, until the command exits | All the time |
+| **Port, subdomain, domains** | None | One port, served on your domains |
+| **What runs** | The start command, or the image's own `ENTRYPOINT` and `CMD` | The same |
+| **New version** | A build or deploy, picked up by the next run | A build or deploy, rolled out at once |
+| **Logs** | Per run, for the last 5 succeeded and 5 failed runs | The running app's |
+| **Terminal** | A shell with the job's image and environment, between runs | A shell in the running app |
+
+## How runs work
+
+- The schedule is a standard [cron expression](#schedule-syntax) and is always in **UTC**.
+- Each run is a fresh container of the version the app has deployed, with the app's
+  [environment variables](/apps/environment-variables). A run that exits with code `0` has **Succeeded**, any other exit
+  code is **Failed**. A failed run is not retried.
+- **One run at a time.** When a run is still going at the next scheduled time, that scheduled run is skipped.
+- A run is stopped after **12 hours**.
+- A run that could not start on time, for example during maintenance, is dropped after 5 minutes instead of running late.
+- The last **5 succeeded and 5 failed** runs are kept, with their output, in the **Runs** tab.
+
+What a run executes is the app's **start command**, when it has one:
+
+- **Built from source with a buildpack:** the start command is built into the image. Left empty, your project's own
+  `Procfile` `web` entry or start script runs.
+- **Built from your own `Dockerfile`, or a [Docker image](/apps/deploy-an-image):** the start command runs with `sh -c`
+  in place of the image's `ENTRYPOINT` and `CMD`. Left empty, those run. This is how one image runs several jobs, for
+  example `python manage.py clearsessions` in your web app's image, or `pg_dump ...` in `postgres`.
+
+## Create a cron job
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Apps** in the sidebar and click **Create App**.
+2. Pick your code: a git repository, a Docker image, or a folder to upload.
+3. In **Configure your app**, set **Type** to **Cron job**.
+4. Pick a **Schedule** from the list, or type your own cron expression. The port and subdomain fields go away, a cron
+   job has neither.
+5. Set the **Start Command** to what each run executes, for example `python manage.py clearsessions`. Leave it empty
+   to use your project's own `Procfile` or start script, or the image's own `CMD`.
+6. Add environment variables if the job needs any, and click **Create App**.
+
+The first build deploys the job, and it runs on its schedule from then on. Click **Run now** on the **Runs** tab to try
+it right away.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+`--schedule` creates a cron job, from a directory with [`cloider deploy`](/cli/commands/deploy), or from a repository or
+an image with [`cloider app create`](/cli/commands/app#cloider-app-create):
+
+```bash
+cloider deploy --name cleanup --schedule '0 3 * * *' --start-command 'python cleanup.py'
+cloider app create --git github --repo acme/jobs --schedule '*/30 * * * *'
+cloider app create --image ghcr.io/acme/web --tag v2 --schedule '@daily' --start-command 'python manage.py report'
+```
+
+```text title="Output"
+Detected Python
+✓ Created cron job cleanup, run on 0 3 * * * (UTC)
+...build output...
+✓ Deployed version 1 of cleanup
+Next run 2026-10-29 03:00, or start one with `cloider app run cleanup`.
+```
+
+Quote the schedule, the shell would otherwise expand its `*`. A cron job takes no `--port` or `--subdomain`.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Pass `schedule` when you [create the app](/api/endpoints/apps#step-5-create-the-app). `port` and `subdomain` are not used:
+
+```bash
+curl -X POST https://cloider.com/api/apps \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "app_name": "cleanup",
+    "schedule": "0 3 * * *",
+    "start_command": "python cleanup.py",
+    "source_token": "9f2c4e7a1b3d5f60718293a4b5c6d7e8"
+  }'
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+`deploy_app`, `create_app_from_git` and `create_app_from_image` take a `schedule`:
+
+```text
+Deploy ~/code/jobs as a cron job named cleanup that runs python cleanup.py every day at 03:00 UTC.
+```
+
+</TabItem>
+</Tabs>
+
+## Schedule syntax
+
+A schedule has five fields, separated by spaces, in **UTC**:
+
+```text
+┌───────────── minute (0 to 59)
+│ ┌─────────── hour (0 to 23)
+│ │ ┌───────── day of the month (1 to 31)
+│ │ │ ┌─────── month (1 to 12, or JAN to DEC)
+│ │ │ │ ┌───── day of the week (0 to 6, Sunday is 0, or SUN to SAT)
+│ │ │ │ │
+* * * * *
+```
+
+Each field takes `*` (every value), a number, a list (`1,15`), a range (`1-5`), a step (`*/15`, `0-30/10`, or `5/20`, which
+is `5-59/20`), or the three letter names of months and weekdays. When both the day of the month and the day of the week
+are set, a day matching either one runs the job.
+
+| Schedule | Runs |
+| --- | --- |
+| `*/5 * * * *` | Every 5 minutes |
+| `0 * * * *` | At the start of every hour |
+| `30 2 * * *` | Every day at 02:30 UTC |
+| `0 9 * * MON-FRI` | Every weekday at 09:00 UTC |
+| `0 0 * * 0` | Every Sunday at midnight UTC |
+| `0 0 1 * *` | On the 1st of every month at midnight UTC |
+| `0 */6 * * *` | Every 6 hours |
+
+The shorthands `@hourly`, `@daily` (or `@midnight`), `@weekly`, `@monthly` and `@yearly` (or `@annually`) work too.
+A schedule that can never run, like `0 0 30 2 *` (February 30th), is refused.
+
+UTC doesn't follow daylight saving time: `0 7 * * *` runs at 09:00 in Berlin in summer and at 08:00 in winter.
+
+## See runs and run a job now
+
+The **Runs** tab lists the runs Cloider keeps, newest first: their status, whether the schedule or **Run now** started
+them, when they started and how long they took. A failed run says why, for example `Exited with code 1` or
+`Stopped after running for 12 hours`, and a run stuck before it starts says `The image could not be pulled`. Click
+**Logs** on a run to read its output.
+
+**Run now** starts a run immediately, on the version the app has deployed, without changing the schedule. It is refused
+while a run is still going.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+Open the app and the **Runs** tab. The tab also shows the schedule and the next run in your local time.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider app runs cleanup
+```
+
+```text title="Output"
+NAME                   STATUS     TRIGGER   STARTED           DURATION  MESSAGE
+app-manual-1793185200  Succeeded  manual    2026-10-28 11:00  14s       -
+app-29885940           Failed     schedule  2026-10-28 03:00  3s        Exited with code 1
+app-29884500           Succeeded  schedule  2026-10-27 03:00  12s       -
+```
+
+```bash
+cloider app run cleanup        # start a run, print its name
+cloider app run cleanup -f     # start a run, print its output, fail when the run fails
+```
+
+`cloider app run -f` exits with an error when the run fails, so a CI pipeline can run a job and check it worked.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl https://cloider.com/api/apps/k3v9q/runs -H "Authorization: Bearer $CLOIDER_TOKEN"
+curl -X POST https://cloider.com/api/apps/k3v9q/runs -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+See [List a cron job's runs](/api/endpoints/apps#list-a-cron-jobs-runs) and
+[Run a cron job now](/api/endpoints/apps#run-a-cron-job-now).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+`list_app_runs` lists the runs and `run_app` starts one, with `follow` to wait for its output.
+
+</TabItem>
+</Tabs>
+
+## Logs
+
+The **Logs** tab of a cron job follows its latest run, and moves on to the next run when it starts. To read an earlier
+run, click **Logs** on it in the **Runs** tab.
+
+```bash
+cloider app logs cleanup                     # the latest run's output
+cloider app logs cleanup -f                  # follow every run as it starts
+cloider app logs cleanup --run app-29885940  # one run's output
+```
+
+Only the runs the **Runs** tab lists still have their output. See [Logs](/apps/logs).
+
+## Debug with the terminal
+
+Between runs, the **Terminal** tab opens a shell in a container with the cron job's image and environment variables,
+started for the terminal and stopped again once it has been unused for 10 minutes. It is the quickest way to find out
+why a run fails: run the job's command by hand and watch what it does.
+
+```bash
+cloider app shell cleanup
+cloider app exec cleanup -- python cleanup.py --dry-run
+```
+
+`cloider app exec` runs in the same container, starting it first when it isn't running. The terminal needs a shell in
+the image: an image without `sh`, like a distroless image, has nothing to open. See
+[Terminal and exec](/apps/terminal-and-exec).
+
+## Change the schedule
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+Open the app's **Settings** tab, pick or type the new **Schedule**, and click **Save changes**. The job is redeployed on
+the new schedule in a few seconds, on the same version.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider app update cleanup --schedule '0 4 * * *'
+```
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X PUT https://cloider.com/api/apps/k3v9q/settings \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"schedule": "0 4 * * *", "start_command": "python cleanup.py"}'
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+`update_app_settings` with `schedule`.
+
+</TabItem>
+</Tabs>
+
+A cron job stays a cron job: it can't be turned into a web service, or the other way around. Create a new app for that.
+
+## Pause, resume and delete
+
+Pausing a cron job stops its schedule, and stops a run that is going at that moment. Its runs list, version and
+environment stay. Resuming it puts the schedule back, and the next run is the schedule's next time: runs missed while
+paused don't run. See [Pause, resume and delete](/apps/pause-resume-and-delete).
+
+## Billing
+
+A cron job is billed at the same rates as any app, for the CPU and memory its runs use, and each run is measured on
+its own:
+
+- **For exactly as long as it ran**, from the second its container started to the second it finished. Time spent
+  waiting to start, such as pulling the image, isn't billed, and neither is anything between runs.
+- **For the CPU it used**, as its container counted it, read every 5 seconds while it runs.
+- **For the memory it was using**, averaged over those same readings.
+
+A run that is over in a few seconds can end before its first reading. It is billed at what the job's last measured run
+used per second, and costs nothing while the job has no measured run yet.
+
+Only runs are billed. The container the terminal and `cloider app exec` open between runs is free. See
+[pricing](https://cloider.com/#pricing) and [Insights](/apps/insights).
+
+## Troubleshooting
+
+**A run shows `The image could not be pulled`.** The run is stuck before it starts. For an image app, check the image
+still exists and the registry login on the **Settings** tab still works.
+
+**A scheduled run didn't happen.** The previous run was still going (one run at a time), the app was paused, or the
+schedule is in UTC and you read it in your local time. The **Runs** tab and the **Overview** show the next run in your
+local time.
+
+**The terminal says the app isn't running.** The image has no `sh`, or its shell container is still starting. Wait a few
+seconds and reconnect.

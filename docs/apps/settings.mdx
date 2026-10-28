@@ -109,22 +109,27 @@ The web app listens on port 80. Update its port and wait until it is back up.
 
 ## Change the start command
 
-The start command tells a **buildpack** build how to start your app. Cloider writes it into the source as a `Procfile`
-line, `web: <command>`, so it becomes part of the image. That is why saving a new start command **rebuilds** the source
-the app is serving: a new version is built and deployed, and the **Builds** tab opens on it.
+The start command is what your app runs when it starts. Where it goes depends on how the app's image is made:
 
-- Leave it empty to let the project decide, through its own `Procfile` or its language's convention (such as the
-  `start` script of `package.json`).
+- **Buildpack build:** Cloider writes it into the source as a `Procfile` line, `web: <command>`, so it becomes part of
+  the image. Saving a new one **rebuilds** the source the app is serving: a new version is built and deployed, and the
+  **Builds** tab opens on it.
+- **Your own `Dockerfile`, or an [image you built](/apps/deploy-an-image):** the container runs it with `sh -c` in place
+  of the image's `ENTRYPOINT` and `CMD`, so the image needs a shell. Saving a new one only **redeploys** the image the
+  app is running, in a few seconds.
+
+- Leave it empty to let the project decide, through its own `Procfile`, its language's convention (such as the
+  `start` script of `package.json`), or the image's own `ENTRYPOINT` and `CMD`.
 - One line, at most 1000 characters. Use `$PORT` for the port: `gunicorn app:app --bind 0.0.0.0:$PORT`.
-- A project with its own `Dockerfile` ignores it and runs its `CMD`. A static site has no command; setting one makes
-  Cloider build the source with buildpacks instead.
+- A static site has no command; setting one makes Cloider build the source with buildpacks instead.
 
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
 1. Open the app and go to the **Settings** tab.
 2. Type the command in **Start command**, for example `node dist/server.js`, or clear it.
-3. Click **Save changes**. The toast says **Your app is rebuilding to start on the new command.**
+3. Click **Save changes**. A buildpack app's toast says **Your app is rebuilding to start on the new command.**, an
+   image or `Dockerfile` app's **Your app is redeploying with its new settings.**
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -137,7 +142,7 @@ cloider app update api --start-command "gunicorn app:app --bind 0.0.0.0:\$PORT" 
 ✓ Saved, building api again
 ```
 
-Clear it with `--start-command ""`.
+An image or `Dockerfile` app answers `✓ Saved, redeploying api` instead. Clear it with `--start-command ""`.
 
 </TabItem>
 <TabItem value="terraform" label="Terraform">
@@ -157,6 +162,8 @@ curl -X PUT https://cloider.com/api/apps/k3m9tw/settings \
 ```json title="Response"
 {"applied": "build"}
 ```
+
+`applied` is `redeploy` for an image or `Dockerfile` app.
 
 </TabItem>
 <TabItem value="mcp" label="MCP">
@@ -186,7 +193,7 @@ the repository is gone or suspended, the section says so and the app can't deplo
 
 ## Change an image app's image, tag or login
 
-An app [created from a Docker image](/apps/deploy-an-image) has an **Image** section in place of the start command,
+An app [created from a Docker image](/apps/deploy-an-image) has an **Image** section below the start command,
 with the **Image**, the **Tag** and **The image is private** switch for its login. Saving checks them with the registry
 first and refuses what it can't pull, then deploys when the tag now points at a different image. An empty **Token or
 password** keeps the saved one for the same username.
@@ -203,8 +210,13 @@ The **Deploy hook** section below it shows the URL that deploys the app when you
   src="/img/screenshots/apps/image-settings.webp"
   url="/dashboard/apps/admin-d6h3t"
   alt="The Settings tab of the admin image app with the Port, the Image section holding ghcr.io/acme/admin, tag v3 and the acme-ci login, and the Deploy hook section showing its URL and curl examples"
-  caption="The Settings tab of an image app: no start command, an Image section and the deploy hook."
+  caption="The Settings tab of an image app: an Image section and the deploy hook."
 />
+
+## Change a cron job's schedule
+
+A [cron job](/apps/cron-jobs) has a **Schedule** instead of a port. Saving a new one redeploys the job on it in a few
+seconds, on the same version. See [Change the schedule](/apps/cron-jobs#change-the-schedule).
 
 ## Where are pause and delete?
 
@@ -222,7 +234,7 @@ the CLI as `cloider app pause`, `resume` and `delete`. See [Pause, resume and de
 | **This app is paused. Resume it before deploying a new version!** | Resume the app, then save |
 | **The settings were saved but the app could not be redeployed!** | The values are saved; save again or deploy a new version to apply them |
 | The app went `Failed` after a port change | Nothing answers on the new port. Set the port your app listens on |
-| A new start command has no effect | The app has a `Dockerfile`, which uses its own `CMD`. Change the `CMD` instead |
+| A new start command fails with `sh: not found` | The image has no shell to run it with, like a distroless image. Clear the start command and change the image's `CMD` instead |
 | `nothing to change, give --port or --start-command` (CLI) | Pass at least one of the two flags |
 
 ## Next steps
@@ -233,7 +245,7 @@ the CLI as `cloider app pause`, `resume` and `delete`. See [Pause, resume and de
 
 <FAQ items={[
   {q: 'How do I change the port of a Cloider app?', a: 'Change Port on the app\'s Settings tab and save, run cloider app update <app> --port <port>, or PUT /api/apps/<id>/settings. The running version is redeployed on the new port without a rebuild.'},
-  {q: 'Does changing the start command rebuild the app?', a: 'Yes. The start command is written into the image as a Procfile line, so saving a new one rebuilds the source the app is serving as a new version. Apps with a Dockerfile ignore the start command.'},
+  {q: 'Does changing the start command rebuild the app?', a: 'For a buildpack app, yes: the start command is written into the image as a Procfile line, so saving a new one rebuilds the source the app is serving as a new version. An app with its own Dockerfile or running an image you built runs the start command with sh -c in place of the image\'s ENTRYPOINT and CMD, so saving a new one only redeploys it.'},
   {q: 'Can I rename a Cloider app?', a: 'No. An app keeps the name it was created with. Create a new app with the new name and move its domains and variables over if you need a different name.'},
   {q: 'What happens if I set the wrong port?', a: 'The app is redeployed on the new port and, if nothing answers there within 5 minutes, it goes Failed and stops serving. Set the correct port again to bring it back.'},
 ]} />

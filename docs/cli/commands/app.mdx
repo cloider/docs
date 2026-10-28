@@ -28,9 +28,11 @@ cloider app <command> [flags]
 | [`cloider app pause`](#cloider-app-pause) | Stop the app serving, keeping its environment and image |
 | [`cloider app resume`](#cloider-app-resume) | Start a paused app again |
 | [`cloider app delete`](#cloider-app-delete) | Delete an app |
-| [`cloider app update`](#cloider-app-update) | Change the app's port or start command |
+| [`cloider app update`](#cloider-app-update) | Change the app's port, schedule or start command |
 | [`cloider app link`](#cloider-app-link) | Link a directory to an app, so `cloider deploy` there deploys to it |
 | [`cloider app logs`](#cloider-app-logs) | Print the app's logs, `-f` to follow them |
+| [`cloider app runs`](#cloider-app-runs) | List a cron job's runs, newest first |
+| [`cloider app run`](#cloider-app-run) | Run a cron job now, outside its schedule |
 | [`cloider app env`](#cloider-app-env) | Read and change the app's environment variables |
 | [`cloider app build-args`](#cloider-app-build-args) | Read and change the build args the app's Dockerfile is built with |
 | [`cloider app build-env`](#cloider-app-build-env) | Read and change the variables a buildpack build runs with |
@@ -120,6 +122,7 @@ cloider app create --image <image[:tag]> [flags]
 | `--name` | string | detected, else the repository name | App name |
 | `--port` | int | detected, else `8080` | Port the app listens on |
 | `--start-command` | string | detected | Command to start the app with |
+| `--schedule` | string | | Create a [cron job](/apps/cron-jobs) instead, run on this cron schedule in UTC, for example `'0 3 * * *'`. It has no port or subdomain, so it can't be combined with `--port` or `--subdomain` |
 | `--subdomain` | string | `<name>-<random>` | Free subdomain to serve the app on, a label (`api`) or a full name (`api.cloider.app`) |
 | `--no-subdomain` | bool | `false` | Don't claim a free subdomain. Can't be combined with `--subdomain` |
 | `-e, --env` | string, repeatable | | Environment variable `KEY=VALUE` |
@@ -152,7 +155,7 @@ cloider app create --git gitlab --repo acme/web --branch main --name web --port 
 
 The variable flags work exactly as for [`cloider deploy`](/cli/commands/deploy#environment-variables-build-args-and-build-variables). Build output goes to stderr and the app's URL to stdout. If the repository isn't found, the error says so, and notes when the provider lists only some repositories. See [Deploy from git](/apps/deploy-from-git). MCP tool: `create_app_from_git`.
 
-With `--image`, the tag is the one written into the image (`nginx:1.27`), else `--tag`, else `latest`. The registry is checked before the app is created, and an image app takes no `--start-command`, build args or build variables. A new version is a push to the tag followed by [`cloider deploy --app <app>`](/cli/commands/deploy). See [Deploy a Docker image](/apps/deploy-an-image). MCP tool: `create_app_from_image`.
+With `--image`, the tag is the one written into the image (`nginx:1.27`), else `--tag`, else `latest`. The registry is checked before the app is created, and an image app takes no build args or build variables. A `--start-command` runs with `sh -c` in place of the image's `ENTRYPOINT` and `CMD`. A new version is a push to the tag followed by [`cloider deploy --app <app>`](/cli/commands/deploy). See [Deploy a Docker image](/apps/deploy-an-image). MCP tool: `create_app_from_image`.
 
 ```bash
 cloider app create --image nginx:1.27 --port 80
@@ -299,7 +302,7 @@ MCP tool: `delete_app`.
 
 ## cloider app update
 
-Change the port the app listens on or the command it starts with. A new port redeploys the running version; a new start command builds the app again.
+Change the port the app listens on, a cron job's schedule, or the command it starts with. A new port or schedule redeploys the running version. A new start command builds the app again, or only redeploys it for an app running your own image or built from a `Dockerfile`, which run it with `sh -c` in place of their `ENTRYPOINT` and `CMD`.
 
 ```text
 cloider app update <app> [flags]
@@ -309,6 +312,7 @@ cloider app update <app> [flags]
 | --- | --- | --- | --- |
 | `--port` | int | | Port the app listens on |
 | `--start-command` | string | | Command the app is started with. Empty (`--start-command ""`) for the detected one |
+| `--schedule` | string | | A [cron job](/apps/cron-jobs)'s schedule, in UTC. A cron job takes no `--port`, and any other app no `--schedule` |
 | `-w, --wait` | bool | `false` | Wait until the app is `Ready` again |
 | `--timeout` | duration | `15m0s` | How long `--wait` waits |
 
@@ -326,6 +330,10 @@ cloider app update blog --start-command "node server.js"
 
 ```text title="Output"
 ✓ Saved, building blog again
+```
+
+```bash
+cloider app update cleanup --schedule '*/30 * * * *'
 ```
 
 When the app hasn't deployed yet, the change is saved for the next deploy (`Saved, the next deploy uses it`). See [Settings](/apps/settings). MCP tool: `update_app_settings`.
@@ -351,7 +359,7 @@ Use it after cloning a project on a new machine, or to point a directory at a di
 
 ## cloider app logs
 
-Print the app's recent logs, or follow them as they come with `-f`.
+Print the app's recent logs, or follow them as they come with `-f`. A [cron job](/apps/cron-jobs)'s logs are its latest run's, and `-f` follows each run as it starts.
 
 ```text
 cloider app logs <app> [flags]
@@ -361,6 +369,7 @@ cloider app logs <app> [flags]
 | --- | --- | --- | --- |
 | `-f, --follow` | bool | `false` | Keep printing new lines as they come |
 | `-n, --lines` | int | `200` | Lines of history: `100`, `200`, `500` or `1000` |
+| `--run` | string | | A cron job's run to read, by its name in [`cloider app runs`](#cloider-app-runs). With `-f`, it stops once the run has finished |
 
 ```bash
 cloider app logs api -n 100
@@ -375,6 +384,54 @@ cloider app logs api -f | grep -i error
 ```
 
 Logs go to stdout. When a followed stream drops and reconnects, the CLI prints `--- reconnected, the last lines may repeat ---` to stderr. Stop following with Ctrl-C. See [Logs](/apps/logs). MCP tool: `get_app_logs`.
+
+## cloider app runs
+
+List a [cron job](/apps/cron-jobs)'s runs, newest first. The last 5 succeeded and 5 failed runs are kept, with their output.
+
+```text
+cloider app runs <app> [flags]
+```
+
+```bash
+cloider app runs cleanup
+```
+
+```text title="Output"
+NAME                   STATUS     TRIGGER   STARTED           DURATION  MESSAGE
+app-manual-1793185200  Succeeded  manual    2026-10-28 11:00  14s       -
+app-29885940           Failed     schedule  2026-10-28 03:00  3s        Exited with code 1
+app-29884500           Succeeded  schedule  2026-10-27 03:00  12s       -
+```
+
+`TRIGGER` is `schedule`, or `manual` for a run started with [`cloider app run`](#cloider-app-run) or **Run now**. Read a run's output with `cloider app logs <app> --run <name>`. MCP tool: `list_app_runs`.
+
+## cloider app run
+
+Run a [cron job](/apps/cron-jobs) now, outside its schedule, on the version it has deployed. It is refused while a run is still going.
+
+```text
+cloider app run <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-f, --follow` | bool | `false` | Print the run's output, wait for it to finish, and exit with an error when it fails |
+
+```bash
+cloider app run cleanup
+```
+
+```text title="Output"
+✓ Started run app-manual-1793185200 of cleanup
+app-manual-1793185200
+```
+
+```bash
+cloider app run cleanup -f
+```
+
+Without `-f` the run's name goes to stdout. With `-f` its output does, and the command fails with `the run failed: Exited with code 1` when the run does, which suits a CI step. MCP tool: `run_app`.
 
 ## cloider app env
 

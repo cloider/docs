@@ -35,7 +35,8 @@ shows the image and tag it follows, the login it is pulled with, and the exact i
 | **What you give Cloider** | An image and a tag | A folder, a zip or a git repository |
 | **Who builds the image** | You, anywhere | Cloider, with your `Dockerfile` or a buildpack |
 | **A new version** | Push to the tag, then deploy | Upload again, or push to the branch |
-| **Start command, build variables, build arguments** | Not used, the image's own `CMD` runs | Available |
+| **Start command** | Optional, runs with `sh -c` in place of the image's `ENTRYPOINT` and `CMD` | Available |
+| **Build variables, build arguments** | Not used, nothing is built | Available |
 | **Deploy hook URL** | Yes | No (git apps deploy on push) |
 
 ## Before you begin
@@ -61,7 +62,8 @@ shows the image and tag it follows, the login it is pulled with, and the exact i
    moves the tag into its own field. An empty tag means `latest`.
 4. Click **Continue**. Cloider looks the image up and opens the next step with the app name and port filled in.
 5. Check the **Port**, pick a subdomain, add environment variables if the image needs any, and click **Create App**.
-   There is no start command and no build variables or arguments: the image runs as it was built.
+   A **Start Command** is optional: it runs with `sh -c` in place of the image's `ENTRYPOINT` and `CMD`. There are no build variables or arguments: the image
+   runs as it was built.
 
 <Screenshot
   src="/img/screenshots/apps/new-app-image-configure.webp"
@@ -353,8 +355,8 @@ The **Port** is changed in the same tab, and saving it redeploys the running ima
 
 ## What an image app doesn't have
 
-- **Start command**, **build variables** and **build arguments**: nothing is built, so the image's own `ENTRYPOINT`
-  and `CMD` run. The API refuses them for an image app.
+- **Build variables** and **build arguments**: nothing is built. The API refuses them for an image app. A start command
+  does apply, see [Change the start command](/apps/settings#change-the-start-command).
 - **Upload a new version**: an image app is deployed by tag.
 - **Terminal and exec** need a shell in the image (`/bin/sh`). A distroless or `scratch` image has none, so the
   [terminal](/apps/terminal-and-exec) can't open in it.

@@ -20,7 +20,7 @@ Run through these first; they fix most failed deploys:
 2. **Check the port.** The app must listen on `$PORT` (or the app's **Port** must match what it listens on), on
    `0.0.0.0`.
 3. **Check how it starts.** A buildpack app needs a `start` script, a `Procfile` or a **Start command**; a `Dockerfile`
-   needs a `CMD` or `ENTRYPOINT`.
+   needs a `CMD` or `ENTRYPOINT`, or a **Start command** to run in their place.
 4. **Check its variables.** A crash right after start is often a missing environment variable such as `DATABASE_URL`.
 5. **Run it locally the same way**: `PORT=8080 npm start`, `PORT=8080 gunicorn app:app --bind 0.0.0.0:$PORT`, or
    `docker build . && docker run -e PORT=8080 -p 8080:8080 <image>`.

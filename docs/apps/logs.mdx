@@ -9,7 +9,8 @@ keywords: [cloider app logs, stream logs, tail logs, stdout stderr, cloider app 
 An app's **logs** are everything its running container prints to standard output and standard error: requests your
 framework logs, `console.log` and `print` calls, warnings and stack traces. Cloider streams them live from the app's
 container to the dashboard's **Logs** tab, to `cloider app logs`, to the REST API and to AI agents. This page shows each
-way to read them and explains what the stream keeps and what it doesn't.
+way to read them and explains what the stream keeps and what it doesn't. A [cron job](/apps/cron-jobs)'s logs are its
+runs' instead: the **Logs** tab follows its latest run, and the **Runs** tab has each kept run's output.
 
 ## At a glance
 

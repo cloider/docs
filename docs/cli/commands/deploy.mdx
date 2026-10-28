@@ -38,6 +38,7 @@ cloider deploy [dir] [flags]
 | `--name` | string | detected, else the directory name | App name (new apps only) |
 | `--port` | int | detected, else `8080` | Port the app listens on (new apps only) |
 | `--start-command` | string | detected | Command to start the app with (new apps only) |
+| `--schedule` | string | | Create a [cron job](/apps/cron-jobs) instead, run on this cron schedule in UTC, for example `'0 3 * * *'`. It has no port or subdomain (new apps only) |
 | `--subdomain` | string | `<name>-<random>` | Free subdomain to serve the app on, a label (`blog`) or a full name (`blog.cloider.app`) (new apps only) |
 | `--no-subdomain` | bool | `false` | Don't claim a free subdomain (new apps only). Can't be combined with `--subdomain` |
 | `-e, --env` | string, repeatable | | Environment variable `KEY=VALUE` (new apps only) |

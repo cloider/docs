@@ -88,7 +88,8 @@ Things to know:
 
 - The file must be named `Dockerfile` (capital D) and sit at the root. `Dockerfile.prod`, `docker/Dockerfile` or
   `dockerfile` aren't used. If you upload a zip with a single top folder, its contents are the root.
-- The **Start command** setting is ignored; the image's `CMD` or `ENTRYPOINT` starts the app.
+- The image's `ENTRYPOINT` and `CMD` start the app. A **Start command**, when you set one, runs with `sh -c` in their
+  place, so the image needs a shell. Changing it redeploys the app without building it again.
 - `EXPOSE` doesn't route anything. Traffic goes to the app's **Port**, and the container gets that port as `PORT`.
   Either listen on `$PORT`, or set the app's port to the port your image listens on.
 - The image runs as the user the Dockerfile sets. Running as root works, and so does a non-root user on a port below
@@ -343,7 +344,7 @@ messages each failure shows.
 <FAQ items={[
   {q: 'Does Cloider use my Dockerfile?', a: 'Yes. If a file named Dockerfile is at the root of your source, Cloider builds it exactly as written with BuildKit and runs its CMD. Without one, Cloider uses Cloud Native Buildpacks, or serves plain HTML as a static site.'},
   {q: 'Which buildpacks does Cloider use?', a: 'Cloider builds apps without a Dockerfile with Heroku\'s open source Cloud Native Buildpacks builder, heroku/builder:26, which covers Node.js, Python, Go, Java, Scala, PHP, Ruby and .NET.'},
-  {q: 'Does the start command work with a Dockerfile?', a: 'No. The start command is written into a Procfile for buildpack builds only. An image built from your Dockerfile starts with its own CMD or ENTRYPOINT.'},
+  {q: 'Does the start command work with a Dockerfile?', a: 'Yes. An image built from your Dockerfile runs the start command with sh -c in place of its ENTRYPOINT and CMD, and changing it only redeploys the app. Left empty, the image starts with its own ENTRYPOINT and CMD. A buildpack build writes the start command into a Procfile instead.'},
   {q: 'How do I pass a secret to docker build on Cloider?', a: 'Add it as a secret build argument. Cloider passes it as a BuildKit build secret, which you read with RUN --mount=type=secret,id=NAME,env=NAME, so it never lands in an image layer or the image history.'},
   {q: 'Why is my Next.js NEXT_PUBLIC_ variable empty?', a: 'NEXT_PUBLIC_ variables are inlined at build time. With a Dockerfile, set them as build arguments and declare them with ARG before the build step. With buildpacks, a plain environment variable or a build variable reaches the build.'},
   {q: 'Which port does my app have to listen on?', a: 'The app\'s Port setting, which the container receives as the PORT environment variable. Listen on 0.0.0.0 and that port, or change the port setting to match your app.'},

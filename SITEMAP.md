@@ -31,6 +31,7 @@ sections' pages.
 - `deploy-from-git.mdx`: GitHub, GitLab, Bitbucket, auto deploy on push
 - `deploy-from-your-computer.mdx`: `cloider deploy` and uploading source
 - `deploy-an-image.mdx`: run a prebuilt Docker image from any registry, private logins, the Deploy button and the deploy hook
+- `cron-jobs.mdx`: an app run on a cron schedule, its schedule syntax, runs, Run now, logs per run, the terminal between runs and per-run billing
 - `build-configuration.mdx`: detection, Dockerfile vs buildpacks, port, build args and build env
 - `supported-languages.mdx`
 - `environment-variables.mdx`: runtime variables and secrets

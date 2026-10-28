@@ -93,6 +93,9 @@ it pulls the image from your registry on every start, pinned to the digest its t
 You can create an app from a git repository with the CLI too (`cloider app create --git github --repo acme/api`), and
 an AI agent can do all of the above through the [MCP server](/mcp/overview).
 
+Any of these can also be a [cron job](/apps/cron-jobs): an app with no port or address that runs on a schedule, such
+as every night at 03:00 UTC, and exits.
+
 ## Create your first app
 
 The fastest path is a folder on your computer and the CLI. In the folder of a Node.js, Python, Go or any other
