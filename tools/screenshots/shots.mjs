@@ -20,6 +20,21 @@ export const params = {
   ticket: 'tk7m2',
 }
 
+// Opens the create form's Docker image dialog and fills it in for the admin app,
+// private, so the login fields show
+async function fillImageDialog(page, h) {
+  await page.getByRole('button', { name: 'Docker image' }).click()
+  const dialog = await h.dialog()
+  await dialog.locator('input[name=image]').fill('ghcr.io/acme/admin')
+  await dialog.locator('input[name=tag]').fill('v3')
+  await dialog.getByText('The image is private').click()
+  await dialog.locator('input[name=username]').fill('acme-ci')
+  await dialog.locator('.p-password input').fill('ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+  await page.evaluate(() => document.activeElement?.blur())
+  await h.sleep(300)
+  return dialog
+}
+
 export const actions = {
   // ---------- get started ----------
   'get-started/sign-in.webp': {
@@ -96,6 +111,39 @@ export const actions = {
       await page.getByText('is available').waitFor({ timeout: 10000 })
       await page.evaluate(() => document.activeElement?.blur())
     },
+  },
+  'apps/new-app-image.webp': {
+    async run(page, h) {
+      await fillImageDialog(page, h)
+    },
+  },
+  'apps/new-app-image-configure.webp': {
+    async run(page, h) {
+      const dialog = await fillImageDialog(page, h)
+      await dialog.getByRole('button', { name: 'Continue' }).click()
+      await page.getByText('Deploying the image').waitFor({ timeout: 10000 })
+      await page.getByText('is available').waitFor({ timeout: 10000 })
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
+  'apps/image-overview.webp': { run: (page, h) => h.tab('Overview') },
+  'apps/image-builds.webp': { run: (page, h) => h.tab('Builds') },
+  'apps/image-deploy-dialog.webp': {
+    async run(page, h) {
+      await h.tab('Builds')
+      await page.getByRole('button', { name: 'Deploy', exact: true }).click()
+      await h.dialog()
+      await page.evaluate(() => document.activeElement?.blur())
+    },
+  },
+  'apps/image-settings.webp': {
+    async run(page, h) {
+      await h.tab('Settings')
+      await page.getByRole('button', { name: 'Show deploy hook' }).click()
+      await page.getByText('Deploy the tag again').waitFor()
+    },
+    // the port, the image section and the deploy hook with its examples
+    viewport: { height: 1500 },
   },
   'apps/detail-overview.webp': { run: (page, h) => h.tab('Overview') },
   'apps/detail-insights.webp': { run: (page, h) => h.tab('Insights'), wait: 1200 },

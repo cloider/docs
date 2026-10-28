@@ -139,6 +139,12 @@ route('POST', '/apps/source/github', (req, res) => {
   sources.set(token, { kind: 'git', at: Date.now() })
   ok(res, { token })
 })
+// an image is looked up while the form waits, so it answers Done straight away
+route('POST', '/apps/source/image', (req, res) => {
+  const token = `src${++sourceSeq}`
+  sources.set(token, { kind: 'image', at: Date.now() })
+  ok(res, { ...fx.detection('image'), token })
+})
 route('POST', '/apps/source/:token/detect', (req, res) => ok(res, {}))
 route('GET', '/apps/source/:token', (req, res, p) => {
   const source = sources.get(p.token) ?? { kind: 'upload', at: 0 }
@@ -171,6 +177,10 @@ route('GET', '/apps/:id/terminal', (req, res, p) => ok(res, { url: `/__mock/term
 route('POST', '/apps/:id/terminal/wake', (req, res) => ok(res, {}))
 route('POST', '/apps/:id/terminal/heartbeat', (req, res) => ok(res, {}))
 route('PUT', '/apps/:id/git', (req, res) => ok(res, {}))
+route('POST', '/apps/:id/builds/image', (req, res, p) => ok(res, fx.builds[p.id]?.[0] ?? {}))
+route('PUT', '/apps/:id/image', (req, res) => ok(res, { applied: 'none' }))
+route('POST', '/apps/:id/deploy-hook', (req, res, p) => ok(res, { url: fx.deployHookUrl(p.id) }))
+route('POST', '/apps/:id/deploy-hook/rotate', (req, res, p) => ok(res, { url: fx.deployHookUrl(p.id) }))
 
 // git
 for (const [provider, slug] of [['GitHub', 'github'], ['GitLab', 'gitlab'], ['Bitbucket', 'bitbucket']]) {

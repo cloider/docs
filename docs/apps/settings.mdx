@@ -19,6 +19,8 @@ change them from every tool.
 | **Start command** | Apps built by buildpacks | Rebuilds the source the app is serving, as a new version |
 | **Branch** | Git apps | Nothing until the next push or **Deploy latest commit** |
 | **Auto deploy on push** | Git apps | Turns deploys on push on or off |
+| **Image**, **Tag**, registry login | Image apps | Checks them with the registry, then deploys when the tag points at a different image |
+| **Deploy hook** | Image apps | Shows the URL that deploys the app, or replaces it with **Regenerate** |
 
 - Port and start command changes are refused while a build is running or the app is paused (the **Save changes** button
   says why: **A build is already running** or **Resume the app to change its settings**).
@@ -181,6 +183,28 @@ On GitLab and Bitbucket, turning auto deploy on also adds the webhook that deliv
 role (GitLab) or admin access (Bitbucket); without it, auto deploy switches itself back off. If the connection behind
 the repository is gone or suspended, the section says so and the app can't deploy from git. See
 [Deploy from git](/apps/deploy-from-git#change-the-branch-or-turn-auto-deploy-off) for every tool.
+
+## Change an image app's image, tag or login
+
+An app [created from a Docker image](/apps/deploy-an-image) has an **Image** section in place of the start command,
+with the **Image**, the **Tag** and **The image is private** switch for its login. Saving checks them with the registry
+first and refuses what it can't pull, then deploys when the tag now points at a different image. An empty **Token or
+password** keeps the saved one for the same username.
+
+```bash
+cloider app image admin --tag v4
+cloider app image admin --no-login
+```
+
+The **Deploy hook** section below it shows the URL that deploys the app when your CI calls it. See
+[Deploy from CI with a deploy hook](/apps/deploy-an-image#deploy-from-ci-with-a-deploy-hook).
+
+<Screenshot
+  src="/img/screenshots/apps/image-settings.webp"
+  url="/dashboard/apps/admin-d6h3t"
+  alt="The Settings tab of the admin image app with the Port, the Image section holding ghcr.io/acme/admin, tag v3 and the acme-ci login, and the Deploy hook section showing its URL and curl examples"
+  caption="The Settings tab of an image app: no start command, an Image section and the deploy hook."
+/>
 
 ## Where are pause and delete?
 

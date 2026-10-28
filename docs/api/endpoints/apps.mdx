@@ -24,9 +24,14 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | POST | [`/apps/source/github`](#import-source-from-a-git-repository) | Write |
 | POST | [`/apps/source/gitlab`](#import-source-from-a-git-repository) | Write |
 | POST | [`/apps/source/bitbucket`](#import-source-from-a-git-repository) | Write |
+| POST | [`/apps/source/image`](#create-an-app-from-an-image) | Write |
 | POST | [`/apps`](#step-5-create-the-app) | Write |
 | PUT | [`/apps/:hashed_id/settings`](#change-the-port-or-start-command) | Write |
 | PUT | [`/apps/:hashed_id/git`](#change-the-branch-or-auto-deploy) | Write |
+| PUT | [`/apps/:hashed_id/image`](#change-an-image-apps-image-or-login) | Write |
+| POST | [`/apps/:hashed_id/deploy-hook`](#deploy-hook) | Write |
+| POST | [`/apps/:hashed_id/deploy-hook/rotate`](#deploy-hook) | Write |
+| POST | [`/deploy-hooks/apps/:hashed_id/:secret`](#deploy-hook) | None, the URL is the credential |
 | GET | [`/apps/:hashed_id/env`](#list-variables) | Read |
 | PUT | [`/apps/:hashed_id/env`](#replace-the-runtime-environment) | Write |
 | GET | [`/apps/:hashed_id/env/value`](#reveal-a-secret-value) | Read |
@@ -66,6 +71,9 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
   "repo_branch": "main",
   "auto_deploy": true,
   "git_connected": true,
+  "image": "",
+  "image_tag": "",
+  "image_username": "",
   "image_ref": "registry.cloider.com/acme-apps/blog-a8q2w:3",
   "dockerfile_args": [],
   "version": "3",
@@ -93,6 +101,8 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | `repo_full_name`, `repo_url`, `repo_branch` | string | The repository and branch the app deploys from. Empty for an uploaded app |
 | `auto_deploy` | boolean | Whether a push to `repo_branch` builds a new version |
 | `git_connected` | boolean | Whether the git connection the repository is read through still exists |
+| `image`, `image_tag` | string | The image and tag an [image app](/apps/deploy-an-image) runs. Empty for an app built from source |
+| `image_username` | string | The username an image app's image is pulled with, empty for a public image. The token is never returned |
 | `image_ref` | string | The image the app is running. Empty until a build has deployed |
 | `dockerfile_args` | object list | The `ARG`s the source's Dockerfile declares, each with a `name` and a `default` (or `null`) |
 | `version` | string | The version of the build being served. Empty until the first deploy |
@@ -395,6 +405,125 @@ The import starts with the status `Fetching`. When the repository can't be read,
 | `400` | `source` | `That repository name is not one we can read.`, `Pick a project to import.`, `Pick a branch to deploy from.` |
 | `400` | `_` | `This GitHub installation is suspended. Re-enable it there to import from it.` (and the same for the other providers) |
 | `404` | `_` | `This GitHub connection is no longer available, reconnect it!` |
+
+## Create an app from an image
+
+```http
+POST /apps/source/image
+```
+
+Stages a Docker image you built as the app's source, instead of an upload or a repository. Cloider looks the tag up on
+the image's registry before answering, so the response is already `Done` and there is nothing to poll: create the app
+with its `token` through [`POST /apps`](#step-5-create-the-app), leaving out `start_command`, `build_env_vars` and
+`build_args`, which an image app refuses. See [Deploy a Docker image](/apps/deploy-an-image).
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `image` | string | Yes | The image the way `docker pull` takes it, for example `nginx` or `ghcr.io/acme/api`. A tag written into it is used when `tag` is empty |
+| `tag` | string | No | The tag, `latest` when empty. Digests aren't accepted |
+| `username` | string | No | The registry login's username, for a private image |
+| `password` | string | With `username` | The registry login's token or password, ideally one that can only pull |
+
+```bash
+curl -X POST https://cloider.com/api/apps/source/image \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"image": "ghcr.io/acme/api", "tag": "v1", "username": "acme", "password": "'"$GHCR_TOKEN"'"}'
+```
+
+```json title="Response"
+{
+  "token": "4b8e1d0c7a2f9e6b3d5c8a1f0e7d2b9c",
+  "status": "Done",
+  "app_name": "api",
+  "language": "",
+  "framework": "",
+  "port": 8080,
+  "message": "",
+  "build_args": [],
+  "image": {"image": "ghcr.io/acme/api", "tag": "v1", "digest": "sha256:9c1f3a...", "username": "acme"}
+}
+```
+
+`port` is the one TCP port the image exposes, or `0` when it exposes none or several. The first version deploys the
+image at `digest`.
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `image` | `Enter the image to deploy.` |
+| `400` | `image` | `ghcr.io/acme/api does not exist or is private. If it is private, add a login for its registry.` |
+| `400` | `image` | `This image has no linux/amd64 build, which is what apps run on. Build it with --platform linux/amd64.` |
+| `400` | `image` | `This registry is not on a public address, apps can only pull from public registries.` |
+| `400` | `tag` | `ghcr.io/acme/api has no tag v1.` |
+| `400` | `username` | `Enter the username this token belongs to.` |
+| `400` | `password` | `Enter the token or password for this login.`, `The registry refused this login, check the username and the token, and that it can pull ghcr.io/acme/api.` |
+
+## Change an image app's image or login
+
+```http
+PUT /apps/:hashed_id/image
+```
+
+Changes the image an image app runs, its tag, or its registry login. The new values are checked with the registry and
+only saved once it accepts them; the app then deploys when the tag points at a different image than the one running.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `image` | string | Yes | The image, as for [`POST /apps/source/image`](#create-an-app-from-an-image) |
+| `tag` | string | No | The tag, `latest` when empty |
+| `username` | string | No | The login's username. Empty pulls without a login |
+| `password` | string or null | No | The login's token. `null` keeps the saved one, for the same `username` |
+
+```bash
+curl -X PUT https://cloider.com/api/apps/a8q2w/image \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"image": "ghcr.io/acme/api", "tag": "v3", "username": "acme", "password": null}'
+```
+
+```json title="Response"
+{"applied": "build", "build": {"hashed_id": "u9e3k", "version": "4", "status": "Queued"}}
+```
+
+`applied` is `build` when a new version started, the [build object](/api/endpoints/app-builds#the-build-object) in
+`build`, or `none` when the tag still points at the running image. The errors are those of
+[`POST /apps/source/image`](#create-an-app-from-an-image), plus `This app was not created from an image.`
+
+## Deploy hook
+
+```http
+POST /apps/:hashed_id/deploy-hook
+POST /apps/:hashed_id/deploy-hook/rotate
+POST /deploy-hooks/apps/:hashed_id/:secret
+```
+
+An image app's deploy hook is a URL that deploys the app when it receives a `POST`, with no API token: for a CI job to
+call after it pushed the image, or for a registry's push webhook. `POST /apps/:hashed_id/deploy-hook` returns the URL,
+creating it the first time, and `/rotate` replaces it so the previous URL stops working. Both answer
+`{"url": "https://cloider.com/api/deploy-hooks/apps/a8q2w/..."}` and need a Read & Write token.
+
+Calling the URL pulls the app's tag again. A `tag` in the query string (`?tag=v2`) or in a JSON body (`{"tag": "v2"}`)
+deploys that tag instead, and the app follows it from then on.
+
+```bash
+curl -X POST "https://cloider.com/api/deploy-hooks/apps/a8q2w/<secret>?tag=v2"
+```
+
+```json title="Response (202)"
+{"deployed": true, "build_hashed_id": "u9e3k", "version": "4", "image_ref": "ghcr.io/acme/api@sha256:9c1f3a..."}
+```
+
+| Status | Meaning |
+| --- | --- |
+| `202` | A new version is deploying |
+| `200` | `{"deployed": false}`: the tag still points at the running image |
+| `404` | The app or the secret is wrong, or the URL was regenerated |
+| `409` | The app is already deploying, is paused or being deleted, or the account is suspended |
+| `422` | The image can't be read, with the message in `errors._`, for example `ghcr.io/acme/api has no tag v2.` |
 
 ## Change the port or start command
 

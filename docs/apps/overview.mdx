@@ -28,7 +28,7 @@ manifests to manage. This page explains how App Engine works, what it costs, its
 <Screenshot
   src="/img/screenshots/apps/list.webp"
   url="/dashboard/apps"
-  alt="The Apps page listing three apps, blog, api and web, with their source, version and status"
+  alt="The Apps page listing four apps, blog from a GitHub repository, api and web from uploads, and admin from a Docker image, with their source, version and status"
   caption="The Apps page lists every app in the account with its source, live version and status."
 />
 
@@ -78,6 +78,9 @@ manages it for you: you can browse its images, but you can't delete them or chan
 image the app is running and the one deployed before it, deletes older and failed images after each build, and
 deletes an app's images when you delete the app.
 
+An app [created from a Docker image](/apps/deploy-an-image) is the exception: Cloider doesn't build or copy its image,
+it pulls the image from your registry on every start, pinned to the digest its tag pointed at when it was deployed.
+
 ## Ways to deploy an app
 
 | Method | Best for | Later versions |
@@ -85,6 +88,7 @@ deletes an app's images when you delete the app.
 | [Import a git repository](/apps/deploy-from-git) (GitHub, GitLab, Bitbucket) | Teams with code in git | Every push to the branch deploys automatically, or click **Deploy latest commit** |
 | [`cloider deploy`](/apps/deploy-from-your-computer) from a directory | Developers, scripts, CI, AI agents | Run `cloider deploy` again in the same directory |
 | [Upload in the dashboard](/apps/deploy-from-your-computer#upload-your-source-in-the-dashboard) | Quick tests, static sites, a zip from somewhere else | Click **Deploy new version** and upload again |
+| [Deploy a Docker image](/apps/deploy-an-image) from any registry | Teams that build their own images in CI | Push to the tag, then click **Deploy**, run `cloider deploy --app`, or call the app's deploy hook |
 
 You can create an app from a git repository with the CLI too (`cloider app create --git github --repo acme/api`), and
 an AI agent can do all of the above through the [MCP server](/mcp/overview).
@@ -106,7 +110,7 @@ supported project, run:
 <Screenshot
   src="/img/screenshots/apps/new-app.webp"
   url="/dashboard/apps/new-app"
-  alt="The new app page offering GitHub, GitLab and Bitbucket imports or a source upload"
+  alt="The new app page offering GitHub, GitLab and Bitbucket imports, a Docker image, or a source upload"
   caption="Choose where the app's code comes from."
 />
 

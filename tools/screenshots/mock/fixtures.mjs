@@ -143,6 +143,20 @@ export const newApiToken = 'cldr_xxxxxxxxxxxxxxxxxxxxxxxx'
 
 const blogImage = 'registry.cloider.com/jane-apps/blog-b7x2k:12'
 
+// The digests the admin app's tags pointed at, newest first. Made up, the shape of a sha256
+const adminDigests = [
+  'sha256:3f9a1c7e5b2d8046a1e9c3b7d5f2a8e4c6b0d9f1a3e5c7b9d2f4a6c8e0b1d3f5',
+  'sha256:8c2e4a6b0d1f3e5a7c9b2d4f6a8c0e1b3d5f7a9c2e4b6d8f0a1c3e5b7d9f2a4c',
+  'sha256:b5d7f9a1c3e2b4d6f8a0c2e4b6d8f1a3c5e7b9d0f2a4c6e8b1d3f5a7c9e0b2d4',
+  'sha256:e1c3a5b7d9f0e2c4a6b8d1f3e5a7c9b0d2f4a6c8e1b3d5f7a9c0e2b4d6f8a1c3',
+]
+const adminImage = (i) => `ghcr.io/acme/admin@${adminDigests[i]}`
+export const adminDigest = adminDigests[0]
+
+// The deploy hook url of an image app, its secret made up
+export const deployHookUrl = (appId) =>
+  `https://cloider.com/api/deploy-hooks/apps/${appId}/7d2f9a4c1e8b6d3f0a5c2e9b7d4f1a6c8e3b5d0f2a7c9e4b`
+
 export const apps = [
   {
     hashed_id: 'b7x2k', app_name: 'blog', app_label: 'blog', port: 3000, start_command: '',
@@ -156,6 +170,7 @@ export const apps = [
     source_filename: 'blog.zip', source_size: 1843200, uploaded: true,
     repo_full_name: 'acme/blog', repo_url: 'https://github.com/acme/blog', repo_branch: 'main',
     git_provider: 'GitHub', auto_deploy: true, git_connected: true,
+    image: '', image_tag: '', image_username: '',
     created_at: ago(46),
   },
   {
@@ -167,6 +182,7 @@ export const apps = [
     domains: [{ domain_name: 'api-m2p9.cloider.app', domain_type: 'Subdomain' }],
     source_filename: 'api.zip', source_size: 524288, uploaded: true,
     repo_full_name: '', repo_url: '', repo_branch: '', git_provider: 'GitHub', auto_deploy: false, git_connected: false,
+    image: '', image_tag: '', image_username: '',
     created_at: ago(31),
   },
   {
@@ -177,7 +193,20 @@ export const apps = [
     domains: [{ domain_name: 'web-q4m8.cloider.app', domain_type: 'Subdomain' }],
     source_filename: 'web.zip', source_size: 3355443, uploaded: true,
     repo_full_name: '', repo_url: '', repo_branch: '', git_provider: 'GitHub', auto_deploy: false, git_connected: false,
+    image: '', image_tag: '', image_username: '',
     created_at: ago(24),
+  },
+  // runs an image built in Acme's own CI rather than one Cloider builds
+  {
+    hashed_id: 'd6h3t', app_name: 'admin', app_label: 'admin', port: 8080, start_command: '',
+    status: 'Ready', language: '', framework: '',
+    image_ref: adminImage(0), dockerfile_args: [], version: '4',
+    url: 'https://admin-r5t1.cloider.app',
+    domains: [{ domain_name: 'admin-r5t1.cloider.app', domain_type: 'Subdomain' }],
+    source_filename: '', source_size: 0, uploaded: false,
+    repo_full_name: '', repo_url: '', repo_branch: '', git_provider: 'GitHub', auto_deploy: false, git_connected: false,
+    image: 'ghcr.io/acme/admin', image_tag: 'v3', image_username: 'acme-ci',
+    created_at: ago(12),
   },
 ]
 
@@ -192,7 +221,7 @@ const commits = [
 function build(i, fields) {
   return {
     hashed_id: `bd${i}`, attempt: 1, source_filename: 'blog.zip', source_size: 1843200,
-    commit_sha: '', commit_message: '', image_ref: '', message: '',
+    commit_sha: '', commit_message: '', source_image: '', image_ref: '', message: '',
     ...fields,
   }
 }
@@ -234,6 +263,26 @@ export const builds = {
     build(35, {
       version: '5', status: 'Ready', source_filename: 'web.zip', source_size: 3355443,
       image_ref: 'registry.cloider.com/jane-apps/web-w3n8r:5', started_at: ago(9, 2), finished_at: ago(9, 1, 57), created_at: ago(9, 2),
+    }),
+  ],
+  // nothing is built: each deploy pins the digest the tag pointed at
+  d6h3t: [
+    build(44, {
+      version: '4', status: 'Ready', source_filename: '', source_size: 0, source_image: 'ghcr.io/acme/admin:v3',
+      image_ref: adminImage(0), started_at: ago(0, 5, 41), finished_at: ago(0, 5, 40), created_at: ago(0, 5, 41),
+    }),
+    build(43, {
+      version: '3', status: 'Superseded', source_filename: '', source_size: 0, source_image: 'ghcr.io/acme/admin:v3',
+      image_ref: adminImage(1), started_at: ago(2, 3), finished_at: ago(2, 2, 59), created_at: ago(2, 3),
+    }),
+    build(42, {
+      version: '2', status: 'Failed', source_filename: '', source_size: 0, source_image: 'ghcr.io/acme/admin:v3',
+      image_ref: adminImage(2), message: 'The app did not start in time',
+      started_at: ago(5, 1), finished_at: ago(5, 0, 55), created_at: ago(5, 1),
+    }),
+    build(41, {
+      version: '1', status: 'Superseded', source_filename: '', source_size: 0, source_image: 'ghcr.io/acme/admin:v2',
+      image_ref: adminImage(3), started_at: ago(12, 2), finished_at: ago(12, 1, 59), created_at: ago(12, 2),
     }),
   ],
 }
@@ -384,6 +433,13 @@ export function detection(kind) {
         provider: 'GitHub', repo_full_name: 'acme/blog', repo_url: 'https://github.com/acme/blog', branch: 'main',
         commit_sha: commits[0][0], commit_message: commits[0][1],
       },
+    }
+  }
+  if (kind == 'image') {
+    return {
+      status: 'Done', app_name: 'admin', language: '', framework: '', port: 8080, message: '',
+      build_args: [],
+      image: { image: 'ghcr.io/acme/admin', tag: 'v3', digest: adminDigest, username: 'acme-ci' },
     }
   }
   return {

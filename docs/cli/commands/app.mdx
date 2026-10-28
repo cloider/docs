@@ -20,7 +20,7 @@ cloider app <command> [flags]
 | --- | --- |
 | [`cloider app list`](#cloider-app-list) | List apps |
 | [`cloider app get`](#cloider-app-get) | Show an app |
-| [`cloider app create`](#cloider-app-create) | Create an app from a git repository (use `cloider deploy` for a directory) |
+| [`cloider app create`](#cloider-app-create) | Create an app from a git repository or a Docker image (use `cloider deploy` for a directory) |
 | [`cloider app deploy`](/cli/commands/deploy) | Deploy a directory as an app, creating the app the first time (same as `cloider deploy`) |
 | [`cloider app open`](#cloider-app-open) | Open the app's URL in the browser |
 | [`cloider app status`](#cloider-app-status) | Print the app's status |
@@ -38,6 +38,8 @@ cloider app <command> [flags]
 | [`cloider app build logs`](#cloider-app-build-logs) | Print a build's output, following it while it runs |
 | [`cloider app build retry`](#cloider-app-build-retry) | Run a failed build again |
 | [`cloider app git`](#cloider-app-git) | Change the branch a git app deploys from, or its auto deploy |
+| [`cloider app image`](#cloider-app-image) | Change the image an app created from one runs, or its registry login |
+| [`cloider app deploy-hook`](#cloider-app-deploy-hook) | Print the URL that deploys an app created from an image |
 | [`cloider app shell`](#cloider-app-shell) | Open a shell inside the app's container |
 | [`cloider app exec`](#cloider-app-exec) | Run a command in the app's container, for scripts and AI agents |
 
@@ -98,16 +100,21 @@ Created:        2026-08-30 16:45
 
 ## cloider app create
 
-Create an app that deploys from a git repository. The repository must be reachable through a connected GitHub, GitLab or Bitbucket account, see [`cloider git connect`](/cli/commands/git#cloider-git-connect). Like the first `cloider deploy`, it detects the language, framework and port, claims a free subdomain, creates the app and follows its first build until the app is up.
+Create an app that deploys from a git repository, or one that runs a Docker image you built. A repository must be reachable through a connected GitHub, GitLab or Bitbucket account, see [`cloider git connect`](/cli/commands/git#cloider-git-connect). Like the first `cloider deploy`, it detects the language, framework and port (for an image, the port it exposes), claims a free subdomain, creates the app and follows its first build until the app is up.
 
 ```text
 cloider app create --git <provider> --repo <owner/repo> [flags]
+cloider app create --image <image[:tag]> [flags]
 ```
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--git` | string | (required) | Git provider: `github`, `gitlab` or `bitbucket` |
-| `--repo` | string | (required) | Repository, for example `acme/api` |
+| `--git` | string | | Git provider: `github`, `gitlab` or `bitbucket`. Needs `--repo`. Either this or `--image` is required |
+| `--repo` | string | | Repository, for example `acme/api` |
+| `--image` | string | | Docker image to run, for example `nginx:1.27` or `ghcr.io/acme/admin` |
+| `--tag` | string | `latest` | Tag of `--image` when it doesn't name one. Giving a tag both ways is an error |
+| `--registry-username` | string | | Username to pull a private image with |
+| `--registry-password-stdin` | bool | `false` | Read the registry token from stdin. Without it, a terminal asks for it |
 | `--branch` | string | the repository's default | Branch to deploy |
 | `--installation` | string | the only one | Connected account to import through, by id or account name, when several are connected |
 | `--name` | string | detected, else the repository name | App name |
@@ -144,6 +151,15 @@ cloider app create --git gitlab --repo acme/web --branch main --name web --port 
 ```
 
 The variable flags work exactly as for [`cloider deploy`](/cli/commands/deploy#environment-variables-build-args-and-build-variables). Build output goes to stderr and the app's URL to stdout. If the repository isn't found, the error says so, and notes when the provider lists only some repositories. See [Deploy from git](/apps/deploy-from-git). MCP tool: `create_app_from_git`.
+
+With `--image`, the tag is the one written into the image (`nginx:1.27`), else `--tag`, else `latest`. The registry is checked before the app is created, and an image app takes no `--start-command`, build args or build variables. A new version is a push to the tag followed by [`cloider deploy --app <app>`](/cli/commands/deploy). See [Deploy a Docker image](/apps/deploy-an-image). MCP tool: `create_app_from_image`.
+
+```bash
+cloider app create --image nginx:1.27 --port 80
+cloider app create --image nginx --tag 1.27 --port 80     # the same
+cloider app create --image nginx --port 80                # nginx:latest
+echo "$GHCR_TOKEN" | cloider app create --image ghcr.io/acme/admin --tag v3 --registry-username acme-ci --registry-password-stdin
+```
 
 ## cloider app open
 
@@ -547,6 +563,54 @@ cloider app git api --auto-deploy=false
 ```
 
 For an app deployed from uploads it fails with `this app is deployed from uploads, not from git`. See [Deploy from git](/apps/deploy-from-git). MCP tool: `update_app_git`.
+
+## cloider app image
+
+Change the image an app created from an image runs, its tag, or the login it is pulled with. The registry is checked first, and the app deploys when the tag now points at a different image. To deploy the same tag again after a push, use `cloider deploy --app <app>`.
+
+```text
+cloider app image <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--image` | string | | Image to run, with or without a tag |
+| `--tag` | string | | Tag to run. With a new `--image` that names no tag, `latest` when left out |
+| `--registry-username` | string | | Username to pull the image with |
+| `--registry-password-stdin` | bool | `false` | Read the registry token from stdin. Without it, a terminal asks for it |
+| `--no-login` | bool | `false` | Pull without a login, for a public image. Can't be combined with `--registry-username` |
+| `--wait` | bool | `false` | Wait until the app is up again |
+
+```bash
+cloider app image api --tag v3
+echo "$TOKEN" | cloider app image api --registry-username acme --registry-password-stdin
+cloider app image api --no-login
+```
+
+```text title="Output"
+✓ Saved, deploying api
+```
+
+For an app built from source it fails with `this app is built from source, not deployed from an image`. See [Deploy a Docker image](/apps/deploy-an-image#change-the-image-or-its-login). MCP tool: `update_app_image`.
+
+## cloider app deploy-hook
+
+Print the app's deploy hook: a URL that deploys an app created from an image when it receives a `POST`, for CI to call once it pushed the image, or for a registry's push webhook. `?tag=<tag>` deploys that tag, which the app then follows.
+
+```text
+cloider app deploy-hook <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--rotate` | bool | `false` | Replace the URL. The old one stops working |
+
+```bash
+cloider app deploy-hook api
+curl -X POST "$(cloider app deploy-hook api)?tag=v2"
+```
+
+The URL goes to stdout. Anyone with it can deploy the app, so keep it secret. See [Deploy from CI with a deploy hook](/apps/deploy-an-image#deploy-from-ci-with-a-deploy-hook). MCP tool: `get_app_deploy_hook`.
 
 ## cloider app shell
 

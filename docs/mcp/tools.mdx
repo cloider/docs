@@ -17,10 +17,10 @@ This page lists every tool the Cloider MCP server (`cloider mcp`) offers, groupe
 | [`databases`](#database-tools-databases) | 16 | 6 | 8 | 2 |
 | [`buckets`](#object-storage-tools-buckets) | 29 | 13 | 8 | 9 |
 | [`registry`](#container-registry-tools-registry) | 23 | 8 | 7 | 8 |
-| [`apps`](#app-tools-apps) | 23 | 10 | 9 | 4 |
+| [`apps`](#app-tools-apps) | 26 | 10 | 12 | 4 |
 | [`domains`](#domain-dns-and-target-tools-domains) | 12 | 4 | 5 | 3 |
 | [`support`](#support-tools-support) | 5 | 3 | 2 | 0 |
-| **All** | **123** | **54** | **42** | **28** |
+| **All** | **126** | **54** | **45** | **28** |
 
 - **Read only** tools change nothing. They are the only tools `cloider mcp --read-only` offers.
 - **Changes resources** tools create or update something but don't delete anything.
@@ -1217,9 +1217,9 @@ Delete an immutability rule; the tags it protected can be pushed over and delete
 
 ## App tools (apps)
 
-The `apps` toolset deploys and runs [apps](/apps/overview): deploy a directory from the machine the MCP server runs on, create an app from a GitHub, GitLab or Bitbucket repository, follow builds, read logs, manage environment variables, build args and build environments, run commands in the app's container, and pause, resume or delete apps. `deploy_app` and `create_app_from_git` follow the build until the app is up, reporting progress as they go, unless `detach` is set.
+The `apps` toolset deploys and runs [apps](/apps/overview): deploy a directory from the machine the MCP server runs on, create an app from a GitHub, GitLab or Bitbucket repository or from a Docker image, follow builds, read logs, manage environment variables, build args and build environments, run commands in the app's container, and pause, resume or delete apps. `deploy_app`, `create_app_from_git` and `create_app_from_image` follow the build until the app is up, reporting progress as they go, unless `detach` is set.
 
-Tools: `list_apps`, `get_app`, `deploy_app`, `create_app_from_git`, `pause_app`, `resume_app`, `delete_app`, `update_app_settings`, `update_app_git`, `get_app_logs`, `list_app_builds`, `get_app_build_logs`, `retry_app_build`, `list_app_variables`, `get_app_variable`, `set_app_variables`, `unset_app_variables`, `app_exec`, `list_git_installations`, `list_git_repositories`, `list_git_branches`, `connect_git_provider`, `disconnect_git_installation`.
+Tools: `list_apps`, `get_app`, `deploy_app`, `create_app_from_git`, `create_app_from_image`, `pause_app`, `resume_app`, `delete_app`, `update_app_settings`, `update_app_git`, `update_app_image`, `get_app_deploy_hook`, `get_app_logs`, `list_app_builds`, `get_app_build_logs`, `retry_app_build`, `list_app_variables`, `get_app_variable`, `set_app_variables`, `unset_app_variables`, `app_exec`, `list_git_installations`, `list_git_repositories`, `list_git_branches`, `connect_git_provider`, `disconnect_git_installation`.
 
 
 ### list_apps
@@ -1246,10 +1246,10 @@ Show an app: status, URL, version, detected language and framework, port, start 
 
 ### deploy_app
 
-Deploy a directory on this machine as an app. The first deploy zips it (leaving out what .gitignore and .cloiderignore list, up to 2000 files and 100 MB), detects the language, framework and port, creates the app with a free subdomain, and links the directory to it in .cloider/app.json; later deploys from the directory build a new version. With git, builds the latest commit of a git app's branch instead. Follows the build until the app is up and answers its URL, unless detach. The params for a new app are ignored when deploying to an existing one.
+Deploy a directory on this machine as an app. The first deploy zips it (leaving out what .gitignore and .cloiderignore list, up to 2000 files and 100 MB), detects the language, framework and port, creates the app with a free subdomain, and links the directory to it in .cloider/app.json; later deploys from the directory build a new version. With git, builds the latest commit of a git app's branch instead. With tag, deploys an app created from an image: the tag is pulled again and the image it points at goes live, pass the app's own tag (see get_app) after a push to it. Follows the build until the app is up and answers its URL, unless detach. The params for a new app are ignored when deploying to an existing one.
 
 :::note
-`dir` is required unless `git` is true, and `git` needs `app`. `dir` must be an absolute path on the machine the MCP server runs on.
+`dir` is required unless `git` is true or `tag` is given, and both `git` and `tag` need `app`. `dir` must be an absolute path on the machine the MCP server runs on.
 :::
 
 | Effect | Idempotent | Annotations | Runs |
@@ -1261,6 +1261,7 @@ Deploy a directory on this machine as an app. The first deploy zips it (leaving 
 | `dir` | string | No | Absolute path of the directory to deploy. |
 | `app` | string | No | Deploy to this existing app instead of the one the directory is linked to. |
 | `git` | boolean | No | Build the latest commit of the app's git branch instead of uploading, needs app. |
+| `tag` | string | No | For an app created from an image, the tag to deploy, which the app then follows. Needs app. |
 | `name` | string | No | App name for a new app (default: what detection finds, else the directory or repository name). |
 | `port` | integer | No | Port a new app listens on (default: detected, else 8080). |
 | `start_command` | string | No | Command a new app starts with (default: detected). |
@@ -1300,6 +1301,32 @@ Create an app that deploys from a GitHub, GitLab or Bitbucket repository, reacha
 | `build_env` | object | No | Buildpack build variables of a new app, for an app without a Dockerfile. |
 | `secret_build_env` | object | No | Secret buildpack build variables of a new app. |
 | `detach` | boolean | No | Return once the build starts instead of following it until the app is up. |
+
+### create_app_from_image
+
+Create an app that runs a Docker image already built, from any registry, given the way docker pull takes it. The registry is checked first: the image needs a linux/amd64 build, and a private one needs registry_username and registry_password. Every deploy pins the digest its tag points at then, so a new version is a push to the tag and deploy_app with app and tag. The port defaults to the one the image exposes. Follows the first deploy until the app is up, unless detach.
+
+:::note
+`registry_password` is passed to the CLI on stdin, never on its command line.
+:::
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider app create`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `image` | string | Yes | The image, e.g. nginx:1.27 or ghcr.io/acme/api. |
+| `tag` | string | No | The tag, when image doesn't name one (default: latest). |
+| `registry_username` | string | No | Username to pull a private image with. |
+| `registry_password` | string | No | Token or password for registry_username, ideally one that can only pull. |
+| `name` | string | No | App name (default: the image's name). |
+| `port` | integer | No | Port the image listens on (default: the one it exposes, else 8080). |
+| `subdomain` | string | No | Free subdomain the app is served on, a label or a full name (default: `<name>-<random>`). |
+| `no_subdomain` | boolean | No | Don't claim a free subdomain. |
+| `env` | object | No | Environment variables, `{"KEY": "value"}`. |
+| `secret_env` | object | No | Secret environment variables, never listed back. |
+| `detach` | boolean | No | Return once the deploy starts instead of following it until the app is up. |
 
 ### pause_app
 
@@ -1369,6 +1396,37 @@ Change the branch a git app deploys from, or whether a push deploys it. Neither 
 | `app` | string | Yes | Name or id of the app. |
 | `branch` | string | No | Branch to deploy from. |
 | `auto_deploy` | boolean | No | Deploy on every push to the branch. |
+
+### update_app_image
+
+Change the image an app created from an image runs, its tag, or the login it is pulled with. The registry is checked first, and the app deploys when the tag now points at a different image. To deploy the same tag again after a push, use deploy_app with app and tag.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider app image`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `image` | string | No | The image to run, with or without a tag. |
+| `tag` | string | No | The tag to run. |
+| `registry_username` | string | No | Username to pull a private image with. |
+| `registry_password` | string | No | Token or password for registry_username, ideally one that can only pull. |
+| `no_login` | boolean | No | Pull without a login, for a public image. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
+### get_app_deploy_hook
+
+The url that deploys an app created from an image when it receives a POST, for CI to call after a push (`?tag=<tag>` deploys that tag) or a registry's push webhook. Anyone with it can deploy the app; rotate replaces it and the old one stops working.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider app deploy-hook`](/cli/commands/app) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `rotate` | boolean | No | Replace the url, the old one stops working. |
 
 ### get_app_logs
 
@@ -1828,7 +1886,7 @@ Some CLI commands are interactive or only make sense in a terminal, so `cloider 
 - [`cloider mcp` command reference](/cli/commands/mcp)
 
 <FAQ items={[
-  {q: 'How many tools does the Cloider MCP server have?', a: '123 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 54 of them only read, 42 create or change resources, and 28 are destructive, which includes the three exec tools.'},
+  {q: 'How many tools does the Cloider MCP server have?', a: '126 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 54 of them only read, 45 create or change resources, and 28 are destructive, which includes the three exec tools.'},
   {q: 'Which Cloider MCP tools are destructive?', a: 'Every delete tool, the tools that replace a whole setting (bucket policy, lifecycle and CORS rules, retention rules), uploads (which overwrite files with the same key), unsetting app variables, untagging and running retention, disconnecting a git account, and the exec tools app_exec, cluster_exec and database_exec. They all carry destructiveHint, so clients ask before running them.'},
   {q: 'Can the MCP server show a database password?', a: 'Yes, with get_database_password, which is read only. get_database returns the connection details without the password, so a client can let the agent read connection details freely and still ask before it reads the password.'},
   {q: 'Can the agent deploy code from my computer?', a: 'Yes. deploy_app uploads a directory on the machine the MCP server runs on, given as an absolute path in dir, detects the language and port, and follows the build until the app is up.'},

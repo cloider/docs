@@ -33,6 +33,7 @@ cloider deploy [dir] [flags]
 | --- | --- | --- | --- |
 | `--app` | string | the linked app | App to deploy to, instead of the linked one |
 | `--git` | bool | `false` | Build the latest commit of the app's branch instead of uploading |
+| `--tag` | string | | For an app created from an image: the tag to deploy, which the app then follows. Empty pulls its own tag again. Can't be combined with `--git` |
 | `-d, --detach` | bool | `false` | Don't wait for the build |
 | `--name` | string | detected, else the directory name | App name (new apps only) |
 | `--port` | int | detected, else `8080` | Port the app listens on (new apps only) |
@@ -208,6 +209,20 @@ https://api-x2p7.cloider.app
 ```
 
 In a directory linked to the app, `--app` can be left out. Without either, it fails with `--git needs an app, give --app or run it in a linked directory` (exit code `2`).
+
+## Deploy an image app (--tag)
+
+For an app [created from a Docker image](/apps/deploy-an-image), `cloider deploy --app` uploads nothing: it pulls the
+app's tag again and deploys the image it points at, or the tag `--tag` names, which the app follows from then on.
+
+```bash
+cloider deploy --app api             # after pushing a new image to the app's tag
+cloider deploy --app api --tag v2
+```
+
+When the tag still points at the running image, it fails with `The app is already running the image ghcr.io/acme/api:v2
+points at. Push a new image to the tag, or deploy another tag.` `--tag` on an app built from source fails with `--tag is
+for an app created from an image, api is built from source` (exit code `2`).
 
 ## Don't wait for the build (--detach)
 

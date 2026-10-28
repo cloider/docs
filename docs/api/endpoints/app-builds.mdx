@@ -18,6 +18,7 @@ All paths are relative to `https://cloider.com/api`. See [Builds and deployments
 | POST | [`/apps/:hashed_id/builds`](#deploy-a-new-version-from-uploaded-source) | Write |
 | POST | [`/apps/:hashed_id/builds/:build_hashed_id/uploaded`](#step-3-confirm-the-upload) | Write |
 | POST | [`/apps/:hashed_id/builds/git`](#build-the-latest-commit) | Write |
+| POST | [`/apps/:hashed_id/builds/image`](#deploy-a-tag-of-an-image-app) | Write |
 | POST | [`/apps/:hashed_id/builds/:build_hashed_id/retry`](#retry-a-failed-build) | Write |
 | GET | [`/apps/:hashed_id/builds/:build_hashed_id/logs`](#get-a-builds-log) | Read |
 | GET | [`/apps/:hashed_id/builds/:build_hashed_id/logs/stream`](#stream-a-builds-log) | Read |
@@ -54,7 +55,8 @@ An app runs one build at a time. Starting a build while another one is running i
 | `source_filename`, `source_size` | string, integer | The source archive |
 | `uploaded` | boolean | Whether the source has arrived |
 | `commit_sha`, `commit_message` | string | The commit built, for a build from git. Empty for an upload |
-| `image_ref` | string | The image the build pushed, empty until it is pushed |
+| `source_image` | string | The `image:tag` deployed, for a build of an [image app](/apps/deploy-an-image). Empty otherwise |
+| `image_ref` | string | The image the build pushed, empty until it is pushed. For an image app, the image pinned to the digest its tag pointed at, set from the start |
 | `message` | string | A one line summary, for example why the build failed |
 | `started_at`, `finished_at` | string or null | When the build started and ended |
 | `created_at` | string | When the build was created |
@@ -247,6 +249,44 @@ The response is the new [build object](#the-build-object), with `status` `Pendin
 | `400` | `This app's GitHub connection is gone. Reconnect GitHub and try again.` (and the same for GitLab and Bitbucket) |
 | `400` | `This app is paused. Resume it before deploying a new version!` |
 | `403` | `This API token is read only!` |
+
+## Deploy a tag of an image app
+
+```http
+POST /apps/:hashed_id/builds/image
+```
+
+For an app [created from a Docker image](/apps/deploy-an-image), looks the tag up on the image's registry and deploys
+the image it points at as a new version. Nothing is built: the build starts `Queued` with `image_ref` already set to
+the image pinned to its digest. `cloider deploy --app <app>` uses it.
+
+**Access:** Read & Write token.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `tag` | string | No | The tag to deploy, which the app then follows. Empty pulls the app's own tag again |
+
+```bash
+curl -X POST https://cloider.com/api/apps/a8q2w/builds/image \
+  -H "Authorization: Bearer $CLOIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"tag": "v2"}'
+```
+
+The response is the new [build object](#the-build-object), with `status` `Queued`.
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `_` | `This app was not created from an image.` |
+| `400` | `_` | `The app is already running the image ghcr.io/acme/api:v2 points at. Push a new image to the tag, or deploy another tag.` |
+| `400` | `_` | `This app is already deploying, wait for that deploy to finish!` |
+| `400` | `_` | `This app is paused. Resume it before deploying a new version!` |
+| `400` | `tag` | `ghcr.io/acme/api has no tag v2.` |
+| `400` | `password` | `The registry refused this login, check the username and the token, and that it can pull ghcr.io/acme/api.` |
+| `403` | `_` | `This API token is read only!` |
+
+An image app can also be deployed without an API token, through its
+[deploy hook](/api/endpoints/apps#deploy-hook).
 
 ## Retry a failed build
 

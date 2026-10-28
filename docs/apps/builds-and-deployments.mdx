@@ -38,6 +38,7 @@ how to follow and read build logs, and how to retry or redeploy.
 | Changing the **Start command** on **Settings** | The source the app is serving, built again |
 | Saving **Build arguments** or **Build variables** | The source the app is serving, built again |
 | **Retry** on a failed build | That build's own source, built again as a new attempt |
+| **Deploy**, `cloider deploy --app`, or the deploy hook of an [image app](/apps/deploy-an-image) | The image the app's tag points at, nothing is built |
 
 Changing the **Port** doesn't build: it redeploys the image the app is already running with the new port. Saving
 **Environment variables** doesn't build either: it restarts the app.
@@ -300,12 +301,15 @@ There is no separate redeploy button; each of these redeploys the app:
   as a new version.
 - **Rebuild a git app**: click **Deploy latest commit**, even when the branch hasn't moved.
 - **Rebuild an upload**: run `cloider deploy` again in the linked folder.
+- **Pull an image app's tag again**: click **Deploy** on the **Builds** tab of an [image app](/apps/deploy-an-image).
+  When the tag still points at the running image, nothing is deployed.
 
 ## Roll back to an earlier version
 
 Cloider doesn't roll back to an older image. To go back, deploy the old code again as a new version: check out the
 earlier commit and run `cloider deploy`, or revert the commit in git and push. Because a failed build never replaces the
-live version, you rarely need to roll back after a bad deploy: fix the problem and deploy again.
+live version, you rarely need to roll back after a bad deploy: fix the problem and deploy again. An
+[image app](/apps/deploy-an-image) rolls back by deploying a tag that still points at the older image.
 
 ## Verify
 

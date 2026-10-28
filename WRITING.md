@@ -45,7 +45,7 @@ and full of examples a reader can paste. Pages are written for three readers at 
   | Thing | Example names |
   | --- | --- |
   | Account | Acme Inc |
-  | Apps | `blog`, `api`, `web` |
+  | Apps | `blog`, `api`, `web`, and `admin` (runs the Docker image `ghcr.io/acme/admin`) |
   | Kubernetes clusters | `staging`, `production` |
   | Databases | `orders-db` (PostgreSQL), `shop-db` (MySQL), `catalog-db` (MongoDB), `cache` (Redis) |
   | Buckets | `acme-assets`, `acme-backups` |

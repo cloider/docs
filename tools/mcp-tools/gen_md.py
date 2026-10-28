@@ -17,7 +17,8 @@ NOTES = {
     'download_bucket_objects': 'Without `dest`, exactly one key and no `recursive`: the file comes back as text, up to 1 MiB. A binary or larger file fails with `The file is binary or over 1 MiB, give dest to download it to a path instead.`',
     'update_database_trusted_sources': 'Give at least one of `set`, `add`, `remove` or `add_my_ip`, or the call fails with `nothing to change, give set, add, remove or add_my_ip`.',
     'list_registry_retention_runs': '`task_id` needs `run_id`.',
-    'deploy_app': '`dir` is required unless `git` is true, and `git` needs `app`. `dir` must be an absolute path on the machine the MCP server runs on.',
+    'deploy_app': '`dir` is required unless `git` is true or `tag` is given, and both `git` and `tag` need `app`. `dir` must be an absolute path on the machine the MCP server runs on.',
+    'create_app_from_image': '`registry_password` is passed to the CLI on stdin, never on its command line.',
     'set_app_variables': '`variables` can\'t be empty.',
 }
 

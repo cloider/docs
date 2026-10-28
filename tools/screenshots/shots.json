@@ -39,13 +39,13 @@
     {
       "file": "apps/list.webp",
       "route": "/dashboard/apps",
-      "state": "Apps list with blog, api and web in different statuses",
+      "state": "Apps list with blog (from GitHub), api and web (uploads) and admin (a Docker image) in different statuses",
       "actions": ""
     },
     {
       "file": "apps/new-app.webp",
       "route": "/dashboard/apps/new-app",
-      "state": "new app page, choosing where the code comes from (git provider or upload)",
+      "state": "new app page, choosing where the code comes from (git provider, a Docker image or an upload)",
       "actions": ""
     },
     {
