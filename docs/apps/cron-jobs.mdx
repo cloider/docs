@@ -22,7 +22,7 @@ delete.
 | **What runs** | The start command, or the image's own `ENTRYPOINT` and `CMD` | The same |
 | **New version** | A build or deploy, picked up by the next run | A build or deploy, rolled out at once |
 | **Logs** | Per run, for the last 5 succeeded and 5 failed runs | The running app's |
-| **Terminal** | A shell with the job's image and environment, between runs | A shell in the running app |
+| **Terminal** | A shell in a running run, from the **Runs** tab | A shell in the running app |
 
 ## How runs work
 
@@ -201,8 +201,8 @@ See [List a cron job's runs](/api/endpoints/apps#list-a-cron-jobs-runs) and
 
 ## Logs
 
-The **Logs** tab of a cron job follows its latest run, and moves on to the next run when it starts. To read an earlier
-run, click **Logs** on it in the **Runs** tab.
+A cron job has no **Logs** tab: click **Logs** on a run in the **Runs** tab to read its output, followed live while
+the run is going.
 
 ```bash
 cloider app logs cleanup                     # the latest run's output
@@ -214,17 +214,19 @@ Only the runs the **Runs** tab lists still have their output. See [Logs](/apps/l
 
 ## Debug with the terminal
 
-Between runs, the **Terminal** tab opens a shell in a container with the cron job's image and environment variables,
-started for the terminal and stopped again once it has been unused for 10 minutes. It is the quickest way to find out
-why a run fails: run the job's command by hand and watch what it does.
+While a run is going, click **Terminal** on it in the **Runs** tab to open a shell inside that run's container, with
+its files and processes. The session ends when the run finishes.
+
+Between runs, `cloider app shell` and `cloider app exec` open a container with the cron job's image and environment
+variables, started for them and stopped again once it has been unused for 10 minutes. It is the quickest way to find
+out why a run fails: run the job's command by hand and watch what it does.
 
 ```bash
 cloider app shell cleanup
 cloider app exec cleanup -- python cleanup.py --dry-run
 ```
 
-`cloider app exec` runs in the same container, starting it first when it isn't running. The terminal needs a shell in
-the image: an image without `sh`, like a distroless image, has nothing to open. See
+The terminal needs a shell in the image: an image without `sh`, like a distroless image, has nothing to open. See
 [Terminal and exec](/apps/terminal-and-exec).
 
 ## Change the schedule
@@ -281,7 +283,7 @@ its own:
 A run that is over in a few seconds can end before its first reading. It is billed at what the job's last measured run
 used per second, and costs nothing while the job has no measured run yet.
 
-Only runs are billed. The container the terminal and `cloider app exec` open between runs is free. See
+Only runs are billed. The container `cloider app shell` and `cloider app exec` open between runs is free. See
 [pricing](https://cloider.com/#pricing) and [Insights](/apps/insights).
 
 ## Troubleshooting
@@ -295,3 +297,6 @@ local time.
 
 **The terminal says the app isn't running.** The image has no `sh`, or its shell container is still starting. Wait a few
 seconds and reconnect.
+
+**A run's terminal says the run isn't running any more.** The run finished. Read its output with **Logs** on the
+**Runs** tab.

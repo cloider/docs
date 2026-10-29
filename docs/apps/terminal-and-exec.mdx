@@ -10,7 +10,8 @@ You can work inside a running app's container in two ways: the **Terminal** tab 
 interactive shell, like SSH, and `cloider app exec` runs one command and returns its output and exit code, which is
 what scripts, CI jobs and AI agents need. Typical uses are database migrations, one-off scripts, checking environment
 variables and debugging. This page covers both, with their limits. A [cron job](/apps/cron-jobs) has nothing running
-between runs, so both open a container with its image and environment that is started for them instead.
+between runs, so it has no **Terminal** tab: a running run has a **Terminal** button on the **Runs** tab, and
+`cloider app shell` and `cloider app exec` open a container with its image and environment that is started for them.
 
 ## At a glance
 
