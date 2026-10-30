@@ -1,0 +1,315 @@
+---
+title: Manage Kubernetes workloads from the dashboard
+sidebar_label: Manage workloads
+sidebar_position: 5.5
+description: See and change what runs in a Cloider cluster from the dashboard. Scale and restart workloads, read pod logs, open a terminal in a pod, edit ConfigMaps and Secrets, resize volumes and route domains.
+keywords: [kubernetes dashboard, kubernetes gui, scale deployment, restart deployment, edit configmap, edit kubernetes secret, pod logs, exec into pod, pod shell, resize persistent volume, kubernetes ingress, apply yaml]
+---
+
+A cluster's page in the dashboard shows what runs inside the cluster and lets you change it without `kubectl`: workloads, pods and their logs, ConfigMaps, Secrets, Services, the domains routed to them, Ingress objects, NetworkPolicies, volumes, storage classes and events. The page works through the cluster's own Kubernetes API, so what you change here is the same object that `kubectl` and Helm see, and changes made with them show up here.
+
+## At a glance
+
+| Group | View | What it lists | What you can do |
+| --- | --- | --- | --- |
+| **Workloads** | **Pods** | Every pod with its status, ready containers, restarts, node and age | Read live logs, read a crashed container's previous logs, open a terminal in a container, delete a pod so its workload replaces it |
+| **Workloads** | **Deployments**, **StatefulSets**, **DaemonSets**, **Jobs**, **CronJobs** | Each kind on its own, with its status, ready replicas (or completions, or schedule and last run) and images | Scale, restart, change an image, expose as a Service, run a CronJob now, suspend its schedule, edit the YAML, delete |
+| **Workloads** | **ConfigMaps**, **Secrets** | Each kind on its own, with its keys | Create, edit keys, reveal a Secret's value, delete |
+| **Networking** | **Services** | Services with their type, cluster IP, public IP and ports | Route a domain to one, edit the YAML, delete |
+| **Networking** | **Targets** | The domains routed to the cluster's Services | Route a domain or a path of it to a Service with HTTPS, edit, remove |
+| **Networking** | **Ingress** | Ingress objects with their class, rules and address | Create one from a template, edit the YAML, delete |
+| **Networking** | **NetworkPolicies** | NetworkPolicies with the pods they select and their incoming and outgoing rules | Create one from a template, edit the YAML, delete |
+| **Storage** | **PersistentVolumeClaims** | Volumes with their status, size, storage class, access mode and the pods mounting them | Create, grow, delete |
+| **Storage** | **PersistentVolumes** | The storage the volumes are bound to | View the YAML |
+| **Storage** | **StorageClasses** | How new volumes are provisioned | View the YAML |
+| **Observe** | **Events** | What the cluster reported, newest first | Show warnings only |
+
+**Apply YAML** at the top of the page creates or updates any objects from YAML, of any kind the cluster knows. **Terminal** next to it opens the cluster's [web terminal](/kubernetes/web-terminal-and-exec), and the download button saves the cluster's kubeconfig.
+
+## Before you begin
+
+- A cluster in the `Ready` status. See [Create a cluster](/kubernetes/create-a-cluster). A paused cluster's page offers **Resume** instead of its lists.
+- To change anything, a role that can create resources. Members with read-only access see every view, but its buttons are disabled.
+
+## Open a cluster's page
+
+1. Open **Kubernetes** in the sidebar.
+2. Click the cluster's name. The page opens on **Deployments**.
+3. Pick a view in the list on the left, grouped under **Workloads**, **Networking**, **Storage** and **Observe**. Click a group's name to fold it. On a narrow screen, the views are in a list above the content instead.
+4. Pick a namespace in the namespace list at the top, or leave it on **All namespaces**. **StorageClasses** belong to no namespace, so that view has no namespace list.
+
+The view and the namespace are part of the page's URL, so a reload or a shared link opens the same view, and your browser's back button returns to the view you came from. Lists refresh on their own, every few seconds while something in them is still changing (a rollout, a pod starting) and every 15 seconds otherwise.
+
+The actions button next to the namespace list (the three dots) has **New namespace**, **Delete** for the selected namespace (except `default`), and **Show system namespaces**.
+
+### What are system namespaces?
+
+`kube-system`, `kube-public` and `kube-node-lease` hold the parts of the cluster that Cloider runs for you, such as cluster DNS, the metrics server and the [web terminal](/kubernetes/web-terminal-and-exec). The dashboard hides them unless you turn on **Show system namespaces**, which **ConfigMaps** and **Secrets** don't offer, and never changes them: a change there is refused with `kube-system is managed by Cloider, the dashboard does not change it. Use kubectl if you really need to.`
+
+## Create objects from YAML
+
+**Apply YAML** creates objects, or updates them when they already exist, from one or more YAML documents separated by `---`. It does what `kubectl apply --server-side` does, for any kind the cluster knows, CRDs included.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. On the cluster's page, click **Apply YAML**.
+2. Paste your YAML, or click **Templates** and pick a starting point: **Deployment and Service**, **StatefulSet with a volume**, **CronJob**, **Job**, **ConfigMap**, **Secret**, **Volume** or **NetworkPolicy**.
+3. In **Objects that name no namespace go to**, pick the namespace for documents without `metadata.namespace`. It starts on the namespace you are viewing, or `default`.
+4. Click **Apply**.
+
+Each object is listed with `created` or `configured`. If one fails, the others are still applied and the dialog stays open with the reason next to the failed one, for example a missing field or a kind the cluster doesn't have. Up to 100 objects are applied at once.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+Pipe the manifest into `kubectl` in the cluster's terminal:
+
+```bash
+cloider cluster exec -i staging -- kubectl apply --server-side -n shop -f - < web.yaml
+```
+
+```text title="Output"
+deployment.apps/web serverside-applied
+service/web serverside-applied
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Manage the objects with Terraform's `kubernetes` provider, configured from the cluster's `kube_config`. See [Kubernetes and Helm with Terraform](/terraform/guides/kubernetes-and-helm).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Download the cluster's kubeconfig with `GET /api/clusters/{id}/kubeconfig` and use the cluster's own Kubernetes API, with `kubectl` or any Kubernetes client. See [Connect with kubectl](/kubernetes/connect-with-kubectl).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+Ask your agent:
+
+```text title="Prompt"
+Apply this manifest to the staging cluster in the shop namespace.
+```
+
+It calls the `cluster_exec` tool with the manifest as stdin:
+
+```json title="Tool call: cluster_exec"
+{"cluster": "staging", "command": "kubectl apply --server-side -n shop -f -", "stdin": "apiVersion: apps/v1\nkind: Deployment\n..."}
+```
+
+</TabItem>
+</Tabs>
+
+## Scale a Deployment or StatefulSet
+
+Scaling changes how many replicas (copies of the pod) a Deployment or StatefulSet runs. Scaling to `0` stops every pod but keeps the workload, so you can scale it back up later.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Deployments** or **StatefulSets** and click the scale button on the workload's row (the vertical arrows), or **Scale** in its actions menu.
+2. Enter the number of **Replicas**, from 0 to 100.
+3. Click **Scale**.
+
+The **Ready** column shows ready pods out of the replicas asked for, and the status shows **Progressing** until they are all up.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider cluster exec staging kubectl scale deployment web -n shop --replicas 3
+```
+
+```text title="Output"
+deployment.apps/web scaled
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+Set `replicas` in the `kubernetes_deployment` resource of Terraform's `kubernetes` provider. See [Kubernetes and Helm with Terraform](/terraform/guides/kubernetes-and-helm).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Use the cluster's own Kubernetes API with its kubeconfig, for example `kubectl scale`. See [Connect with kubectl](/kubernetes/connect-with-kubectl).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```json title="Tool call: cluster_exec"
+{"cluster": "staging", "command": "kubectl scale deployment web -n shop --replicas 3"}
+```
+
+</TabItem>
+</Tabs>
+
+## Restart a workload or change its image
+
+**Restart** replaces a Deployment's, StatefulSet's or DaemonSet's pods one by one, the same way a new version rolls out, which is what `kubectl rollout restart` does. Use it after changing a ConfigMap or Secret that the pods read as environment variables, since they only read them when they start.
+
+To change an image:
+
+1. Click the workload's name in its list, for example under **Deployments**.
+2. Open **Containers**, edit the image of the container, for example `nginx:1.27` to `nginx:1.28`, and click **Change image**.
+
+The workload rolls out the new image. A Job's containers can't be changed once it is created. The same commands with `kubectl`:
+
+```bash
+cloider cluster exec staging kubectl rollout restart deployment/web -n shop
+cloider cluster exec staging kubectl set image deployment/web web=nginx:1.28 -n shop
+```
+
+### Workload statuses
+
+| Status | Meaning |
+| --- | --- |
+| **Running** | Every replica is up to date and ready |
+| **Progressing** | A rollout or a scale is under way |
+| **Degraded** | The rollout is done, but fewer replicas are ready than asked for, for example because a pod keeps crashing |
+| **Failed** | A Deployment's rollout passed its progress deadline, or a Job failed |
+| **Paused** | A Deployment's rollouts are paused |
+| **Scaled down** | 0 replicas |
+| **Complete** | A Job finished |
+| **Scheduled** / **Suspended** | A CronJob waiting on its schedule, or with its schedule suspended |
+
+## Run CronJobs and Jobs
+
+Under **CronJobs**, a CronJob's actions menu has **Run now**, which starts a Job from its template straight away, and **Suspend schedule** or **Resume schedule**. Click a CronJob's name and open **Runs** to see its Jobs, with their status, start time and duration. Jobs are listed under **Jobs**, each with the CronJob that started it.
+
+## Read pod logs
+
+A pod's logs are what its containers print to standard output and standard error, read live from the cluster.
+
+1. Open **Pods** and click the pod's name, or click a workload's name and then a pod on its **Pods** tab.
+2. If the pod has several containers, pick one. Init containers are marked `init`.
+3. Pick how many **Lines** of history to start from: 100, 200, 500 or 1000.
+
+The logs follow the container while the dialog is open, and stop after an hour (click **Reconnect** to carry on). Tick **Previous** to read the container's output from before its last restart, which is where a crashing container says why. **Previous** is only available once the container has restarted.
+
+```bash
+cloider cluster exec staging kubectl logs deploy/web -n shop --tail 200
+cloider cluster exec staging kubectl logs web-6d8f7b9c5d-2kq9x -n shop --previous
+```
+
+### Pod statuses
+
+The status is what `kubectl get pods` prints, such as `Running`, `ContainerCreating`, `Init:0/1`, `CrashLoopBackOff`, `ImagePullBackOff`, `Completed` or `Terminating`. It is red when the pod won't recover by itself, such as `CrashLoopBackOff`, `ImagePullBackOff`, `ErrImagePull`, `CreateContainerConfigError` or `OOMKilled`. See [Troubleshooting](/kubernetes/troubleshooting) for what each means.
+
+**Delete (restart)** in a pod's actions menu deletes it. When a workload runs the pod, it starts a new one in its place, so this restarts a single pod.
+
+## Open a terminal in a pod
+
+**Terminal** in a pod's actions menu opens a shell inside one of its running containers, the same as `kubectl exec -it`. It is `bash` when the container's image has it, `sh` otherwise.
+
+- If the pod has several running containers, pick one in the terminal's toolbar. Init containers that keep running, such as sidecars, are marked `init`.
+- Click **+** for another session in the same container, up to 4. Closing the dialog ends them all.
+- The shell runs as the container's own user, with its environment and files. What you change in its filesystem is lost when the container restarts.
+- An image without a shell, such as a distroless one, can't open a terminal. Read its logs instead.
+- **Terminal** isn't available for pods in `kube-system` and the other namespaces Cloider manages, for pods with no running container, or to members with read-only access.
+
+The shell is opened by the cluster's [web terminal](/kubernetes/web-terminal-and-exec). On a cluster created before pod terminals existed, the first one you open updates that terminal, which can take a minute and ends any browser terminal sessions open at the time.
+
+From your own terminal, open the cluster's shell and exec from there:
+
+```bash
+cloider cluster shell staging
+kubectl exec -it web-6d8f7b9c5d-2kq9x -n shop -- sh
+```
+
+## Expose a workload and route a domain to it
+
+A Service gives a workload's pods one stable address. To publish a web app on a domain with HTTPS:
+
+1. Open the workload's list, such as **Deployments**, **StatefulSets** or **DaemonSets**, then its actions menu, and click **Expose**.
+2. Keep the **Service name**, choose **ClusterIP**, and check the **Ports**: each Service port and the container port it forwards to, prefilled from the ports the containers declare.
+3. Click **Create Service**, then **Route a domain to it**. **Targets** opens with the Service picked.
+4. Under **Domain**, pick one of **Your domains**, claim a **Free subdomain** such as `blog.cloider.app`, or add **Your own domain**. Then pick the **Port**, optionally a **Path** and a **Target path**, and click **Route**.
+
+The domain serves the Service over HTTPS once its certificate is issued, which can take a minute. A domain of your own added here only reaches the cluster once its nameservers are Cloider's, so the dialog shows them, to set at your registrar. These routes are [targets](/kubernetes/expose-services), served by Cloider without an ingress controller in the cluster. **Targets** under **Networking** lists every domain routed to the cluster, and **Services** has **Route a domain** in each Service's actions menu. A target's actions menu has **Edit**, **Open the domain** and **Remove**, which keeps the domain itself.
+
+Choosing **LoadBalancer** instead gives the Service a public IP for any TCP or UDP port. A load balancer is billed for as long as it has its IP, see [Load balancers](/kubernetes/load-balancers). A custom domain can point at a LoadBalancer from **Targets** too, with **Route to** set to **LoadBalancer**.
+
+### What is the difference between Targets and Ingress?
+
+**Targets** are Cloider's routes from a domain to a Service, with HTTPS, and need nothing installed in the cluster. **Ingress** lists the cluster's Ingress objects, which are only served by an ingress controller running in the cluster, and a new cluster has none. Until one serves it, an Ingress shows **not served** in the **Address** column.
+
+**New Ingress** opens **Apply YAML** with an Ingress that routes `www.example.com` to port 80 of the `web` Service, with `ingressClassName: nginx`. Each rule is listed as its host and path, then the `service:port` it goes to, with a lock when the host has TLS. An Ingress that names no class shows **default**.
+
+## Read NetworkPolicies
+
+**NetworkPolicies** under **Networking** lists the cluster's NetworkPolicy objects, with their rules read the way `kubectl describe` puts them:
+
+- **Pods**: the label selector of the pods the policy applies to, or **all pods** in its namespace.
+- **Incoming** and **Outgoing**: each rule as `from` or `to` its peers, and `on` its ports. **Deny all** means the direction is limited with no rule, **Allow all** means a rule lets everything through, and `-` means the policy doesn't cover that direction.
+
+**New NetworkPolicy** opens **Apply YAML** with a policy that lets only pods labeled `app: web` reach pods labeled `app: redis` on port `6379`. Change a policy with **Edit YAML** in its actions menu, or delete it there.
+
+## Edit ConfigMaps and Secrets
+
+ConfigMaps hold settings and Secrets hold credentials, as keys with values, which pods read as environment variables or files. Open **ConfigMaps** or **Secrets** under **Workloads**.
+
+- **Create one**: click **New ConfigMap** or **New Secret**, pick the namespace, enter the name and the keys, and click **Create**. Secrets created here are of type `Opaque`. Create other types, such as `kubernetes.io/tls` or `kubernetes.io/dockerconfigjson`, with **Apply YAML**.
+- **Edit keys**: click the name, change values, add keys with **Add key** or remove them, and click **Save**. A value can be several lines, such as a whole configuration file. Keys are letters, digits, `-`, `_` and `.`.
+- **Secret values stay hidden** until you click **Reveal** on one. Values you don't reveal are kept as they are when you save.
+
+Pods read new values when they start, so restart the workloads that use them after a change (see [Restart a workload](#restart-a-workload-or-change-its-image)). A Secret's YAML view shows its values as `<hidden>`, which is why a Secret is edited with its keys rather than its YAML.
+
+## Manage volumes
+
+A volume (PersistentVolumeClaim) keeps data across restarts of the pods that mount it. Volumes are billed for their size, see [Persistent volumes](/kubernetes/persistent-volumes).
+
+- **Create one**: open **PersistentVolumeClaims** under **Storage**, click **New volume**, pick the namespace, a name, the **Size (GiB)** from 1 to 1000 and the **Storage class** (the cluster's default is preselected), then click **Create**. The volume is `ReadWriteOnce`, mounted read-write by pods on one node at a time. For another access mode, use **Apply YAML**.
+- **Grow one**: **Resize** in its actions menu. A volume can only grow, only once it is `Bound`, and only when its storage class allows it. It grows in the background while it stays in use.
+- **Delete one**: **Delete** asks you to type the volume's name. Its data is deleted for good. A volume still mounted by a pod goes once that pod is gone.
+
+The **Mounted by** column lists the pods using each volume. A StatefulSet's volumes, created from its `volumeClaimTemplates`, are listed here too and stay when the StatefulSet is deleted.
+
+### PersistentVolumes and StorageClasses
+
+**PersistentVolumes** lists the storage each volume is bound to, with its **Claim** (click it to open that volume), **Class** and **Reclaim** policy. A PersistentVolume belongs to the whole cluster rather than a namespace, and goes with its volume when its reclaim policy is `Delete`. With a namespace picked, the list shows the ones held by volumes in that namespace.
+
+**StorageClasses** lists how new volumes are provisioned. The default one, which a volume that names no class gets, is marked **default**. **Provisioned** says when a volume's storage is created: **When claimed**, or **When first mounted** by a pod. **Resizable** says whether its volumes can grow.
+
+Both belong to the whole cluster, so the dashboard only reads them: their **View YAML** button shows the object, and changing one takes `kubectl`.
+
+## View and edit any object's YAML
+
+Every object's actions menu has **Edit YAML** (or **View YAML** when you can't change it, or **YAML**, with an **Edit** button inside). PersistentVolumes and StorageClasses have a **View YAML** button on their row. The editor shows the whole object, and **Save** replaces it with your version.
+
+If the object changed since you opened it, for example because a rollout updated its status or someone applied a new version, saving is refused with `This object changed since you opened it. Reload it to edit the current version, your changes will be lost.` Click **Reload** and make your change again, so you never undo someone else's.
+
+A Secret's YAML shows its values as `<hidden>`, so a Secret is edited from **Secrets** instead. A PersistentVolume or StorageClass belongs to the whole cluster and can't be edited here. The name, namespace and kind can't be changed in the editor. To rename an object, create it under the new name with **Apply YAML** and delete the old one.
+
+## Read events
+
+**Events** under **Observe** lists what the cluster reported in the selected namespace, newest first, with the object it is about: a pod scheduled, an image pulled, a probe failing, a volume that can't be bound. Turn on **Warnings only** to see just the problems. A workload's own **Events** tab shows its events together with those of its pods (and a Deployment's ReplicaSets), since problems such as a bad image are reported on the pods. The cluster keeps events for about an hour.
+
+## Troubleshooting
+
+| Message | What to do |
+| --- | --- |
+| `This cluster is paused. Resume it to see and manage what runs in it.` | Click **Resume** and wait until the cluster is `Ready` |
+| `The cluster's API did not answer. It may still be starting, try again in a moment.` | The cluster is busy or still starting. Wait a moment, then reload |
+| `kube-system is managed by Cloider, the dashboard does not change it. Use kubectl if you really need to.` | The dashboard doesn't change system namespaces. Use `kubectl` in the [terminal](/kubernetes/web-terminal-and-exec) if you must |
+| `This workload's selector can't be expressed by a Service. Create the Service from YAML instead.` | The workload selects its pods with `matchExpressions`. Write the Service with **Apply YAML** |
+| An Ingress shows **not served** | No ingress controller runs in the cluster. Route the domain from **Targets** instead |
+| `A volume can only grow, it has 2Gi now` | Enter a size larger than the current one |
+| `Volumes of the <class> storage class can't be resized` | Create a larger volume and copy the data into it |
+| `You have read-only access to this account, you can not change what runs in clusters!` | Ask the account owner or an admin for write access |
+
+## Next steps
+
+- [Deploy a workload](/kubernetes/deploy-a-workload) with `kubectl`, step by step.
+- [Expose services on a domain](/kubernetes/expose-services) with targets.
+- [Web terminal and exec](/kubernetes/web-terminal-and-exec) for everything the dashboard doesn't do.
+
+<FAQ items={[
+  {q: 'Can I manage Kubernetes workloads without kubectl on Cloider?', a: 'Yes. A cluster\'s page in the Cloider dashboard lists its pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, ConfigMaps, Secrets, Services, Ingress objects, NetworkPolicies, volumes, PersistentVolumes, StorageClasses and events, and can scale, restart, change images, read logs, open a terminal in a pod, edit keys, resize volumes, route domains and apply any YAML.'},
+  {q: 'Do changes made in the dashboard conflict with kubectl or Helm?', a: 'The dashboard changes the same objects through the cluster\'s Kubernetes API. Apply YAML uses server-side apply with the field manager cloider-dashboard. A later helm upgrade or kubectl apply of the same fields sets them back to what the chart or manifest says, so keep changes you want to last in your manifests.'},
+  {q: 'Why are kube-system and other system namespaces hidden?', a: 'They hold the parts of the cluster Cloider runs for you, such as cluster DNS, the metrics server and the web terminal. The dashboard hides them unless you turn on Show system namespaces, and never changes them.'},
+  {q: 'Do Ingress objects work on Cloider clusters?', a: 'An Ingress is only served by an ingress controller running in the cluster, and a new cluster has none, so the Ingress view shows it as not served. To route a domain or a path of it to a Service with automatic HTTPS, use Targets, which need nothing installed in the cluster.'},
+  {q: 'Can read-only members see Secret values?', a: 'Members with read-only access can open every view and reveal a Secret\'s value one key at a time, but can\'t change anything.'},
+]} />

@@ -21,7 +21,7 @@ Every Cloider cluster comes with a terminal that has `kubectl` and `helm` instal
 
 ## How the terminal works
 
-When a cluster is created, Cloider deploys a small `terminal` Deployment into the cluster's `kube-system` namespace. Its pod holds the cluster's kubeconfig, so `kubectl` and `helm` inside it talk to your cluster's API as cluster admin. The browser terminal, `cloider cluster shell` and `cloider cluster exec` all run in that pod.
+When a cluster is created, Cloider deploys a small `terminal` Deployment into the cluster's `kube-system` namespace. Its pod holds the cluster's kubeconfig, so `kubectl` and `helm` inside it talk to your cluster's API as cluster admin. The browser terminal, `cloider cluster shell` and `cloider cluster exec` all run in that pod, and so does a pod's **Terminal** on the cluster's page, which opens a shell inside the pod's container with `kubectl exec` (see [Open a terminal in a pod](/kubernetes/manage-workloads#open-a-terminal-in-a-pod)).
 
 A few consequences are worth knowing:
 
@@ -36,7 +36,7 @@ A few consequences are worth knowing:
 <TabItem value="dashboard" label="Dashboard" default>
 
 1. Open **Kubernetes** in the sidebar.
-2. Click the cluster's name, or click the actions button (the three dots) on its row and then **Terminal**.
+2. Click the cluster's name and then **Terminal**, or click the actions button (the three dots) on its row and then **Terminal**.
 3. A terminal tab called **Terminal 1** opens, connected to the cluster. Type `kubectl get pods -A`.
 
 <Screenshot

@@ -50,6 +50,7 @@ sections' pages.
 - `connect-with-kubectl.mdx`: kubeconfig, contexts
 - `web-terminal-and-exec.mdx`
 - `deploy-a-workload.mdx`: first Deployment and Service
+- `manage-workloads.mdx`: the cluster page's views, workloads, pods, their logs and terminals, ConfigMaps and Secrets, targets vs Ingress, NetworkPolicies, volumes and storage classes, YAML
 - `helm.mdx`
 - `load-balancers.mdx`
 - `persistent-volumes.mdx`

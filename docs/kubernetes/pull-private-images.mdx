@@ -117,7 +117,7 @@ Run the pull secret command from step 1, adding the namespace your pods run in w
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
-Open the cluster's terminal (**Kubernetes**, then the cluster's name) and paste the command, with `-n shop` added:
+Open the cluster's terminal (**Kubernetes**, the cluster's name, then **Terminal**) and paste the command, with `-n shop` added:
 
 ```bash
 kubectl create namespace shop --dry-run=client -o yaml | kubectl apply -f -
