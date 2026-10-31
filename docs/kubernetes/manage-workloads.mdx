@@ -3,7 +3,7 @@ title: Manage Kubernetes workloads from the dashboard
 sidebar_label: Manage workloads
 sidebar_position: 5.5
 description: See and change what runs in a Cloider cluster from the dashboard. Scale and restart workloads, read pod logs, open a terminal in a pod, edit ConfigMaps and Secrets, resize volumes and route domains.
-keywords: [kubernetes dashboard, kubernetes gui, scale deployment, restart deployment, edit configmap, edit kubernetes secret, pod logs, exec into pod, pod shell, resize persistent volume, kubernetes ingress, apply yaml]
+keywords: [kubernetes dashboard, kubernetes gui, kubernetes environment variables, scale deployment, restart deployment, edit configmap, edit kubernetes secret, pod logs, exec into pod, pod shell, resize persistent volume, kubernetes ingress, apply yaml]
 ---
 
 A cluster's page in the dashboard shows what runs inside the cluster and lets you change it without `kubectl`: workloads, pods and their logs, ConfigMaps, Secrets, Services, the domains routed to them, Ingress objects, NetworkPolicies, volumes, storage classes and events. The page works through the cluster's own Kubernetes API, so what you change here is the same object that `kubectl` and Helm see, and changes made with them show up here.
@@ -12,8 +12,8 @@ A cluster's page in the dashboard shows what runs inside the cluster and lets yo
 
 | Group | View | What it lists | What you can do |
 | --- | --- | --- | --- |
-| **Workloads** | **Pods** | Every pod with its status, ready containers, restarts, node and age | Read live logs, read a crashed container's previous logs, open a terminal in a container, delete a pod so its workload replaces it |
-| **Workloads** | **Deployments**, **StatefulSets**, **DaemonSets**, **Jobs**, **CronJobs** | Each kind on its own, with its status, ready replicas (or completions, or schedule and last run) and images | Scale, restart, change an image, expose as a Service, run a CronJob now, suspend its schedule, edit the YAML, delete |
+| **Workloads** | **Pods** | Every pod with its status, ready containers, restarts, node and age | Click a pod for its **Details**, **Logs**, **Terminal**, **Events** and **Environment** tabs: its containers' states, restarts and resources, live logs, a crashed container's previous logs, a shell in a container, what the cluster reported about the pod and its environment variables. Delete a pod so its workload replaces it |
+| **Workloads** | **Deployments**, **StatefulSets**, **DaemonSets**, **Jobs**, **CronJobs** | Each kind on its own, with its status, ready replicas (or completions, or schedule and last run) and images | See its details, scale, restart, change an image, edit environment variables, expose as a Service, run a CronJob now, suspend its schedule, edit the YAML, delete |
 | **Workloads** | **ConfigMaps**, **Secrets** | Each kind on its own, with its keys | Create, edit keys, reveal a Secret's value, delete |
 | **Networking** | **Services** | Services with their type, cluster IP, public IP and ports | Route a domain to one, edit the YAML, delete |
 | **Networking** | **Targets** | The domains routed to the cluster's Services | Route a domain or a path of it to a Service with HTTPS, edit, remove |
@@ -102,6 +102,17 @@ It calls the `cluster_exec` tool with the manifest as stdin:
 </TabItem>
 </Tabs>
 
+## See a workload's details
+
+Click a workload's name in its list, for example under **Deployments**. It opens on **Details**:
+
+- A ring with its ready pods (a Job's finished ones) out of those asked for. For a Deployment or StatefulSet, the arrows beside it scale it up or down by one pod.
+- Its labels, the labels of the pods it runs (**Pod selector**), its annotations, service account and when it was created.
+- How it rolls out or runs, such as a Deployment's **Update strategy**, **Max unavailable** and **Max surge**, a StatefulSet's **Pod management**, or a CronJob's **Concurrency** and **Runs kept**. Hover over a name for what it means.
+- Its **Conditions**, which say why a rollout is stuck, and the **Volumes** its pods mount, with where each container mounts them.
+
+The other tabs are its **Pods** (a CronJob's **Runs**), **Containers**, **Environment** and **Events**.
+
 ## Scale a Deployment or StatefulSet
 
 Scaling changes how many replicas (copies of the pod) a Deployment or StatefulSet runs. Scaling to `0` stops every pod but keeps the workload, so you can scale it back up later.
@@ -175,6 +186,24 @@ cloider cluster exec staging kubectl set image deployment/web web=nginx:1.28 -n 
 | **Complete** | A Job finished |
 | **Scheduled** / **Suspended** | A CronJob waiting on its schedule, or with its schedule suspended |
 
+## Set environment variables
+
+A workload's **Environment** tab holds the environment variables of each of its containers. Pick the container at the top when there are several.
+
+- **Single values** (`env`): click **Add value** for a name with a value you type, or **Add from ConfigMap or Secret** for a name whose value is read from one key of a ConfigMap or Secret in the workload's namespace.
+- **All values from ConfigMaps or Secrets** (`envFrom`): click **Add all from ConfigMap or Secret** to turn every key of one into a variable. A **Prefix** goes in front of each of their names, so `DB_` turns the key `HOST` into `DB_HOST`.
+- Drag a variable by its handle to change the order. A value can use a variable set before it as `$(NAME)`, for example `postgres://$(DB_USER)@db:5432`.
+- A single value wins over a variable from **All values** with the same name, and a later ConfigMap or Secret wins over an earlier one.
+
+Click **Save** to save the changes of every container at once. A Deployment, StatefulSet or DaemonSet then rolls out new pods with them, and a CronJob's next runs use them. Variables the pod reads from its own fields or resources, such as `metadata.name` or `limits.memory`, are shown but only change in the YAML.
+
+A pod's **Environment** tab shows the variables it was started with, and names the Deployment, StatefulSet, DaemonSet or CronJob to change them on. A pod's and a Job's environment can't change once created. The same with `kubectl`:
+
+```bash
+cloider cluster exec staging kubectl set env deployment/web LOG_LEVEL=debug -n shop
+cloider cluster exec staging kubectl set env deployment/web --from=configmap/settings -n shop
+```
+
 ## Run CronJobs and Jobs
 
 Under **CronJobs**, a CronJob's actions menu has **Run now**, which starts a Job from its template straight away, and **Suspend schedule** or **Resume schedule**. Click a CronJob's name and open **Runs** to see its Jobs, with their status, start time and duration. Jobs are listed under **Jobs**, each with the CronJob that started it.
@@ -184,15 +213,24 @@ Under **CronJobs**, a CronJob's actions menu has **Run now**, which starts a Job
 A pod's logs are what its containers print to standard output and standard error, read live from the cluster.
 
 1. Open **Pods** and click the pod's name, or click a workload's name and then a pod on its **Pods** tab.
-2. If the pod has several containers, pick one. Init containers are marked `init`.
+2. Open **Logs**, or pick **Logs** in the pod's actions menu, and pick the container in **Container**. Init containers are marked `init`.
 3. Pick how many **Lines** of history to start from: 100, 200, 500 or 1000.
 
-The logs follow the container while the dialog is open, and stop after an hour (click **Reconnect** to carry on). Tick **Previous** to read the container's output from before its last restart, which is where a crashing container says why. **Previous** is only available once the container has restarted.
+The logs follow the container while the **Logs** tab is open, and stop after an hour (click **Reconnect** to carry on). Tick **Previous** to read the container's output from before its last restart, which is where a crashing container says why. **Previous** is only available once the container has restarted.
 
 ```bash
 cloider cluster exec staging kubectl logs deploy/web -n shop --tail 200
 cloider cluster exec staging kubectl logs web-6d8f7b9c5d-2kq9x -n shop --previous
 ```
+
+### Pod details
+
+A pod opens on its **Details** tab, below its status, node, IP and the workload that runs it:
+
+- Its labels, annotations, service account and settings such as **Phase**, **QoS class** (which pods go first when a node runs out of memory) and **Restart policy**.
+- **Containers**: each one's image, state, restarts and when it started, with how its last run ended (for example `OOMKilled, exit 137`), and its CPU and memory requests and limits. Hover over a state for the cluster's message, such as why an image can't be pulled.
+- Its **Conditions** and the **Volumes** it mounts, with where each container mounts them.
+- Why the pod stopped when the cluster says so, for example when it was evicted.
 
 ### Pod statuses
 
@@ -202,10 +240,10 @@ The status is what `kubectl get pods` prints, such as `Running`, `ContainerCreat
 
 ## Open a terminal in a pod
 
-**Terminal** in a pod's actions menu opens a shell inside one of its running containers, the same as `kubectl exec -it`. It is `bash` when the container's image has it, `sh` otherwise.
+A pod's **Terminal** tab, also opened by **Terminal** in its actions menu, opens a shell inside one of its running containers, the same as `kubectl exec -it`. It is `bash` when the container's image has it, `sh` otherwise.
 
-- If the pod has several running containers, pick one in the terminal's toolbar. Init containers that keep running, such as sidecars, are marked `init`.
-- Click **+** for another session in the same container, up to 4. Closing the dialog ends them all.
+- Pick the container in **Container**, next to **Reconnect** in the terminal's tab bar. Containers that aren't running are listed with their state but can't be picked. Init containers that keep running, such as sidecars, are marked `init`.
+- Click **+** for another session in the same container, up to 4. Switching to another tab or closing the pod ends them all.
 - The shell runs as the container's own user, with its environment and files. What you change in its filesystem is lost when the container restarts.
 - An image without a shell, such as a distroless one, can't open a terminal. Read its logs instead.
 - **Terminal** isn't available for pods in `kube-system` and the other namespaces Cloider manages, for pods with no running container, or to members with read-only access.
@@ -285,7 +323,7 @@ A Secret's YAML shows its values as `<hidden>`, so a Secret is edited from **Sec
 
 ## Read events
 
-**Events** under **Observe** lists what the cluster reported in the selected namespace, newest first, with the object it is about: a pod scheduled, an image pulled, a probe failing, a volume that can't be bound. Turn on **Warnings only** to see just the problems. A workload's own **Events** tab shows its events together with those of its pods (and a Deployment's ReplicaSets), since problems such as a bad image are reported on the pods. The cluster keeps events for about an hour.
+**Events** under **Observe** lists what the cluster reported in the selected namespace, newest first, with the object it is about: a pod scheduled, an image pulled, a probe failing, a volume that can't be bound. Turn on **Warnings only** to see just the problems. A workload's own **Events** tab shows its events together with those of its pods (and a Deployment's ReplicaSets), since problems such as a bad image are reported on the pods. A pod's **Events** tab shows just that pod's. The cluster keeps events for about an hour.
 
 ## Troubleshooting
 
@@ -307,7 +345,7 @@ A Secret's YAML shows its values as `<hidden>`, so a Secret is edited from **Sec
 - [Web terminal and exec](/kubernetes/web-terminal-and-exec) for everything the dashboard doesn't do.
 
 <FAQ items={[
-  {q: 'Can I manage Kubernetes workloads without kubectl on Cloider?', a: 'Yes. A cluster\'s page in the Cloider dashboard lists its pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, ConfigMaps, Secrets, Services, Ingress objects, NetworkPolicies, volumes, PersistentVolumes, StorageClasses and events, and can scale, restart, change images, read logs, open a terminal in a pod, edit keys, resize volumes, route domains and apply any YAML.'},
+  {q: 'Can I manage Kubernetes workloads without kubectl on Cloider?', a: 'Yes. A cluster\'s page in the Cloider dashboard lists its pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, ConfigMaps, Secrets, Services, Ingress objects, NetworkPolicies, volumes, PersistentVolumes, StorageClasses and events, and can scale, restart, change images, set environment variables, read logs, open a terminal in a pod, edit keys, resize volumes, route domains and apply any YAML.'},
   {q: 'Do changes made in the dashboard conflict with kubectl or Helm?', a: 'The dashboard changes the same objects through the cluster\'s Kubernetes API. Apply YAML uses server-side apply with the field manager cloider-dashboard. A later helm upgrade or kubectl apply of the same fields sets them back to what the chart or manifest says, so keep changes you want to last in your manifests.'},
   {q: 'Why are kube-system and other system namespaces hidden?', a: 'They hold the parts of the cluster Cloider runs for you, such as cluster DNS, the metrics server and the web terminal. The dashboard hides them unless you turn on Show system namespaces, and never changes them.'},
   {q: 'Do Ingress objects work on Cloider clusters?', a: 'An Ingress is only served by an ingress controller running in the cluster, and a new cluster has none, so the Ingress view shows it as not served. To route a domain or a path of it to a Service with automatic HTTPS, use Targets, which need nothing installed in the cluster.'},
