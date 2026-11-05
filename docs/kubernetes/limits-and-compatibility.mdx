@@ -64,6 +64,10 @@ Check your manifests for APIs that were removed in the new version before you mo
 
 Ingress objects you create in a Cloider cluster aren't published, so they have no effect. To serve HTTP and HTTPS on a domain, create a [target](/kubernetes/expose-services), which routes a domain and path to a Service and provides the HTTPS certificate. For TCP and UDP, use a [LoadBalancer Service](/kubernetes/load-balancers).
 
+### PriorityClass values are capped at 1,000,000,000
+
+PriorityClasses work as on any cluster: a pod of a higher class is scheduled first, and when the nodes are full it can evict pods of lower classes, unless its class has `preemptionPolicy: Never`. A class's value counts up to 1,000,000,000, the highest a class that isn't Kubernetes' own may have. Higher values count as 1,000,000,000, and so do the built-in `system-cluster-critical` and `system-node-critical`. A class with `globalDefault: true` is the default for your cluster's pods, but not for anything else on the nodes.
+
 ### Nodes are managed for you
 
 Your pods run on nodes that Cloider operates. `kubectl get nodes` lists the nodes your cluster can schedule onto, but you don't administer them: you can't add, remove, resize or log in to nodes, and there are no node pools. Nodes can change over time, so don't pin workloads to specific node names.

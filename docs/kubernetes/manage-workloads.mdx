@@ -3,10 +3,10 @@ title: Manage Kubernetes workloads from the dashboard
 sidebar_label: Manage workloads
 sidebar_position: 5.5
 description: See and change what runs in a Cloider cluster from the dashboard. Scale and restart workloads, read pod logs, open a terminal in a pod, edit ConfigMaps and Secrets, resize volumes and route domains.
-keywords: [kubernetes dashboard, kubernetes gui, kubernetes environment variables, scale deployment, restart deployment, edit configmap, edit kubernetes secret, pod logs, exec into pod, pod shell, resize persistent volume, kubernetes ingress, apply yaml]
+keywords: [kubernetes dashboard, kubernetes gui, kubernetes environment variables, scale deployment, restart deployment, edit configmap, edit kubernetes secret, pod logs, exec into pod, pod shell, resize persistent volume, kubernetes ingress, apply yaml, horizontal pod autoscaler, kubernetes resource quota, kubernetes limit range, priority class]
 ---
 
-A cluster's page in the dashboard shows what runs inside the cluster and lets you change it without `kubectl`: workloads, pods and their logs, ConfigMaps, Secrets, Services, the domains routed to them, Ingress objects, NetworkPolicies, volumes, storage classes and events. The page works through the cluster's own Kubernetes API, so what you change here is the same object that `kubectl` and Helm see, and changes made with them show up here.
+A cluster's page in the dashboard shows what runs inside the cluster and lets you change it without `kubectl`: workloads, pods and their logs, autoscalers, ConfigMaps, Secrets, Services, the domains routed to them, Ingress objects, NetworkPolicies, volumes, storage classes, events, resource quotas, limit ranges and priority classes. The page works through the cluster's own Kubernetes API, so what you change here is the same object that `kubectl` and Helm see, and changes made with them show up here.
 
 ## At a glance
 
@@ -15,6 +15,7 @@ A cluster's page in the dashboard shows what runs inside the cluster and lets yo
 | **Workloads** | **Pods** | Every pod with its status, ready containers, restarts, node and age | Click a pod for its **Details**, **Logs**, **Terminal**, **Events** and **Environment** tabs: its containers' states, restarts and resources, live logs, a crashed container's previous logs, a shell in a container, what the cluster reported about the pod and its environment variables. Delete a pod so its workload replaces it |
 | **Workloads** | **Deployments**, **StatefulSets**, **DaemonSets**, **Jobs**, **CronJobs** | Each kind on its own, with its status, ready replicas (or completions, or schedule and last run) and images | See its details, scale, restart, change an image, edit environment variables, expose as a Service, run a CronJob now, suspend its schedule, edit the YAML, delete |
 | **Workloads** | **ConfigMaps**, **Secrets** | Each kind on its own, with its keys | Create, edit keys, reveal a Secret's value, delete |
+| **Workloads** | **HorizontalPodAutoscalers** | Autoscalers with the workload they scale, each metric's current value and target, and the replicas | Create one from a template, edit the YAML, delete |
 | **Networking** | **Services** | Services with their type, cluster IP, public IP and ports | Route a domain to one, edit the YAML, delete |
 | **Networking** | **Targets** | The domains routed to the cluster's Services | Route a domain or a path of it to a Service with HTTPS, edit, remove |
 | **Networking** | **Ingress** | Ingress objects with their class, rules and address | Create one from a template, edit the YAML, delete |
@@ -23,6 +24,9 @@ A cluster's page in the dashboard shows what runs inside the cluster and lets yo
 | **Storage** | **PersistentVolumes** | The storage the volumes are bound to | View the YAML |
 | **Storage** | **StorageClasses** | How new volumes are provisioned | View the YAML |
 | **Observe** | **Events** | What the cluster reported, newest first | Show warnings only |
+| **Administration** | **ResourceQuotas** | Quotas with how much of each capped resource is used | Create one from a template, edit the YAML, delete |
+| **Administration** | **LimitRanges** | Each resource a LimitRange bounds, with its minimum, maximum and defaults | Create one from a template, edit the YAML, delete |
+| **Administration** | **PriorityClasses** | Priority classes with their value, highest first | View the YAML |
 
 **Apply YAML** at the top of the page creates or updates any objects from YAML, of any kind the cluster knows. **Terminal** next to it opens the cluster's [web terminal](/kubernetes/web-terminal-and-exec), and the download button saves the cluster's kubeconfig.
 
@@ -35,8 +39,8 @@ A cluster's page in the dashboard shows what runs inside the cluster and lets yo
 
 1. Open **Kubernetes** in the sidebar.
 2. Click the cluster's name. The page opens on **Deployments**.
-3. Pick a view in the list on the left, grouped under **Workloads**, **Networking**, **Storage** and **Observe**. Click a group's name to fold it. On a narrow screen, the views are in a list above the content instead.
-4. Pick a namespace in the namespace list at the top, or leave it on **All namespaces**. **StorageClasses** belong to no namespace, so that view has no namespace list.
+3. Pick a view in the list on the left, grouped under **Workloads**, **Networking**, **Storage**, **Observe** and **Administration**. Click a group's name to fold it. On a narrow screen, the views are in a list above the content instead.
+4. Pick a namespace in the namespace list at the top, or leave it on **All namespaces**. **StorageClasses** and **PriorityClasses** belong to no namespace, so those views have no namespace list.
 
 The view and the namespace are part of the page's URL, so a reload or a shared link opens the same view, and your browser's back button returns to the view you came from. Lists refresh on their own, every few seconds while something in them is still changing (a rollout, a pod starting) and every 15 seconds otherwise.
 
@@ -54,7 +58,7 @@ The actions button next to the namespace list (the three dots) has **New namespa
 <TabItem value="dashboard" label="Dashboard" default>
 
 1. On the cluster's page, click **Apply YAML**.
-2. Paste your YAML, or click **Templates** and pick a starting point: **Deployment and Service**, **StatefulSet with a volume**, **CronJob**, **Job**, **ConfigMap**, **Secret**, **Volume** or **NetworkPolicy**.
+2. Paste your YAML, or click **Templates** and pick a starting point: **Deployment and Service**, **StatefulSet with a volume**, **CronJob**, **Job**, **ConfigMap**, **Secret**, **Volume**, **NetworkPolicy**, **HorizontalPodAutoscaler**, **ResourceQuota**, **LimitRange** or **PriorityClass**.
 3. In **Objects that name no namespace go to**, pick the namespace for documents without `metadata.namespace`. It starts on the namespace you are viewing, or `default`.
 4. Click **Apply**.
 
@@ -125,6 +129,8 @@ Scaling changes how many replicas (copies of the pod) a Deployment or StatefulSe
 3. Click **Scale**.
 
 The **Ready** column shows ready pods out of the replicas asked for, and the status shows **Progressing** until they are all up.
+
+When a [HorizontalPodAutoscaler](#autoscale-a-workload) scales the workload, it sets the replicas back to its own count at its next check, so change its minimum and maximum instead.
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -285,6 +291,32 @@ Choosing **LoadBalancer** instead gives the Service a public IP for any TCP or U
 
 **New NetworkPolicy** opens **Apply YAML** with a policy that lets only pods labeled `app: web` reach pods labeled `app: redis` on port `6379`. Change a policy with **Edit YAML** in its actions menu, or delete it there.
 
+## Autoscale a workload
+
+**HorizontalPodAutoscalers** under **Workloads** lists the cluster's autoscalers. An autoscaler adds and removes a Deployment's or StatefulSet's pods to keep a metric near its target, most often the pods' CPU use as a share of the CPU they request. Every cluster runs the metrics server, so CPU and memory autoscaling work without extra setup.
+
+- **Scales**: the workload it scales. Click a Deployment or StatefulSet to open that list in the autoscaler's namespace.
+- **Metrics**: each metric as its name, the current value and the target, such as `cpu 45% / 70%`. **unknown** means the autoscaler hasn't read it yet. When the autoscaler can't scale, the reason is shown under its metrics in orange. One that says `missing request for cpu` means the workload's containers set no CPU request, so the autoscaler has nothing to measure their use against: give them one.
+- **Replicas**: the pods the workload runs now, with `→` and the count it is scaling to while it changes, then the autoscaler's minimum and maximum. **At its maximum** or **At its minimum** means the metric asks for more or fewer pods than the range allows.
+
+**New HorizontalPodAutoscaler** opens **Apply YAML** with an autoscaler that keeps the `web` Deployment between 2 and 10 replicas at 70% CPU. Change an autoscaler with **Edit YAML** in its actions menu, or delete it there. A workload whose autoscaler is deleted keeps the replicas it has and stops scaling on its own.
+
+## Set quotas and limits for a namespace
+
+**ResourceQuotas** and **LimitRanges** under **Administration** bound what a namespace's pods and volumes use. Both apply as objects are created, so pods already running keep what they have.
+
+**ResourceQuotas** lists each quota with every resource it caps, a bar of how much is used, and the used amount out of the cap, such as `1500m / 2`. The bar turns orange at 80% and red once the cap is reached, after which the cluster refuses new pods or volumes that would go over it. A quota that counts only some pods says so under its name, such as **Counts only BestEffort**.
+
+Once a quota caps CPU or memory, the cluster refuses a pod that doesn't set a request or limit for it. A LimitRange gives such pods defaults.
+
+**LimitRanges** lists each LimitRange with one row per resource it bounds, for each **Container**, **Pod** or **Volume**: its **Min** and **Max**, the **Default request** and **Default limit** a container that sets none gets, and **Max limit/request**, how many times its request a limit may be.
+
+**New ResourceQuota** and **New LimitRange** open **Apply YAML** with a pair that works together: a quota of 2 CPUs and 4 GiB of memory requested, 8 GiB of memory limits, 20 pods and 10 volumes of 50 GiB in total, and a LimitRange that gives each container a request of 100m CPU and 128 MiB of memory and a limit of 256 MiB. Change one with **Edit YAML** in its actions menu, or delete it there.
+
+### PriorityClasses
+
+**PriorityClasses** under **Administration** lists the cluster's priority classes, highest value first. The one marked **default** is given to pods that name no class, and **built in** marks Kubernetes' own `system-` classes. A pod of a higher class is scheduled first, and when the nodes are full it can evict pods of lower classes to make room, unless its class never preempts. Values above 1,000,000,000, the built-in classes' included, count as 1,000,000,000, see [Limits and compatibility](/kubernetes/limits-and-compatibility#priorityclass-values-are-capped-at-1000000000). Priority classes belong to the whole cluster, so the dashboard only reads them: create one with **Apply YAML**, whose **PriorityClass** template is a class at `1000` that never evicts other pods, and change one with `kubectl`.
+
 ## Edit ConfigMaps and Secrets
 
 ConfigMaps hold settings and Secrets hold credentials, as keys with values, which pods read as environment variables or files. Open **ConfigMaps** or **Secrets** under **Workloads**.
@@ -315,11 +347,11 @@ Both belong to the whole cluster, so the dashboard only reads them: their **View
 
 ## View and edit any object's YAML
 
-Every object's actions menu has **Edit YAML** (or **View YAML** when you can't change it, or **YAML**, with an **Edit** button inside). PersistentVolumes and StorageClasses have a **View YAML** button on their row. The editor shows the whole object, and **Save** replaces it with your version.
+Every object's actions menu has **Edit YAML** (or **View YAML** when you can't change it, or **YAML**, with an **Edit** button inside). PersistentVolumes, StorageClasses and PriorityClasses have a **View YAML** button on their row. The editor shows the whole object, and **Save** replaces it with your version.
 
 If the object changed since you opened it, for example because a rollout updated its status or someone applied a new version, saving is refused with `This object changed since you opened it. Reload it to edit the current version, your changes will be lost.` Click **Reload** and make your change again, so you never undo someone else's.
 
-A Secret's YAML shows its values as `<hidden>`, so a Secret is edited from **Secrets** instead. A PersistentVolume or StorageClass belongs to the whole cluster and can't be edited here. The name, namespace and kind can't be changed in the editor. To rename an object, create it under the new name with **Apply YAML** and delete the old one.
+A Secret's YAML shows its values as `<hidden>`, so a Secret is edited from **Secrets** instead. A PersistentVolume, StorageClass or PriorityClass belongs to the whole cluster and can't be edited here. The name, namespace and kind can't be changed in the editor. To rename an object, create it under the new name with **Apply YAML** and delete the old one.
 
 ## Read events
 
@@ -345,7 +377,7 @@ A Secret's YAML shows its values as `<hidden>`, so a Secret is edited from **Sec
 - [Web terminal and exec](/kubernetes/web-terminal-and-exec) for everything the dashboard doesn't do.
 
 <FAQ items={[
-  {q: 'Can I manage Kubernetes workloads without kubectl on Cloider?', a: 'Yes. A cluster\'s page in the Cloider dashboard lists its pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, ConfigMaps, Secrets, Services, Ingress objects, NetworkPolicies, volumes, PersistentVolumes, StorageClasses and events, and can scale, restart, change images, set environment variables, read logs, open a terminal in a pod, edit keys, resize volumes, route domains and apply any YAML.'},
+  {q: 'Can I manage Kubernetes workloads without kubectl on Cloider?', a: 'Yes. A cluster\'s page in the Cloider dashboard lists its pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, HorizontalPodAutoscalers, ConfigMaps, Secrets, Services, Ingress objects, NetworkPolicies, volumes, PersistentVolumes, StorageClasses, events, ResourceQuotas, LimitRanges and PriorityClasses, and can scale, restart, change images, set environment variables, read logs, open a terminal in a pod, edit keys, resize volumes, route domains and apply any YAML.'},
   {q: 'Do changes made in the dashboard conflict with kubectl or Helm?', a: 'The dashboard changes the same objects through the cluster\'s Kubernetes API. Apply YAML uses server-side apply with the field manager cloider-dashboard. A later helm upgrade or kubectl apply of the same fields sets them back to what the chart or manifest says, so keep changes you want to last in your manifests.'},
   {q: 'Why are kube-system and other system namespaces hidden?', a: 'They hold the parts of the cluster Cloider runs for you, such as cluster DNS, the metrics server and the web terminal. The dashboard hides them unless you turn on Show system namespaces, and never changes them.'},
   {q: 'Do Ingress objects work on Cloider clusters?', a: 'An Ingress is only served by an ingress controller running in the cluster, and a new cluster has none, so the Ingress view shows it as not served. To route a domain or a path of it to a Service with automatic HTTPS, use Targets, which need nothing installed in the cluster.'},
