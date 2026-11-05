@@ -54,7 +54,7 @@ Check your manifests for APIs that were removed in the new version before you mo
 - **Cluster admin access** through the kubeconfig's client certificate.
 - **Cluster DNS**: Services resolve as `<service>.<namespace>.svc.cluster.local`.
 - **The metrics API**: the metrics server runs in every cluster, so `kubectl top` and the HorizontalPodAutoscaler work.
-- **PersistentVolumeClaims** with the storage classes Cloider provides. See [Persistent volumes](/kubernetes/persistent-volumes).
+- **PersistentVolumeClaims** with two storage classes: `cloider-standard` (the default, `ReadWriteOnce`) and `cloider-standard-rwx` (`ReadWriteMany`). See [Persistent volumes](/kubernetes/persistent-volumes).
 - **Services of type `LoadBalancer`**, which get a public IP. See [Load balancers](/kubernetes/load-balancers).
 - **Helm charts and operators**. See [Helm](/kubernetes/helm).
 

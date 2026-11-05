@@ -391,8 +391,10 @@ Then apply your existing manifests or Helm charts, with these changes:
   [Pull private images](/kubernetes/pull-private-images).
 - **Ingress objects aren't served.** Route your domains to Services with [targets](/kubernetes/expose-services), and
   turn the chart's ingress off (often `ingress.enabled: false`). Raw TCP and UDP use `type: LoadBalancer`.
-- **Storage** comes from the cluster's default storage class: drop provider specific `storageClassName` values. Copy
-  volume data with a Job that downloads it from a bucket, see [Persistent volumes](/kubernetes/persistent-volumes).
+- **Storage** comes from the cluster's default storage class, `cloider-standard`: drop provider specific
+  `storageClassName` values, and use `cloider-standard-rwx` for `ReadWriteMany` claims (such as ones on EFS, Azure
+  Files or Filestore). Copy volume data with a Job that downloads it from a bucket, see
+  [Persistent volumes](/kubernetes/persistent-volumes).
 - **The database** is reached on its private host; add the cluster as a trusted source with
   `cloider db trusted-sources orders-db --add cluster:production`.
 

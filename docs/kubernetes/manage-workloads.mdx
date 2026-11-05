@@ -299,7 +299,7 @@ Pods read new values when they start, so restart the workloads that use them aft
 
 A volume (PersistentVolumeClaim) keeps data across restarts of the pods that mount it. Volumes are billed for their size, see [Persistent volumes](/kubernetes/persistent-volumes).
 
-- **Create one**: open **PersistentVolumeClaims** under **Storage**, click **New volume**, pick the namespace, a name, the **Size (GiB)** from 1 to 1000 and the **Storage class** (the cluster's default is preselected), then click **Create**. The volume is `ReadWriteOnce`, mounted read-write by pods on one node at a time. For another access mode, use **Apply YAML**.
+- **Create one**: open **PersistentVolumeClaims** under **Storage**, click **New volume**, pick the namespace, a name, the **Size (GiB)** from 1 to 1000 and the **Storage class** (the cluster's default is preselected), then click **Create**. The volume is `ReadWriteOnce`, mounted read-write by pods on one node at a time. For a volume that pods on several nodes share, use **Apply YAML** with a `ReadWriteMany` claim of `cloider-standard-rwx`, see [Share a volume between pods on different nodes](/kubernetes/persistent-volumes#share-a-volume-between-pods-on-different-nodes).
 - **Grow one**: **Resize** in its actions menu. A volume can only grow, only once it is `Bound`, and only when its storage class allows it. It grows in the background while it stays in use.
 - **Delete one**: **Delete** asks you to type the volume's name. Its data is deleted for good. A volume still mounted by a pod goes once that pod is gone.
 

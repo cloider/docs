@@ -2,8 +2,8 @@
 title: Persistent volumes on Cloider Kubernetes
 sidebar_label: Persistent volumes
 sidebar_position: 8
-description: Keep data across pod restarts on Cloider Kubernetes with PersistentVolumeClaims, use them in Deployments and StatefulSets, and see how GiB billing works.
-keywords: [persistent volume, persistentvolumeclaim, pvc, kubernetes storage, storage class, statefulset, kubernetes volume pricing]
+description: Keep data across pod restarts on Cloider Kubernetes with PersistentVolumeClaims, share them across nodes with ReadWriteMany, and see how GiB billing works.
+keywords: [persistent volume, persistentvolumeclaim, pvc, kubernetes storage, storage class, cloider-standard, cloider-standard-rwx, readwritemany, statefulset, kubernetes volume pricing]
 ---
 
 A persistent volume is disk space for your pods that outlives them: when a pod restarts, moves or is replaced, its data is still there. On Cloider you get one by creating a standard Kubernetes **PersistentVolumeClaim** (PVC); the cluster provisions a volume of the requested size and binds it to the claim. Volumes are billed per GiB of provisioned size per month. This page shows how to create claims, use them from Deployments and StatefulSets, and manage their cost.
@@ -13,7 +13,7 @@ A persistent volume is disk space for your pods that outlives them: when a pod r
 | | |
 | --- | --- |
 | **How to get a volume** | Create a PersistentVolumeClaim; the volume is provisioned for you |
-| **Storage classes** | Provided by Cloider and visible with `kubectl get storageclass`. A claim without `storageClassName` uses the default class |
+| **Storage classes** | `cloider-standard` (the default, `ReadWriteOnce`) and `cloider-standard-rwx` (`ReadWriteMany`, mounted by pods on several nodes at once). A claim without `storageClassName` uses `cloider-standard` |
 | **Billing** | Per GiB of the volume's provisioned capacity, per month, prorated. A 10 GiB claim is billed as 10 GiB however full it is |
 | **While paused** | Volumes and their data are kept, and still billed |
 | **Where to see usage** | **Usage** in the dashboard, **Persistent Volumes** in each cluster's average usage |
@@ -29,13 +29,28 @@ A container's own filesystem is temporary: everything written to it disappears w
 
 Deleting a pod or a Deployment doesn't delete its claims. The data stays until you delete the PVC.
 
-## See the available storage classes
+## Which storage classes are available?
+
+Every Cloider cluster has two storage classes: `cloider-standard`, the default, for volumes that pods on one node mount at a time, and `cloider-standard-rwx`, for volumes that pods on several nodes mount at the same time.
+
+| Storage class | Access mode | Use it for |
+| --- | --- | --- |
+| `cloider-standard` (default) | `ReadWriteOnce`: mounted read-write by pods on one node at a time | Databases, queues, a StatefulSet's per replica data, anything one pod writes |
+| `cloider-standard-rwx` | `ReadWriteMany`: mounted read-write by pods on any number of nodes at once | Uploads, media or build artifacts shared by several replicas of a Deployment |
+
+Both classes keep each volume in three replicas, provision it as soon as the claim is created, allow it to grow, and delete it with its claim (reclaim policy `Delete`). Both are billed the same way, per GiB of provisioned capacity. Name one of them in `storageClassName`, or leave the field out to get `cloider-standard`.
 
 ```bash
-kubectl get storageclass
+kubectl get storageclass -o custom-columns='NAME:.metadata.name,DEFAULT:.metadata.annotations.storageclass\.kubernetes\.io/is-default-class,RECLAIMPOLICY:.reclaimPolicy,VOLUMEBINDINGMODE:.volumeBindingMode,ALLOWVOLUMEEXPANSION:.allowVolumeExpansion'
 ```
 
-The output lists each class, which one is marked `(default)`, its `RECLAIMPOLICY` (what happens to the volume when the claim is deleted) and `ALLOWVOLUMEEXPANSION` (whether claims of that class can grow). Use the default class unless you have a reason to choose another one.
+```text title="Output"
+NAME                   DEFAULT   RECLAIMPOLICY   VOLUMEBINDINGMODE   ALLOWVOLUMEEXPANSION
+cloider-standard       true      Delete          Immediate           true
+cloider-standard-rwx   <none>    Delete          Immediate           true
+```
+
+`DEFAULT` marks the class a claim without `storageClassName` gets, `RECLAIMPOLICY` is what happens to the volume when its claim is deleted, `VOLUMEBINDINGMODE` `Immediate` means the volume is created when the claim is, and `ALLOWVOLUMEEXPANSION` says whether claims of that class can grow.
 
 ## Create a volume
 
@@ -55,7 +70,7 @@ spec:
       storage: 10Gi
 ```
 
-`ReadWriteOnce` means the volume is mounted read-write by pods on one node at a time, the mode every storage class supports. Use the `Gi` suffix (gibibytes), as volumes are measured and billed in GiB.
+`ReadWriteOnce` means the volume is mounted read-write by pods on one node at a time, the mode every storage class supports. For a volume that pods on several nodes mount together, see [Share a volume between pods on different nodes](#share-a-volume-between-pods-on-different-nodes). Use the `Gi` suffix (gibibytes), as volumes are measured and billed in GiB.
 
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
@@ -105,9 +120,6 @@ resource "kubernetes_persistent_volume_claim_v1" "uploads" {
       }
     }
   }
-
-  # Some storage classes only bind once a pod uses the claim
-  wait_until_bound = false
 }
 ```
 
@@ -152,11 +164,11 @@ NAME      STATUS   CAPACITY   MODES
 uploads   Bound    10Gi       [ReadWriteOnce]
 ```
 
-A claim can show `Pending` until a pod uses it, when its storage class provisions volumes on first use. `kubectl describe pvc uploads -n shop` shows why it is waiting.
+Both storage classes provision the volume as soon as the claim is created, so it is `Bound` within seconds. If it stays `Pending`, `kubectl describe pvc uploads -n shop` shows why.
 
 ## Use the volume in a Deployment
 
-Mount the claim in the pod template. With a `ReadWriteOnce` volume, use the `Recreate` strategy so the old pod releases the volume before the new one starts:
+Mount the claim in the pod template. With a `ReadWriteOnce` volume, use the `Recreate` strategy so the old pod releases the volume before the new one starts (a `cloider-standard-rwx` volume doesn't need it):
 
 ```yaml title="web-with-uploads.yaml"
 apiVersion: apps/v1
@@ -207,6 +219,74 @@ kubectl exec -n shop deploy/web -- cat /usr/share/nginx/html/index.html
 ```text title="Output"
 <h1>stored on a volume</h1>
 ```
+
+## Share a volume between pods on different nodes
+
+To let several pods read and write the same files wherever they run, create the claim with the `ReadWriteMany` access mode and the `cloider-standard-rwx` storage class. Every pod that mounts it sees the same files at the same time, so a Deployment can run several replicas on it and keep its default rolling updates.
+
+```yaml title="shared-media.yaml"
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media
+  namespace: shop
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: cloider-standard-rwx
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media
+  namespace: shop
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: media
+  template:
+    metadata:
+      labels:
+        app: media
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: media
+              mountPath: /usr/share/nginx/html
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: media
+```
+
+Write a file from the first pod and read it from the last one:
+
+```bash
+kubectl apply -f shared-media.yaml
+kubectl rollout status deploy/media -n shop
+FIRST=$(kubectl get pods -n shop -l app=media -o jsonpath='{.items[0].metadata.name}')
+LAST=$(kubectl get pods -n shop -l app=media -o jsonpath='{.items[-1:].metadata.name}')
+kubectl exec -n shop "$FIRST" -- sh -c 'echo "written by $(hostname)" > /usr/share/nginx/html/index.html'
+kubectl exec -n shop "$LAST" -- cat /usr/share/nginx/html/index.html
+```
+
+```text title="Output"
+written by media-6d8f9c7b54-k2x9p
+```
+
+`kubectl get pods -n shop -l app=media -o wide` shows the node each pod runs on. A `cloider-standard-rwx` volume is reached over the cluster's network, so for databases and other software that expects a local disk, use `cloider-standard` instead. The access mode of an existing claim can't be changed: to share a `ReadWriteOnce` volume, create a `ReadWriteMany` claim and copy the data into it.
 
 ## Use volumes in a StatefulSet
 
@@ -328,9 +408,9 @@ Cloider has no snapshot or restore feature for the volumes in your cluster, so b
 
 ## Troubleshooting
 
-**PVC stays `Pending`**: run `kubectl describe pvc <name> -n <namespace>`. `waiting for first consumer to be created before binding` means the class binds on first use; it binds when a pod mounts it. A misspelled `storageClassName` never binds; remove the field to use the default class.
+**PVC stays `Pending`**: run `kubectl describe pvc <name> -n <namespace>` and read its events. Claims of `cloider-standard` and `cloider-standard-rwx` are bound within seconds. A misspelled `storageClassName` never binds: name one of the two classes, or remove the field to use `cloider-standard`.
 
-**Pod stays `ContainerCreating` with `Multi-Attach error`**: a `ReadWriteOnce` volume is still attached to another pod. Use `strategy: Recreate` in Deployments that mount one, or a StatefulSet.
+**Pod stays `ContainerCreating` with `Multi-Attach error`**: a `ReadWriteOnce` volume is still attached to a pod on another node. Use `strategy: Recreate` in Deployments that mount one, or a StatefulSet. If pods on several nodes need the same files, use a `ReadWriteMany` claim of `cloider-standard-rwx`, see [Share a volume between pods on different nodes](#share-a-volume-between-pods-on-different-nodes).
 
 **Pod can't write to the volume (`Permission denied`)**: the container runs as a user that doesn't own the mount. Set `securityContext.fsGroup` in the pod spec to the container's group id.
 
@@ -348,6 +428,7 @@ More cases are in [Kubernetes troubleshooting](/kubernetes/troubleshooting).
   {q: 'Does Cloider Kubernetes support persistent volumes?', a: 'Yes. Create a standard PersistentVolumeClaim and the cluster provisions a volume of the requested size and binds it. Pods mount the claim like on any Kubernetes cluster.'},
   {q: 'How are persistent volumes billed on Cloider?', a: 'Per GiB of provisioned capacity per month, prorated over time. A 10 GiB claim is billed as 10 GiB however much data it holds, for as long as the claim exists.'},
   {q: 'Are volumes kept when I pause a cluster?', a: 'Yes. Pausing a cluster keeps its PersistentVolumeClaims and their data, and they keep being billed per GiB while the cluster is paused.'},
-  {q: 'Which storage classes are available?', a: 'Run kubectl get storageclass in your cluster. It lists the classes Cloider provides, marks the default one, and shows whether each class allows volume expansion.'},
+  {q: 'Which storage classes are available on Cloider Kubernetes?', a: 'Two: cloider-standard, the default, for ReadWriteOnce volumes that pods on one node mount at a time, and cloider-standard-rwx, for ReadWriteMany volumes that pods on several nodes mount at the same time. Both keep each volume in three replicas, allow it to grow and are billed per GiB of provisioned capacity.'},
+  {q: 'Does Cloider Kubernetes support ReadWriteMany volumes?', a: 'Yes. Create a PersistentVolumeClaim with accessModes ReadWriteMany and storageClassName cloider-standard-rwx. Pods on any number of nodes can then mount it read-write at the same time.'},
   {q: 'Are volumes deleted when I delete a Helm release or a StatefulSet?', a: 'Not necessarily. Many Helm charts and every StatefulSet leave their PersistentVolumeClaims behind, and those keep being billed until you delete them with kubectl delete pvc.'},
 ]} />

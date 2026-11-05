@@ -144,9 +144,9 @@ See [Load balancers](/kubernetes/load-balancers).
 
 ## Volumes
 
-**PVC stays `Pending`**: `waiting for first consumer to be created before binding` means it binds when a pod uses it. A `storageClassName` that doesn't exist never binds: check `kubectl get storageclass`, or remove the field to use the default.
+**PVC stays `Pending`**: run `kubectl describe pvc` and read its events. Claims of the two storage classes, `cloider-standard` and `cloider-standard-rwx`, are bound within seconds. A `storageClassName` that doesn't exist never binds: name one of the two, or remove the field to use `cloider-standard`.
 
-**`Multi-Attach error`**: a `ReadWriteOnce` volume is still attached to another pod. Use `strategy: Recreate` for Deployments with a volume, or a StatefulSet.
+**`Multi-Attach error`**: a `ReadWriteOnce` volume is still attached to a pod on another node. Use `strategy: Recreate` for Deployments with a volume, or a StatefulSet. If pods on several nodes need the same files, use a `ReadWriteMany` claim of `cloider-standard-rwx`, see [Share a volume between pods on different nodes](/kubernetes/persistent-volumes#share-a-volume-between-pods-on-different-nodes).
 
 **`Permission denied` writing to the volume**: set `securityContext.fsGroup` in the pod spec to the group the container runs as.
 
