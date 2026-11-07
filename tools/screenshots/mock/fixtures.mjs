@@ -13,6 +13,11 @@ export function ago(days, hours = 0, minutes = 0) {
   return new Date(NOW.getTime() - days * DAY - hours * 3600e3 - minutes * 60e3 - jitter).toISOString()
 }
 
+export function inHours(hours, minutes = 0) {
+  const top = Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth(), NOW.getUTCDate(), NOW.getUTCHours())
+  return new Date(top + (hours * 60 + minutes) * 60_000).toISOString()
+}
+
 export function inDays(days) {
   return new Date(NOW.getTime() + days * DAY).toISOString()
 }
@@ -157,9 +162,23 @@ export const adminDigest = adminDigests[0]
 export const deployHookUrl = (appId) =>
   `https://cloider.com/api/deploy-hooks/apps/${appId}/7d2f9a4c1e8b6d3f0a5c2e9b7d4f1a6c8e3b5d0f2a7c9e4b`
 
+// What a new app starts on (the api's appNewCompute), and an app checked only on its port
+const newAppCompute = {
+  compute_mode: 'automatic', replicas: 2, max_replicas: 5, cpu: 100, memory: 250, cpu_threshold: 70, memory_threshold: 0,
+}
+const noHealthCheck = {
+  health_check_path: '', health_check_interval: 10, health_check_timeout: 5,
+  health_check_failure_threshold: 6, health_check_grace_period: 300,
+}
+// what the api sends for an app that serves on its port
+const notCron = { schedule: '', next_run_at: null }
+
 export const apps = [
   {
     hashed_id: 'b7x2k', app_name: 'blog', app_label: 'blog', port: 3000, start_command: '',
+    compute_mode: 'autoscaling', replicas: 2, max_replicas: 6, cpu: 500, memory: 512, cpu_threshold: 70, memory_threshold: 0,
+    health_check_path: '/healthz', health_check_interval: 10, health_check_timeout: 5,
+    health_check_failure_threshold: 6, health_check_grace_period: 300, ...notCron,
     status: 'Ready', language: 'TypeScript', framework: 'Next.js',
     image_ref: blogImage, dockerfile_args: [], version: '12',
     url: 'https://blog-x7k2.cloider.app',
@@ -175,6 +194,7 @@ export const apps = [
   },
   {
     hashed_id: 'a9m4q', app_name: 'api', app_label: 'api', port: 8080, start_command: '',
+    ...newAppCompute, ...noHealthCheck, ...notCron,
     status: 'Building', language: 'Go', framework: '',
     image_ref: 'registry.cloider.com/jane-apps/api-a9m4q:7',
     dockerfile_args: [{ name: 'GO_VERSION', default: '1.25' }], version: '7',
@@ -187,6 +207,7 @@ export const apps = [
   },
   {
     hashed_id: 'w3n8r', app_name: 'web', app_label: 'web', port: 8080, start_command: 'npm run start',
+    ...newAppCompute, ...noHealthCheck, ...notCron,
     status: 'Paused', language: 'JavaScript', framework: 'Express',
     image_ref: 'registry.cloider.com/jane-apps/web-w3n8r:5', dockerfile_args: [], version: '5',
     url: 'https://web-q4m8.cloider.app',
@@ -199,6 +220,8 @@ export const apps = [
   // runs an image built in Acme's own CI rather than one Cloider builds
   {
     hashed_id: 'd6h3t', app_name: 'admin', app_label: 'admin', port: 8080, start_command: '',
+    compute_mode: 'fixed', replicas: 2, max_replicas: 5, cpu: 250, memory: 512, cpu_threshold: 70, memory_threshold: 0,
+    ...noHealthCheck, ...notCron,
     status: 'Ready', language: '', framework: '',
     image_ref: adminImage(0), dockerfile_args: [], version: '4',
     url: 'https://admin-r5t1.cloider.app',
@@ -207,6 +230,20 @@ export const apps = [
     repo_full_name: '', repo_url: '', repo_branch: '', git_provider: 'GitHub', auto_deploy: false, git_connected: false,
     image: 'ghcr.io/acme/admin', image_tag: 'v3', image_username: 'acme-ci',
     created_at: ago(12),
+  },
+  // a cron job: no port or address, runs every hour on the image its Dockerfile builds
+  {
+    hashed_id: 'r8c5j', app_name: 'reports', app_label: 'reports', port: 0, start_command: 'python reports.py',
+    ...newAppCompute, replicas: 1, ...noHealthCheck,
+    builder: 'dockerfile', schedule: '0 * * * *', next_run_at: inHours(1, 0),
+    status: 'Ready', language: 'Python', framework: '',
+    image_ref: 'registry.cloider.com/jane-apps/reports-r8c5j:3', dockerfile_args: [], version: '3',
+    url: '', domains: [],
+    source_filename: '', source_size: 0, uploaded: false,
+    repo_full_name: 'acme/reports', repo_url: 'https://github.com/acme/reports', repo_branch: 'main',
+    git_provider: 'GitHub', auto_deploy: true, git_connected: true,
+    image: '', image_tag: '', image_username: '',
+    created_at: ago(18),
   },
 ]
 
@@ -263,6 +300,18 @@ export const builds = {
     build(35, {
       version: '5', status: 'Ready', source_filename: 'web.zip', source_size: 3355443,
       image_ref: 'registry.cloider.com/jane-apps/web-w3n8r:5', started_at: ago(9, 2), finished_at: ago(9, 1, 57), created_at: ago(9, 2),
+    }),
+  ],
+  r8c5j: [
+    build(53, {
+      version: '3', status: 'Ready', source_filename: '', source_size: 0,
+      commit_sha: '2d7f1b9c4e6a8d0f3b5c7e9a1d3f5b7c9e1a3d5f', commit_message: 'Add the weekly churn report',
+      image_ref: 'registry.cloider.com/jane-apps/reports-r8c5j:3', started_at: ago(1, 7), finished_at: ago(1, 6, 57), created_at: ago(1, 7),
+    }),
+    build(52, {
+      version: '2', status: 'Superseded', source_filename: '', source_size: 0,
+      commit_sha: '8a4c2e6b0d9f1a3c5e7b9d2f4a6c8e0b1d3f5a7c', commit_message: 'Retry the warehouse query once',
+      image_ref: 'registry.cloider.com/jane-apps/reports-r8c5j:2', started_at: ago(9, 3), finished_at: ago(9, 2, 57), created_at: ago(9, 3),
     }),
   ],
   // nothing is built: each deploy pins the digest the tag pointed at
@@ -362,12 +411,30 @@ export const buildLog = [
 ].join('\n')
 
 // what the Logs tab tails off the running app
-export function appLogLines(count = 40) {
+// The replicas serving each app that runs more than one, oldest first, as
+// GET /apps/:id/replicas answers. One of blog's is failing its health check.
+export const appReplicas = {
+  b7x2k: [
+    { name: 'app-7c9d8f6b5-x2k4p', version: '12', status: 'Running', ready: true, restarts: 0, message: '', created_at: ago(2) },
+    { name: 'app-7c9d8f6b5-m8q3z', version: '12', status: 'Running', ready: true, restarts: 0, message: '', created_at: ago(2) },
+    {
+      name: 'app-7c9d8f6b5-r5t7n', version: '12', status: 'Running', ready: false, restarts: 1,
+      message: 'Failing its health check, it answered with HTTP 503', created_at: ago(0, 0, 38),
+    },
+  ],
+  d6h3t: [
+    { name: 'app-5b8d6c4f9-h3w9k', version: '4', status: 'Running', ready: true, restarts: 0, message: '', created_at: ago(1) },
+    { name: 'app-5b8d6c4f9-p7n2d', version: '4', status: 'Running', ready: true, restarts: 0, message: '', created_at: ago(1) },
+  ],
+}
+
+// replicas: names to mark each line with, as the stream does for every replica at once
+export function appLogLines(count = 40, replicas = []) {
   const paths = [
     ['GET', '/', 200, 18], ['GET', '/posts/shipping-faster-with-preview-deploys', 200, 34],
     ['GET', '/_next/static/chunks/app/page-4c1d9e7a.js', 200, 3], ['GET', '/rss.xml', 200, 12],
     ['GET', '/archive?page=2', 200, 27], ['GET', '/posts/postgres-tuning-notes', 200, 41],
-    ['GET', '/favicon.ico', 200, 1], ['HEAD', '/', 200, 6], ['GET', '/api/health', 200, 2],
+    ['GET', '/favicon.ico', 200, 1], ['HEAD', '/', 200, 6], ['GET', '/healthz', 200, 2],
     ['GET', '/posts/we-moved-to-kubernetes', 200, 38], ['GET', '/wp-login.php', 404, 4],
     ['POST', '/api/newsletter', 201, 96], ['GET', '/authors/jane-doe', 200, 22],
   ]
@@ -385,8 +452,87 @@ export function appLogLines(count = 40) {
     t += 3000 + ((i * 1733) % 2400)
     const ts = new Date(t).toISOString()
     const colour = status >= 400 ? '\x1b[33m' : '\x1b[32m'
-    lines.push(`${ts} ${method.padEnd(4)} ${path} ${colour}${status}\x1b[0m ${ms + (i % 5)}ms`)
+    const prefix = replicas.length ? `[${replicas[(i * 5) % replicas.length]}] ` : ''
+    lines.push(`${prefix}${ts} ${method.padEnd(4)} ${path} ${colour}${status}\x1b[0m ${ms + (i % 5)}ms`)
   }
+  if (replicas.length) {
+    for (let i = 0; i < 6; i++) lines[i] = `[${replicas[0]}] ${lines[i]}`
+  }
+  return lines.join('\n') + '\n'
+}
+
+// ---------- cron job runs ----------
+
+// A scheduled run's Job is named after its scheduled minute since the epoch, the
+// way the CronJob controller names them; Run now's after the second it started
+function run(at, { manual = false, status = 'Succeeded', seconds = 0, pull = 9, exit_code = null, message = '' }) {
+  const scheduled = new Date(at)
+  const started = new Date(scheduled.getTime() + pull * 1000)
+  const settled = status == 'Succeeded' || status == 'Failed'
+  return {
+    name: manual ? `app-manual-${Math.floor(scheduled.getTime() / 1000)}` : `app-${Math.floor(scheduled.getTime() / 60000)}`,
+    manual, status, exit_code: settled ? (exit_code ?? 0) : null, message,
+    created_at: scheduled.toISOString(), started_at: started.toISOString(),
+    finished_at: settled ? new Date(started.getTime() + seconds * 1000).toISOString() : null,
+  }
+}
+
+// the top of an hour today, in UTC
+const todayAt = (hour) => Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth(), NOW.getUTCDate(), hour)
+
+// What the cluster keeps of the reports job: the last 5 succeeded and 5 failed runs,
+// and the one Run now started a minute ago, newest first
+export const appRuns = {
+  r8c5j: [
+    run(NOW.getTime() - 64_000, { manual: true, status: 'Running', pull: 4 }),
+    run(todayAt(15), { seconds: 112 }),
+    run(todayAt(14), { seconds: 97 }),
+    run(todayAt(13), { status: 'Failed', seconds: 23, exit_code: 1, message: 'Exited with code 1' }),
+    run(todayAt(12), { seconds: 104 }),
+    run(todayAt(11), { seconds: 118 }),
+    run(todayAt(10), { seconds: 101 }),
+    run(todayAt(-14), { status: 'Failed', seconds: 31, exit_code: 1, message: 'Exited with code 1' }),
+    run(todayAt(-30), { status: 'Failed', seconds: 412, exit_code: 137, message: 'Exited with code 137' }),
+    run(todayAt(-78), { status: 'Failed', seconds: 18, exit_code: 1, message: 'Exited with code 1' }),
+    run(todayAt(-141), { status: 'Failed', seconds: 26, exit_code: 2, message: 'Exited with code 2' }),
+  ],
+}
+
+// what a run of the reports job prints, the running one is still going
+export function appRunLog(name) {
+  const runs = appRuns.r8c5j
+  const r = runs.find(x => x.name == name) ?? runs[0]
+  let t = new Date(r.started_at).getTime()
+  const at = (s) => new Date((t += s * 1000)).toISOString().replace(/\.\d+Z$/, 'Z')
+  const lines = [
+    `${at(0)} INFO  reports: starting, 4 reports due`,
+    `${at(1)} INFO  warehouse: connected to orders-db (postgresql 18.0)`,
+    `${at(6)} INFO  daily_revenue: 1,284 orders, 18 currencies`,
+    `${at(14)} INFO  daily_revenue: wrote reports/2026-10-20/daily-revenue.csv (212 KB)`,
+  ]
+  if (r.status == 'Failed') {
+    return lines.slice(0, 2).concat([
+      `${at(9)} ERROR churn: query canceled, statement timeout of 15s exceeded`,
+      'Traceback (most recent call last):',
+      '  File "/app/reports.py", line 88, in <module>',
+      '    run(report)',
+      '  File "/app/reports/churn.py", line 41, in run',
+      '    rows = db.fetch_all(CHURN_QUERY, since=week_start)',
+      'psycopg.errors.QueryCanceled: canceling statement due to statement timeout',
+      '',
+    ]).join('\n')
+  }
+  lines.push(
+    `${at(11)} INFO  churn: 9,312 active customers, 1.8% churned this week`,
+    `${at(9)} INFO  churn: wrote reports/2026-10-20/churn.csv (96 KB)`,
+    `${at(21)} INFO  inventory: 4,182 products, 37 below their reorder point`,
+  )
+  if (r.status == 'Running') return lines.join('\n') + '\n'
+  lines.push(
+    `${at(4)} INFO  inventory: wrote reports/2026-10-20/inventory.csv (318 KB)`,
+    `${at(18)} INFO  mailer: sent 3 reports to finance@example.com`,
+    `${at(1)} INFO  reports: done in ${Math.round((new Date(r.finished_at) - new Date(r.started_at)) / 1000)}s`,
+  )
   return lines.join('\n') + '\n'
 }
 
@@ -411,6 +557,7 @@ export const gitRepos = {
     { id: 702, name: 'storefront', full_name: 'acme/storefront', html_url: 'https://github.com/acme/storefront', private: true, default_branch: 'main', language: 'TypeScript', pushed_at: ago(1, 2) },
     { id: 703, name: 'api', full_name: 'acme/api', html_url: 'https://github.com/acme/api', private: true, default_branch: 'main', language: 'Go', pushed_at: ago(0, 6) },
     { id: 704, name: 'docs', full_name: 'acme/docs', html_url: 'https://github.com/acme/docs', private: false, default_branch: 'main', language: 'MDX', pushed_at: ago(3) },
+    { id: 707, name: 'reports', full_name: 'acme/reports', html_url: 'https://github.com/acme/reports', private: true, default_branch: 'main', language: 'Python', pushed_at: ago(1, 7) },
     { id: 705, name: 'billing-worker', full_name: 'acme/billing-worker', html_url: 'https://github.com/acme/billing-worker', private: true, default_branch: 'main', language: 'Python', pushed_at: ago(8) },
     { id: 706, name: 'infra', full_name: 'acme/infra', html_url: 'https://github.com/acme/infra', private: true, default_branch: 'main', language: 'HCL', pushed_at: ago(12) },
   ],
@@ -424,7 +571,17 @@ export const gitBranches = [
 ]
 
 // What a staged source turns into once "detected". An import carries the git half.
-export function detection(kind) {
+export function detection(kind, repo) {
+  if (kind == 'git' && repo == 'acme/reports') {
+    return {
+      status: 'Done', app_name: 'reports', language: 'Python', framework: '', port: 8080, message: '',
+      build_args: [],
+      git: {
+        provider: 'GitHub', repo_full_name: 'acme/reports', repo_url: 'https://github.com/acme/reports', branch: 'main',
+        commit_sha: '2d7f1b9c4e6a8d0f3b5c7e9a1d3f5b7c9e1a3d5f', commit_message: 'Add the weekly churn report',
+      },
+    }
+  }
   if (kind == 'git') {
     return {
       status: 'Done', app_name: 'blog', language: 'TypeScript', framework: 'Next.js', port: 3000, message: '',
@@ -1079,6 +1236,48 @@ function appUsage(app, scale) {
     date: NOW.toISOString(),
     month: monthKey,
   }
+}
+
+// A cron job runs every hour for about 100 seconds, a handful of runs a week fail.
+// Its data out is counted at the ingress, so it is always 0 for a cron job
+function cronUsage(app, profile) {
+  const daily = monthDays.map((offset, i) => {
+    const today = i == todayIndex
+    const runs = today ? 15 : 24
+    const runs_failed = today ? 1 : [0, 1, 0, 0, 2, 0, 1][i % 7]
+    const run_seconds = Math.round(runs * wave(i, 104, 9, 0.3) - runs_failed * 80)
+    // the day's averages take the runs in over the time the day has had so far
+    const elapsed = Math.round(SECONDS_PER_DAY * dayFraction(i))
+    const share = run_seconds / elapsed
+    const cpu = round(profile.cpu * share, 1)
+    const memory = round(profile.memory * share, 1)
+    const compute_cost = round(Math.max(profile.cpu, profile.memory / 3.072) / 1000 * 35 / 30 * run_seconds / SECONDS_PER_DAY, 4)
+    return {
+      date: dayDate(offset), total_cost: compute_cost, total_time_seconds: elapsed,
+      metrics: { cpu, memory, compute_cost, bytes_out: 0, runs, runs_failed, run_seconds },
+    }
+  })
+  const total = daily.reduce((s, d) => s + d.total_cost, 0)
+  const perDay = total / (monthDays.length - 1 + dayFraction(todayIndex))
+  return {
+    ...app,
+    daily_usage: daily,
+    monthly_usage: {
+      avg_cpu_usage: round(daily.reduce((s, d) => s + d.metrics.cpu, 0) / daily.length, 1),
+      avg_memory_usage: round(daily.reduce((s, d) => s + d.metrics.memory, 0) / daily.length, 1),
+      compute_total_cost: round(total), total_cost: round(total), days: daily.length,
+      forecast_this_month: round(perDay * 31), forecast_next_month: round(perDay * 30),
+    },
+    forecast_rest_of_day: round(perDay * (1 - dayFraction(todayIndex))),
+    date: NOW.toISOString(),
+    month: monthKey,
+  }
+}
+
+// what the app tabs read, the reports job included, though the usage page leaves it out
+export function appUsageById(hashedId) {
+  if (hashedId == 'r8c5j') return cronUsage(apps[4], { cpu: 420, memory: 380 })
+  return usage().apps.find(a => a.hashed_id == hashedId)
 }
 
 function databaseUsage(db) {

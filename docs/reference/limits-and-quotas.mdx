@@ -85,6 +85,10 @@ The exact messages, such as `Cluster name can not start with numbers` or `Bucket
 | One variable's value | 16 KB | `This value exceeds the allowed size of 16KB` |
 | All values of a list | 64 KB | `The ... exceed the allowed size of 64KB` |
 | Builds | One at a time per app | |
+| Replicas | 1 to 20 per app | `Minimum replicas must be between 1 and 20` |
+| CPU per replica | 0.05 to 2 vCPU when you size it, up to 1 vCPU on automatic resource management | `CPU must be between 0.05 and 2` |
+| Memory per replica | 64 to 4096 MB when you size it, up to 2 GB on automatic resource management | `Memory must be between 64 and 4096 MB` |
+| Health check | A path of up to 200 characters; interval 1 to 300 s, timeout 1 to 60 s, failure threshold 1 to 30, grace period 0 to 300 s | `Health check path must be at most 200 characters` |
 | Log history | 100, 200, 500 or 1000 lines (`cloider app logs -n`) | |
 
 ## Kubernetes clusters

@@ -30,7 +30,7 @@ Current prices are on [cloider.com/#pricing](https://cloider.com/#pricing), from
 | **Kubernetes cluster**: compute | CPU and memory of the cluster's running containers, including its Kubernetes control plane | Sampled every few seconds. Each container counts the larger of what it **requests** and what it **uses** | Cluster compute unit per month |
 | **Kubernetes cluster**: volumes | Persistent volumes the cluster's PersistentVolumeClaims are bound to | Provisioned capacity in GiB, sampled every few seconds | Cluster volume, per GiB per month |
 | **Kubernetes cluster**: load balancers | Services of type `LoadBalancer` that have a public IP | Time each one is active | Cluster load balancer, per month each |
-| **App** | CPU and memory of the app's containers | Sampled every minute | App compute unit per month |
+| **App** | CPU and memory of the app's running [replicas](/apps/scaling) | Sampled every minute. Each replica counts the larger of what it is given and what it uses | App compute unit per month |
 | **Database** | The database's plan | Time the database is **Ready**, at the plan's monthly price | Database plan price per month, per engine |
 | **Database while paused** | The storage the plan provisioned | Time the database is **Paused** | Cluster volume rate, per GiB per month |
 | **Bucket** | Data stored | GiB stored, sampled every few minutes and averaged over time | Bucket storage, per GiB per month |

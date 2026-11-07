@@ -24,6 +24,13 @@ delete.
 | **Logs** | Per run, for the last 5 succeeded and 5 failed runs | The running app's |
 | **Terminal** | A shell in a running run, from the **Runs** tab | A shell in the running app |
 
+<Screenshot
+  src="/img/screenshots/apps/cron-overview.webp"
+  url="/dashboard/apps/reports-r8c5j"
+  alt="The Overview tab of the reports cron job, with a Runs tab next to Overview, its live version, the schedule 0 * * * * in UTC and the next run, and no address"
+  caption="A cron job's Overview: its schedule and next run instead of an address, and a Runs tab."
+/>
+
 ## How runs work
 
 - The schedule is a standard [cron expression](#schedule-syntax) and is always in **UTC**.
@@ -59,6 +66,13 @@ What a run executes is the app's **start command**, when it has one:
 
 The first build deploys the job, and it runs on its schedule from then on. Click **Run now** on the **Runs** tab to try
 it right away.
+
+<Screenshot
+  src="/img/screenshots/apps/cron-configure.webp"
+  url="/dashboard/apps/new-app"
+  alt="Configure your app after importing acme/reports from GitHub, with Type set to Cron job, the Every hour schedule 0 * * * * and the start command python reports.py"
+  caption="Type Cron job swaps the port and subdomain for a schedule."
+/>
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -157,7 +171,15 @@ while a run is still going.
 <Tabs groupId="interface" queryString>
 <TabItem value="dashboard" label="Dashboard" default>
 
-Open the app and the **Runs** tab. The tab also shows the schedule and the next run in your local time.
+Open the app and the **Runs** tab. The tab also shows the schedule and the next run in your local time. A run that is
+still going has a **Terminal** button next to **Logs**.
+
+<Screenshot
+  src="/img/screenshots/apps/cron-runs.webp"
+  url="/dashboard/apps/reports-r8c5j"
+  alt="The Runs tab of the reports cron job with the Run now button, a Running run started with Run now that has Terminal and Logs buttons, succeeded runs from the schedule, and failed runs that say Exited with code 1 and Exited with code 137"
+  caption="The Runs tab: each run's status, what started it, when and for how long, and why a failed one failed."
+/>
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -212,10 +234,24 @@ cloider app logs cleanup --run app-29885940  # one run's output
 
 Only the runs the **Runs** tab lists still have their output. See [Logs](/apps/logs).
 
+<Screenshot
+  src="/img/screenshots/apps/cron-run-logs.webp"
+  url="/dashboard/apps/reports-r8c5j"
+  alt="The Run logs dialog of a failed run of the reports job, its output ending in a Python traceback for a statement timeout, with a Reload button"
+  caption="A failed run's output, kept for as long as the Runs tab lists the run."
+/>
+
 ## Debug with the terminal
 
 While a run is going, click **Terminal** on it in the **Runs** tab to open a shell inside that run's container, with
 its files and processes. The session ends when the run finishes.
+
+<Screenshot
+  src="/img/screenshots/apps/cron-run-terminal.webp"
+  url="/dashboard/apps/reports-r8c5j"
+  alt="The Run terminal dialog with a shell in the running run of the reports job, where ps aux shows python reports.py started with sh -c, followed by the files it has written so far and its environment variables"
+  caption="A shell inside a running run, open until the run finishes."
+/>
 
 Between runs, `cloider app shell` and `cloider app exec` open a container with the cron job's image and environment
 variables, started for them and stopped again once it has been unused for 10 minutes. It is the quickest way to find
@@ -236,6 +272,13 @@ The terminal needs a shell in the image: an image without `sh`, like a distroles
 
 Open the app's **Settings** tab, pick or type the new **Schedule**, and click **Save changes**. The job is redeployed on
 the new schedule in a few seconds, on the same version.
+
+<Screenshot
+  src="/img/screenshots/apps/cron-settings.webp"
+  url="/dashboard/apps/reports-r8c5j"
+  alt="The Settings tab of the reports cron job with the Schedule set to Every hour, its cron expression 0 * * * *, and the Start Command python reports.py"
+  caption="A cron job's Settings: the schedule and what each run executes."
+/>
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -269,6 +312,19 @@ A cron job stays a cron job: it can't be turned into a web service, or the other
 Pausing a cron job stops its schedule, and stops a run that is going at that moment. Its runs list, version and
 environment stay. Resuming it puts the schedule back, and the next run is the schedule's next time: runs missed while
 paused don't run. See [Pause, resume and delete](/apps/pause-resume-and-delete).
+
+## Insights
+
+The **Insights** tab counts the job's runs instead of requests: the runs that ended today and this month with the
+minutes they ran, and this month's success rate, next to the CPU, memory and cost every app has. A run is counted
+within a minute of ending. See [Insights](/apps/insights#how-are-a-cron-jobs-runs-counted).
+
+<Screenshot
+  src="/img/screenshots/apps/cron-insights.webp"
+  url="/dashboard/apps/reports-r8c5j"
+  alt="The Insights tab of the reports cron job with the usage and cost cards, Jobs (Today) and Jobs (This Month) with their runs and run minutes, the Job Success Rate (This Month) pie of succeeded and failed runs, Data Out, and daily CPU, memory and cost charts"
+  caption="A cron job's Insights: runs, run minutes and success rate, then usage and cost."
+/>
 
 ## Billing
 

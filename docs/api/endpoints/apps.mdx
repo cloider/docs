@@ -26,7 +26,7 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | POST | [`/apps/source/bitbucket`](#import-source-from-a-git-repository) | Write |
 | POST | [`/apps/source/image`](#create-an-app-from-an-image) | Write |
 | POST | [`/apps`](#step-5-create-the-app) | Write |
-| PUT | [`/apps/:hashed_id/settings`](#change-the-port-schedule-or-start-command) | Write |
+| PUT | [`/apps/:hashed_id/settings`](#change-the-port-compute-health-check-schedule-or-start-command) | Write |
 | PUT | [`/apps/:hashed_id/git`](#change-the-branch-or-auto-deploy) | Write |
 | PUT | [`/apps/:hashed_id/image`](#change-an-image-apps-image-or-login) | Write |
 | POST | [`/apps/:hashed_id/deploy-hook`](#deploy-hook) | Write |
@@ -42,6 +42,7 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | PUT | [`/apps/:hashed_id/build-args`](#replace-build-variables-or-build-arguments) | Write |
 | GET | [`/apps/:hashed_id/build-args/value`](#reveal-a-secret-value) | Read |
 | GET | [`/apps/:hashed_id/logs/stream`](#stream-an-apps-logs) | Read |
+| GET | [`/apps/:hashed_id/replicas`](#list-an-apps-replicas) | Read |
 | GET | [`/apps/:hashed_id/runs`](#list-a-cron-jobs-runs) | Read |
 | POST | [`/apps/:hashed_id/runs`](#run-a-cron-job-now) | Write |
 | POST | [`/apps/:hashed_id/exec`](#run-a-command-with-exec) | Write |
@@ -50,6 +51,7 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | POST | [`/apps/:hashed_id/terminal/heartbeat`](#web-terminal-endpoints) | Write |
 | POST | [`/apps/:hashed_id/pause`](#pause-an-app) | Write |
 | POST | [`/apps/:hashed_id/resume`](#resume-an-app) | Write |
+| POST | [`/apps/:hashed_id/restart`](#restart-an-app) | Write |
 | DELETE | [`/apps/:hashed_id`](#delete-an-app) | Write |
 
 ## The app object
@@ -60,6 +62,18 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
   "app_name": "blog",
   "app_label": "blog",
   "port": 8080,
+  "compute_mode": "autoscaling",
+  "replicas": 2,
+  "max_replicas": 6,
+  "cpu": 500,
+  "memory": 512,
+  "cpu_threshold": 70,
+  "memory_threshold": 0,
+  "health_check_path": "/healthz",
+  "health_check_interval": 10,
+  "health_check_timeout": 5,
+  "health_check_failure_threshold": 6,
+  "health_check_grace_period": 300,
   "start_command": "",
   "builder": "buildpacks",
   "schedule": "",
@@ -97,6 +111,13 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | `app_name` | string | The name you gave it |
 | `app_label` | string | A name unique among the account's apps (`-1`, `-2` appended when taken) |
 | `port` | integer | The port the app listens on. It is passed to the app as the `PORT` environment variable |
+| `compute_mode` | string | How the app's [replicas](/apps/scaling) are sized and how many run: `automatic` (each uses what it needs, up to 1 vCPU and 2048 MiB, scaled on CPU), `autoscaling` (each gets `cpu` and `memory`, scaled at the thresholds) or `fixed` (`replicas` replicas of `cpu` and `memory`) |
+| `replicas` | integer | The number of replicas with `fixed`, the minimum with the other two. 1 for a cron job, which has no compute configuration |
+| `max_replicas` | integer | The most replicas `automatic` and `autoscaling` run |
+| `cpu`, `memory` | integer | Each replica's CPU in millicores (1000 is 1 vCPU) and memory in MiB, with `autoscaling` and `fixed` |
+| `cpu_threshold`, `memory_threshold` | integer | With `autoscaling`, the percent of their CPU or memory the replicas average before one is added. `0` is off |
+| `health_check_path` | string | The path each replica is checked on with a `GET`, empty to check only the port. See [Health checks](/apps/health-checks) |
+| `health_check_interval`, `health_check_timeout`, `health_check_failure_threshold`, `health_check_grace_period` | integer | The health check's timings, in seconds but for the failure threshold. Only used with a path |
 | `start_command` | string | The command the app starts with, or empty to let the source or the image decide. A buildpack build has it in its `Procfile`; an image app and a `Dockerfile` build run it with `sh -c` in place of the image's `ENTRYPOINT` and `CMD` |
 | `builder` | string | How the live version was built: `dockerfile`, `buildpacks` or `static`. Empty for an image app, and for a version built before this was recorded |
 | `schedule` | string | A [cron job](/apps/cron-jobs)'s cron schedule, in UTC. Empty for an app that serves on its port. A cron job has no port, URL or domains |
@@ -332,6 +353,7 @@ Creates the app from a staged source and starts its first build right away. Opti
 | `source_token` | string | Yes | The `token` from step 1, or from an import |
 | `start_command` | string | No | One line, up to 1000 characters. A buildpack build writes it into a `Procfile`; an image app and an app built from a `Dockerfile` run it with `sh -c` in place of the image's `ENTRYPOINT` and `CMD` |
 | `schedule` | string | No | Makes the app a [cron job](/apps/cron-jobs) run on this cron schedule, in UTC, for example `0 3 * * *`. Five fields or a shorthand like `@daily`. A cron job takes no `port` or `subdomain` |
+| `compute_mode`, `replicas`, `max_replicas`, `cpu`, `memory`, `cpu_threshold`, `memory_threshold` | | No | The [compute configuration](/apps/scaling), as [the settings](#change-the-port-compute-health-check-schedule-or-start-command) take it. Each one left out starts on the default: `automatic` with 2 to 5 replicas, and `cpu` 100, `memory` 250, `cpu_threshold` 70 and `memory_threshold` 0 for the other modes. Ignored for a cron job |
 | `subdomain` | string | No | A full free subdomain to claim, for example `blog.cloider.app`. Empty for none |
 | `env_vars` | object list | No | Runtime environment variables, see [Variables](#environment-variables-build-variables-and-build-arguments) |
 | `build_env_vars` | object list | No | Build variables |
@@ -367,6 +389,7 @@ The app is created even when a later part of the request fails. Those failures c
 | --- | --- | --- |
 | `400` | `app_name` | `App name must not be empty`, `App name can not be upper case`, `App name must not have special characters except "-"`, `App name must be at least 2 characters`, `App name must not exceed 64 characters`, and the like |
 | `400` | `port` | `App port must not be empty`, `App port must be between 1 and 65535` |
+| `400` | `compute_mode`, `replicas`, `max_replicas`, `cpu`, `memory`, `cpu_threshold`, `memory_threshold`, `thresholds` | The compute errors, see [Change the settings](#change-the-port-compute-health-check-schedule-or-start-command) |
 | `400` | `start_command` | `Start command must be at most 1000 characters`, `Start command must be a single line` |
 | `400` | `schedule` | `A schedule has five fields: minute, hour, day of month, month and day of week.`, `This schedule never runs, check the day of month and month.`, and a message naming the field that is out of range |
 | `400` | `subdomain` | `A cron job has no port to serve a domain on, leave this empty.` |
@@ -536,13 +559,13 @@ curl -X POST "https://cloider.com/api/deploy-hooks/apps/a8q2w/<secret>?tag=v2"
 | `409` | The app is already deploying, is paused or being deleted, or the account is suspended |
 | `422` | The image can't be read, with the message in `errors._`, for example `ghcr.io/acme/api has no tag v2.` |
 
-## Change the port, schedule or start command
+## Change the port, compute, health check, schedule or start command
 
 ```http
 PUT /apps/:hashed_id/settings
 ```
 
-Changes the port the app listens on, or a cron job's schedule, and its start command. Saving them also applies them to the running app: a changed port or schedule redeploys the current image. A changed start command builds the current source again, or only redeploys the current image for an image app and an app built from a `Dockerfile` (`builder` is `dockerfile`), which run it in place of the image's `ENTRYPOINT` and `CMD`.
+Changes the port the app listens on, its [compute configuration](/apps/scaling) and [health check](/apps/health-checks), or a cron job's schedule, and its start command. Saving them also applies them to the running app: a changed port, compute, health check or schedule redeploys the current image. A changed start command builds the current source again, or only redeploys the current image for an image app and an app built from a `Dockerfile` (`builder` is `dockerfile`), which run it in place of the image's `ENTRYPOINT` and `CMD`.
 
 **Access:** Read & Write token.
 
@@ -551,6 +574,19 @@ Changes the port the app listens on, or a cron job's schedule, and its start com
 | `port` | integer | Yes, unless the app is a cron job | 1 to 65535. Send the current port to keep it. A cron job ignores it |
 | `start_command` | string | No | One line, up to 1000 characters. Empty clears it |
 | `schedule` | string | No | A cron job's new schedule, in UTC. Empty keeps the one it has. Refused on any other app: an app's kind is fixed when it is created |
+| `compute_mode` | string | No | `automatic`, `autoscaling` or `fixed`. Left out, keeps the app's. Ignored for a cron job, like every field below |
+| `replicas` | integer | No | 1 to 20. The number of replicas with `fixed`, the minimum with the other two |
+| `max_replicas` | integer | No | From `replicas` to 20, for `automatic` and `autoscaling` |
+| `cpu` | integer | No | Millicores per replica, 50 to 2000, for `autoscaling` and `fixed` |
+| `memory` | integer | No | MiB per replica, 64 to 4096, for `autoscaling` and `fixed` |
+| `cpu_threshold`, `memory_threshold` | integer | No | 10 to 90, or `0` for off, for `autoscaling`. At least one must be on |
+| `health_check_path` | string | No | Up to 200 characters, starting with `/`, no spaces. Empty removes the health check |
+| `health_check_interval` | integer | No | 1 to 300 seconds |
+| `health_check_timeout` | integer | No | 1 to 60 seconds, at most the interval |
+| `health_check_failure_threshold` | integer | No | 1 to 30 |
+| `health_check_grace_period` | integer | No | 0 to 300 seconds |
+
+Every compute and health check field left out keeps the app's value, and a mode ignores the fields it doesn't use. The timings are validated and saved even without a path, for when one is set.
 
 ```bash
 curl -X PUT https://cloider.com/api/apps/a8q2w/settings \
@@ -563,7 +599,7 @@ curl -X PUT https://cloider.com/api/apps/a8q2w/settings \
 {"applied": "build"}
 ```
 
-`applied` says what happened: `none` (nothing changed, or the app has never deployed, so its next build picks the settings up), `redeploy` (the port, the schedule, or the start command of an image or `Dockerfile` app changed and the running image is being redeployed) or `build` (a buildpack app's start command changed and a new build started).
+`applied` says what happened: `none` (nothing changed, or the app has never deployed, so its next build picks the settings up), `redeploy` (the port, the compute, the health check, the schedule, or the start command of an image or `Dockerfile` app changed and the running image is being redeployed) or `build` (a buildpack app's start command changed and a new build started).
 
 | Status | Message |
 | --- | --- |
@@ -571,7 +607,24 @@ curl -X PUT https://cloider.com/api/apps/a8q2w/settings \
 | `400` | `This app is building, wait for that build to finish before changing its settings!` |
 | `400` | `The settings were saved but the app could not be redeployed!` |
 
-See [Settings](/apps/settings).
+Field errors come back under the field's name:
+
+| Field | Message |
+| --- | --- |
+| `compute_mode` | `Compute must be automatic, autoscaling or fixed` |
+| `replicas` | `Minimum replicas must be between 1 and 20`, or `Replicas must be between 1 and 20` with `fixed` |
+| `max_replicas` | `Maximum replicas must be between the minimum and 20` |
+| `cpu` | `CPU must be between 0.05 and 2` |
+| `memory` | `Memory must be between 64 and 4096 MB` |
+| `cpu_threshold`, `memory_threshold` | `CPU threshold must be between 10% and 90%, or off`, `Memory threshold must be between 10% and 90%, or off` |
+| `thresholds` | `Set a CPU threshold, a memory threshold or both, for when to add a replica` |
+| `health_check_path` | `Health check path must start with / and be a URL path, without spaces`, `Health check path must be at most 200 characters` |
+| `health_check_interval` | `Interval must be between 1 and 300 seconds` |
+| `health_check_timeout` | `Timeout must be between 1 and 60 seconds`, `Timeout must not be longer than the interval` |
+| `health_check_failure_threshold` | `Failure threshold must be between 1 and 30` |
+| `health_check_grace_period` | `Grace period must be between 0 and 300 seconds` |
+
+See [Settings](/apps/settings), [Scaling and compute](/apps/scaling) and [Health checks](/apps/health-checks).
 
 ## Change the branch or auto deploy
 
@@ -747,6 +800,7 @@ Streams what the app prints to standard output and standard error as [server-sen
 | `lines` | No | How many past lines to start with: `100`, `200`, `500` or `1000`. Default `200` |
 | `follow` | No | `false` to send the past lines and end. Default: follow |
 | `run` | No | A cron job's run to read, by its `name` from [the runs](#list-a-cron-jobs-runs). Without it, a cron job's stream follows its latest run and moves on to each new one. With it, a followed stream ends once that run has finished. `404 Run not found!` on any other app |
+| `replica` | No | One replica to read, by its `name` from [the replicas](#list-an-apps-replicas). Without it, the stream follows every replica, and when the app can run more than one, each line starts with its replica's name in brackets: `[app-7c9d8f6b5-x2k4p] GET / 200`. `404 Replica not found!` on a cron job or a name that isn't a replica's |
 
 ```bash
 curl -N "https://cloider.com/api/apps/a8q2w/logs/stream?lines=100" \
@@ -811,6 +865,58 @@ for await (const chunk of res.body) {
 ```
 
 </details>
+
+## List an app's replicas
+
+```http
+GET /apps/:hashed_id/replicas
+```
+
+Lists the [replicas](/apps/scaling#see-an-apps-replicas) serving an app, oldest first. An app that hasn't deployed yet, or is paused, has none.
+
+**Access:** any token.
+
+```bash
+curl https://cloider.com/api/apps/b7x2k/replicas -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {
+    "name": "app-7c9d8f6b5-x2k4p",
+    "version": "12",
+    "status": "Running",
+    "ready": true,
+    "restarts": 0,
+    "message": "",
+    "created_at": "2026-10-18T11:12:40Z"
+  },
+  {
+    "name": "app-7c9d8f6b5-r5t7n",
+    "version": "12",
+    "status": "Running",
+    "ready": false,
+    "restarts": 1,
+    "message": "Failing its health check, it answered with HTTP 503",
+    "created_at": "2026-10-20T14:52:03Z"
+  }
+]
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | string | The replica's name, which `replica` takes on the logs, terminal and exec endpoints |
+| `version` | string | The version of the build it runs, empty when no build names its image |
+| `status` | string | `Starting`, `Running`, `Crashing` or `Stopping` |
+| `ready` | boolean | Whether it passes its checks and receives requests |
+| `restarts` | integer | How often its container restarted |
+| `message` | string | Why it isn't simply up, such as `Ran out of memory`, `Restarted for failing its health check` or `Exited with code 1`. Empty otherwise |
+| `created_at` | string | When it started |
+
+| Status | Message |
+| --- | --- |
+| `404` | `App not found!`, `A cron job app has no replicas, each run is a pod of its own!` |
+| `400` | `Couldn't read the app's replicas, try again!` |
 
 ## List a cron job's runs
 
@@ -894,6 +1000,7 @@ Runs one command in the app's running container and streams back its output and 
 | `command` | string list | Yes | The program and its arguments, run directly, not through a shell. Up to 64 KiB, no NUL bytes |
 | `stdin` | string (base64) | No | Standard input, base64 encoded, up to 2 MiB |
 | `timeout` | integer | No | Seconds, default `600`, at most `3600` |
+| `replica` | string | No | The [replica](#list-an-apps-replicas) to run it in, by name. Default: the newest |
 
 ```bash
 curl -N -X POST https://cloider.com/api/apps/a8q2w/exec \
@@ -907,9 +1014,10 @@ The response is the event stream described on [cluster exec](/api/endpoints/clus
 | Status | Message |
 | --- | --- |
 | `400` | `Give a command to run!` (on `command`), and the size and timeout errors of cluster exec |
+| `400` | `That is not a replica's name!`, `A cron job app has no replicas!` (on `replica`) |
 | `403` | `This API token is read only!` |
 | `404` | `App not found!` |
-| `409` | `This app is paused. Resume it to run a command!`, `This app is being deleted!`, `This app has not been deployed yet!`, `This app has no running container right now!` |
+| `409` | `This app is paused. Resume it to run a command!`, `This app is being deleted!`, `This app has not been deployed yet!`, `This app has no running container right now!`, or with `replica`, `This app has no running replica named <name>!` |
 | `503` | `The command could not be started, try again in a moment!` |
 
 ## Web terminal endpoints
@@ -918,7 +1026,7 @@ The dashboard's **Terminal** tab opens a shell in the app's container. Three end
 
 | Endpoint | What it does | Response |
 | --- | --- | --- |
-| `GET /apps/:hashed_id/terminal` | Returns the terminal's URL | `{"url": "https://cloider.com/terminal?kind=app&..."}` |
+| `GET /apps/:hashed_id/terminal` | Returns the terminal's URL, for a shell in the newest replica, or the one `?replica=<name>` names | `{"url": "https://cloider.com/terminal?kind=app&..."}` |
 | `POST /apps/:hashed_id/terminal/wake` | Starts the terminal, which sleeps when unused, and answers once it accepts connections | `200` |
 | `POST /apps/:hashed_id/terminal/heartbeat` | Keeps the terminal awake while it is in use | `204` |
 
@@ -957,6 +1065,23 @@ curl -X POST https://cloider.com/api/apps/a8q2w/resume \
 ```
 
 The response is the app list. A non paused app answers `400 Only a paused app can be resumed!`.
+
+## Restart an app
+
+```http
+POST /apps/:hashed_id/restart
+```
+
+Replaces the app's container with a fresh one on the same image and current environment variables. The old container keeps serving until the new one accepts connections on the app's port. The status goes to `Starting`, then `Ready`. If the new container doesn't come up within 5 minutes it is removed, the old one keeps serving, and the status goes back to `Ready`.
+
+**Access:** Read & Write token. The app must be `Ready`, with no build running, and not a cron job.
+
+```bash
+curl -X POST https://cloider.com/api/apps/a8q2w/restart \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's app list. Errors: `400 Only a running app can be restarted!`, `400 This app is building, wait for that build to finish before restarting it!`, `400 A cron job app starts fresh on every run, there is nothing running to restart!`, `403` for read only tokens and Restricted members.
 
 ## Delete an app
 

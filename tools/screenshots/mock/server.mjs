@@ -134,9 +134,10 @@ route('POST', '/apps/source', async (req, res) => {
   sources.set(token, { kind: 'upload', at: Date.now() })
   ok(res, { token, presigned_url: `/__mock/upload/${token}` })
 })
-route('POST', '/apps/source/github', (req, res) => {
+route('POST', '/apps/source/github', async (req, res) => {
   const token = `src${++sourceSeq}`
-  sources.set(token, { kind: 'git', at: Date.now() })
+  const body = await readBody(req)
+  sources.set(token, { kind: 'git', at: Date.now(), repo: body.repo_full_name })
   ok(res, { token })
 })
 // an image is looked up while the form waits, so it answers Done straight away
@@ -152,12 +153,12 @@ route('GET', '/apps/source/:token', (req, res, p) => {
   if (source.kind == 'upload' && Date.now() - source.at < holdMs) {
     return ok(res, { ...fx.detection('upload'), status: 'Detecting', language: '', framework: '', port: 0, app_name: '' })
   }
-  ok(res, fx.detection(source.kind))
+  ok(res, fx.detection(source.kind, source.repo))
 })
 route('GET', '/apps/:id', (req, res, p) => byId(fx.apps, p.id) ? ok(res, byId(fx.apps, p.id)) : notFound(res))
 route('GET', '/apps/:id/status', (req, res, p) => ok(res, byId(fx.apps, p.id)?.status ?? 'Terminated'))
 route('GET', '/apps/:id/usage', (req, res, p) => {
-  const usage = fx.usage().apps.find(a => a.hashed_id == p.id)
+  const usage = fx.appUsageById(p.id)
   usage ? ok(res, usage) : notFound(res)
 })
 route('POST', '/apps/:id/pause', (req, res) => ok(res, fx.apps))
@@ -172,8 +173,20 @@ for (const kind of ['env', 'build-env', 'build-args']) {
 route('GET', '/apps/:id/builds', (req, res, p) => ok(res, fx.builds[p.id] ?? []))
 route('GET', '/apps/:id/builds/:build/logs', (req, res) => ok(res, fx.buildLog))
 route('GET', '/apps/:id/builds/:build/logs/stream', (req, res) => sse(res, fx.buildLog.split('\n').slice(0, 30).join('\n'), { end: false }))
-route('GET', '/apps/:id/logs/stream', (req, res) => sse(res, fx.appLogLines(), { end: false }))
-route('GET', '/apps/:id/terminal', (req, res, p) => ok(res, { url: `/__mock/terminal/app/${byId(fx.apps, p.id)?.app_name ?? 'app'}` }))
+route('GET', '/apps/:id/logs/stream', (req, res, p, q) => {
+  // a cron job's logs are one run's, the stream ends with a run that has
+  if (fx.appRuns[p.id]) return sse(res, fx.appRunLog(q.get('run')), { end: q.get('follow') == 'false' })
+  // every replica at once, each line marked with its own, unless one is picked
+  const replicas = q.get('replica') ? [] : (fx.appReplicas[p.id] ?? []).map(r => r.name)
+  sse(res, fx.appLogLines(40, replicas), { end: false })
+})
+route('GET', '/apps/:id/replicas', (req, res, p) => ok(res, fx.appReplicas[p.id] ?? []))
+route('GET', '/apps/:id/runs', (req, res, p) => ok(res, fx.appRuns[p.id] ?? []))
+route('POST', '/apps/:id/runs', (req, res, p) => ok(res, { name: fx.appRuns[p.id]?.[0]?.name ?? '' }))
+route('GET', '/apps/:id/terminal', (req, res, p, q) => {
+  const run = q.get('run') ? `?run=${q.get('run')}` : ''
+  ok(res, { url: `/__mock/terminal/app/${byId(fx.apps, p.id)?.app_name ?? 'app'}${run}` })
+})
 route('POST', '/apps/:id/terminal/wake', (req, res) => ok(res, {}))
 route('POST', '/apps/:id/terminal/heartbeat', (req, res) => ok(res, {}))
 route('PUT', '/apps/:id/git', (req, res) => ok(res, {}))

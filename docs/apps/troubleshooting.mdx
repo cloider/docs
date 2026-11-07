@@ -32,6 +32,8 @@ flowchart TD
   B -- The app did not start in time --> D[Port mismatch or<br/>listening on localhost]
   B -- The app started and then stopped --> E[Read the app output:<br/>crash, missing variable,<br/>no start command]
   B -- The app could not be started --> F[Bad CMD or entrypoint]
+  B -- The health check at ... failed --> H[Wrong path, slow start<br/>or host allow-list]
+  B -- The app ran out of memory --> I[Raise the memory<br/>per replica]
   B -- The source upload did not finish --> G[Deploy again]
 ```
 
@@ -170,6 +172,36 @@ The container couldn't be created at all, usually because its command doesn't ex
 binary that isn't there, a script without execute permission, or a start command with a typo. Check the `CMD`,
 `ENTRYPOINT` or start command.
 
+### The health check at /healthz failed
+
+```text title="Build output"
+Waiting for the app to start...
+The health check at /healthz failed: it answered with HTTP 404.
+--- app output ---
+GET /healthz 404 0.6ms
+```
+
+The app has a [health check](/apps/health-checks) and the new version didn't pass it. The message says why:
+
+- **`it answered with HTTP 404`**: the app doesn't serve that path. Add the route, or fix the path on
+  [Settings](/apps/settings).
+- **`it answered with HTTP 400`** or **`403`**: the app refuses requests whose host isn't your domain, like Django's
+  `ALLOWED_HOSTS`. See [Apps that only answer known hosts](/apps/health-checks#apps-that-only-answer-known-hosts).
+- **`nothing was listening on the port`** or **`it did not answer in time`**: the same causes as
+  [The app did not start in time](#the-app-did-not-start-in-time), or a check slower than its **Timeout**.
+- **`did not pass within the grace period, so the app was restarted`**: the app needs longer to start. Raise the
+  **Grace period** (up to 300 seconds), or start serving sooner.
+
+### The app ran out of memory
+
+```text title="Build output"
+The app ran out of memory, past the 512 MiB each replica can use.
+```
+
+A replica of the new version needed more memory than it can use. Raise **Memory per replica** in the app's
+[compute configuration](/apps/scaling#what-happens-when-a-replica-runs-out-of-memory), or lower what the app takes at
+startup (for example a JVM's `-Xmx`, or fewer worker processes).
+
 ### The app image could not be pulled
 
 The new image couldn't be pulled for 60 seconds. This is a platform side problem: **Retry** the build.
@@ -179,7 +211,8 @@ The new image couldn't be pulled for 60 seconds. This is a platform side problem
 | Symptom | Cause and fix |
 | --- | --- |
 | The address shows an error page or `502` | The app isn't answering on its port: it crashed, or it is restarting. Check the [Logs](/apps/logs) tab. A crashed container is restarted automatically |
-| The app works, then errors after a while | Look for crashes or memory growth on [Logs](/apps/logs) and [Insights](/apps/insights) |
+| The app works, then errors after a while | Look for crashes or memory growth on [Logs](/apps/logs) and [Insights](/apps/insights), and at the replicas with `cloider app replicas`: **Ran out of memory** or **Restarted for failing its health check** say why one restarted |
+| Some requests fail, others work | One [replica](/apps/scaling#see-an-apps-replicas) is unhealthy, or the replicas don't share state. Read its logs with the replica picker, and keep sessions and files in a database or bucket |
 | The address doesn't load at all | The app has no domain (**No domain connected** on Overview), the app is paused, or a custom domain's nameservers or its `A` or `CNAME` record aren't set. See [Domains](/apps/domains) |
 | New environment variables aren't picked up | Saving the **Environment** tab restarts the app; build arguments and build variables need the rebuild that saving them starts |
 | Redirect loops or `http://` links | Requests reach the app as plain HTTP behind HTTPS. Configure your framework to trust the proxy and generate `https://` URLs |
@@ -214,6 +247,6 @@ Collect the app name, the failed build's version and its output (`cloider app bu
   {q: 'Why does my Cloider build say "The app did not start in time"?', a: 'Nothing accepted connections on the app\'s port within 5 minutes of the deploy. Almost always the app listens on another port than the app\'s Port setting, or only on localhost. Listen on 0.0.0.0 and the PORT environment variable, or change the port on the Settings tab.'},
   {q: 'What does "no buildpack matched, and not a static site" mean?', a: 'Cloider found no Dockerfile, no project file it recognizes and no HTML at the root of your source. The project is usually one folder down; deploy that folder, move the files to the root, or add a Dockerfile.'},
   {q: 'My build succeeded but the app keeps crashing. Where do I look?', a: 'In the failed build\'s output, after the --- app output --- line, which holds the last 100 lines the app printed, and on the app\'s Logs tab. Missing environment variables and missing dependencies are the usual causes.'},
-  {q: 'Does a failed deploy take my app offline?', a: 'No. A new version only replaces the running one once it is up and has stayed up for 15 seconds. Only an app\'s very first build leaves it Failed with nothing to serve. A port change that nothing answers on is the exception.'},
+  {q: 'Does a failed deploy take my app offline?', a: 'No. A new version only replaces the running one once it is up, passes its health check if it has one, and has stayed up for 15 seconds. Only an app\'s very first build leaves it Failed with nothing to serve. A port change that nothing answers on is the exception.'},
   {q: 'Why is my app returning 502?', a: 'The app is not answering on its port, usually because it crashed or is restarting. Check the Logs tab for the error; the platform restarts a crashed container automatically.'},
 ]} />

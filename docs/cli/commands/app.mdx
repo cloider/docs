@@ -27,10 +27,12 @@ cloider app <command> [flags]
 | [`cloider app usage`](#cloider-app-usage) | Show the app's usage and cost this month |
 | [`cloider app pause`](#cloider-app-pause) | Stop the app serving, keeping its environment and image |
 | [`cloider app resume`](#cloider-app-resume) | Start a paused app again |
+| [`cloider app restart`](#cloider-app-restart) | Restart the app on a fresh container, serving throughout |
 | [`cloider app delete`](#cloider-app-delete) | Delete an app |
-| [`cloider app update`](#cloider-app-update) | Change the app's port, schedule or start command |
+| [`cloider app update`](#cloider-app-update) | Change the app's port, compute, health check, schedule or start command |
 | [`cloider app link`](#cloider-app-link) | Link a directory to an app, so `cloider deploy` there deploys to it |
 | [`cloider app logs`](#cloider-app-logs) | Print the app's logs, `-f` to follow them |
+| [`cloider app replicas`](#cloider-app-replicas) | List the replicas serving the app |
 | [`cloider app runs`](#cloider-app-runs) | List a cron job's runs, newest first |
 | [`cloider app run`](#cloider-app-run) | Run a cron job now, outside its schedule |
 | [`cloider app env`](#cloider-app-env) | Read and change the app's environment variables |
@@ -72,7 +74,7 @@ web    Paused   4         https://web-q1r8.cloider.app    2026-10-03 12:20
 
 ## cloider app get
 
-Show one app: status, URL, version, what was detected, port, start command, domains and source.
+Show one app: status, URL, version, what was detected, port, compute, health check, start command, domains and source.
 
 ```text
 cloider app get <app> [flags]
@@ -91,6 +93,8 @@ URL:            https://api-x2p7.cloider.app
 Version:        23
 Detected:       Go
 Port:           8080
+Compute:        automatic, 2 to 5 replicas, each using up to 1 vCPU and 2 GiB
+Health check:   GET /healthz every 10s, 5s timeout, restarted after 6 failures, 300s grace period
 Start command:  -
 Domains:        api-x2p7.cloider.app, api.example.com
 Source:         acme/api@main (github)
@@ -98,7 +102,7 @@ Auto deploy:    yes
 Created:        2026-08-30 16:45
 ```
 
-**Source** is `<owner/repo>@<branch> (<provider>)` for a git app, or the uploaded archive and its size for an app deployed from your computer. **Auto deploy** only appears for git apps. `-o json` prints the app object (`hashed_id`, `app_name`, `app_label`, `port`, `start_command`, `status`, `language`, `framework`, `version`, `url`, `domains`, `repo_full_name`, `repo_branch`, `git_provider`, `auto_deploy` and more). MCP tool: `get_app`.
+**Source** is `<owner/repo>@<branch> (<provider>)` for a git app, or the uploaded archive and its size for an app deployed from your computer. **Auto deploy** only appears for git apps. **Compute** and **Health check** don't appear for a cron job, and **Health check** reads `port 8080 listening` without a path. `-o json` prints the app object (`hashed_id`, `app_name`, `app_label`, `port`, `compute_mode`, `replicas`, `max_replicas`, `cpu`, `memory`, `health_check_path`, `start_command`, `status`, `language`, `framework`, `version`, `url`, `domains`, `repo_full_name`, `repo_branch`, `git_provider`, `auto_deploy` and more). MCP tool: `get_app`.
 
 ## cloider app create
 
@@ -266,6 +270,29 @@ cloider app resume web --wait
 
 MCP tool: `resume_app`.
 
+## cloider app restart
+
+Restart the app on a fresh container, serving throughout. The new container runs the same version with the app's current environment variables, and the old one keeps serving until the new one accepts connections on the app's port. A cron job can't be restarted, each run already starts fresh.
+
+```text
+cloider app restart <app> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Wait until the app is `Ready` |
+| `--timeout` | duration | `15m0s` | How long `--wait` waits |
+
+```bash
+cloider app restart web --wait
+```
+
+```text title="Output"
+✓ App web is ready
+```
+
+Without `--wait`: `✓ App web is restarting`. See [Restart an app](/apps/pause-resume-and-delete#restart-an-app). MCP tool: `restart_app`.
+
 ## cloider app delete
 
 Delete an app. Its free subdomains are released with it unless you pass `--keep-domains`. A custom domain is never deleted; it only loses its route to the app.
@@ -302,7 +329,7 @@ MCP tool: `delete_app`.
 
 ## cloider app update
 
-Change the port the app listens on, a cron job's schedule, or the command it starts with. A new port or schedule redeploys the running version. A new start command builds the app again, or only redeploys it for an app running your own image or built from a `Dockerfile`, which run it with `sh -c` in place of their `ENTRYPOINT` and `CMD`.
+Change the port the app listens on, its [compute configuration](/apps/scaling), its [health check](/apps/health-checks), a cron job's schedule, or the command it starts with. A new port, compute, health check or schedule redeploys the running version. A new start command builds the app again, or only redeploys it for an app running your own image or built from a `Dockerfile`, which run it with `sh -c` in place of their `ENTRYPOINT` and `CMD`.
 
 ```text
 cloider app update <app> [flags]
@@ -311,6 +338,18 @@ cloider app update <app> [flags]
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--port` | int | | Port the app listens on |
+| `--compute` | string | | How replicas are sized and how many run: `automatic`, `autoscaling` or `fixed` |
+| `--replicas` | int | | How many replicas run with `fixed`, the fewest with the other two, 1 to 20 |
+| `--max-replicas` | int | | The most replicas `automatic` or `autoscaling` runs, up to 20 |
+| `--cpu` | float | | vCPU of each replica with `autoscaling` or `fixed`, 0.05 to 2 |
+| `--memory` | int | | MiB of memory of each replica with `autoscaling` or `fixed`, 64 to 4096 |
+| `--cpu-threshold` | int | `70` | Percent of their CPU the replicas average before `autoscaling` adds one, 10 to 90, `0` for memory alone |
+| `--memory-threshold` | int | `0` | Percent of their memory the replicas average before `autoscaling` adds one, 10 to 90, `0` for CPU alone |
+| `--health-check-path` | string | | Path each replica is checked on, such as `/healthz`. Empty (`--health-check-path ""`) for the port check alone |
+| `--health-check-interval` | int | `10` | Seconds between checks, 1 to 300 |
+| `--health-check-timeout` | int | `5` | Seconds a check waits for an answer, 1 to 60 and at most the interval |
+| `--health-check-failure-threshold` | int | `6` | Failed checks in a row before a replica is restarted, 1 to 30 |
+| `--health-check-grace-period` | int | `300` | Seconds a starting replica has to pass its first check, 0 to 300 |
 | `--start-command` | string | | Command the app is started with. Empty (`--start-command ""`) for the detected one |
 | `--schedule` | string | | A [cron job](/apps/cron-jobs)'s schedule, in UTC. A cron job takes no `--port`, and any other app no `--schedule` |
 | `-w, --wait` | bool | `false` | Wait until the app is `Ready` again |
@@ -335,6 +374,18 @@ cloider app update blog --start-command "node server.js"
 ```bash
 cloider app update cleanup --schedule '*/30 * * * *'
 ```
+
+Size and scale the replicas, or set a health check:
+
+```bash
+cloider app update api --compute autoscaling --cpu 0.5 --memory 512 --replicas 2 --max-replicas 6
+cloider app update api --replicas 3
+cloider app update api --cpu-threshold 60 --memory-threshold 80
+cloider app update admin --compute fixed --replicas 3 --cpu 1 --memory 1024
+cloider app update api --health-check-path /healthz --health-check-interval 30 --health-check-timeout 10
+```
+
+A flag left out keeps the app's value, and `--compute` alone keeps the replicas and sizes. The defaults in the table are what an app starts with. A cron job takes no compute or health check flags.
 
 When the app hasn't deployed yet, the change is saved for the next deploy (`Saved, the next deploy uses it`). See [Settings](/apps/settings). MCP tool: `update_app_settings`.
 
@@ -370,6 +421,7 @@ cloider app logs <app> [flags]
 | `-f, --follow` | bool | `false` | Keep printing new lines as they come |
 | `-n, --lines` | int | `200` | Lines of history: `100`, `200`, `500` or `1000` |
 | `--run` | string | | A cron job's run to read, by its name in [`cloider app runs`](#cloider-app-runs). With `-f`, it stops once the run has finished |
+| `--replica` | string | | One replica to read, by its name in [`cloider app replicas`](#cloider-app-replicas). Can't be used with `--run` |
 
 ```bash
 cloider app logs api -n 100
@@ -383,7 +435,28 @@ cloider app logs api -f | grep -i error
 2026-10-20T09:41:15Z GET /orders 200 12.8ms
 ```
 
-Logs go to stdout. When a followed stream drops and reconnects, the CLI prints `--- reconnected, the last lines may repeat ---` to stderr. Stop following with Ctrl-C. See [Logs](/apps/logs). MCP tool: `get_app_logs`.
+An app that can run more than one replica prints all of them, each line starting with its replica's name in brackets (`[app-7c9d8f6b5-x2k4p] GET / 200`). Logs go to stdout. When a followed stream drops and reconnects, the CLI prints `--- reconnected, the last lines may repeat ---` to stderr. Stop following with Ctrl-C. See [Logs](/apps/logs). MCP tool: `get_app_logs`.
+
+## cloider app replicas
+
+List the [replicas](/apps/scaling#see-an-apps-replicas) serving the app, oldest first: each one's status, whether it passes its checks and receives requests (**READY**), how often its container restarted, and the version it runs.
+
+```text
+cloider app replicas <app> [flags]
+```
+
+```bash
+cloider app replicas blog
+```
+
+```text title="Output"
+NAME                  STATUS    READY   RESTARTS   VERSION   CREATED   MESSAGE
+app-7c9d8f6b5-x2k4p   Running   yes     0          12        2d ago    -
+app-7c9d8f6b5-m8q3z   Running   yes     0          12        2d ago    -
+app-7c9d8f6b5-r5t7n   Running   no      1          12        38m ago   Failing its health check, it answered with HTTP 503
+```
+
+**STATUS** is `Starting`, `Running`, `Crashing` or `Stopping`, and **MESSAGE** says why a replica isn't simply up. Read one's logs with `cloider app logs <app> --replica <name>`, open a shell in it with `cloider app shell <app> --replica <name>`, or run a command in it with `cloider app exec --replica <name> <app> ...`. A cron job has no replicas. MCP tool: `list_app_replicas`.
 
 ## cloider app runs
 
@@ -677,6 +750,10 @@ Open an interactive shell inside the app's running container, like the **Termina
 cloider app shell <app> [flags]
 ```
 
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--replica` | string | | The replica to open it in, by its name in [`cloider app replicas`](#cloider-app-replicas). Default: the newest |
+
 ```bash
 cloider app shell api
 ```
@@ -701,6 +778,7 @@ cloider app exec [flags] <app> [--] <command> [args...]
 | --- | --- | --- | --- |
 | `-i, --stdin` | bool | `false` | Send stdin to the command, up to 2 MiB |
 | `--timeout` | duration | `10m0s` | Stop the command after this long, from `1s` up to `1h` |
+| `--replica` | string | | The replica to run it in, by its name in [`cloider app replicas`](#cloider-app-replicas). Default: the newest |
 
 Several arguments run as they are, without a shell, which also works in images that have none. A single argument containing spaces is a command line, run with `sh -c`, so pipes, `&&` and `$VARS` work. **Flags for exec go before the app**; everything after the app belongs to the command, and `--` may separate the two.
 

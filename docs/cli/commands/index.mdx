@@ -207,10 +207,12 @@ Commands that change a resource take `--wait` (`-w`) and `--timeout`; deletes as
 | [`cloider app logs`](/cli/commands/app#cloider-app-logs) | Print the app's logs, -f to follow them |
 | [`cloider app open`](/cli/commands/app#cloider-app-open) | Open the app's URL in the browser |
 | [`cloider app pause`](/cli/commands/app#cloider-app-pause) | Stop the app serving, keeping its environment and image |
+| [`cloider app replicas`](/cli/commands/app#cloider-app-replicas) | List the replicas serving the app |
+| [`cloider app restart`](/cli/commands/app#cloider-app-restart) | Restart the app on a fresh container, serving throughout |
 | [`cloider app resume`](/cli/commands/app#cloider-app-resume) | Start a paused app again |
 | [`cloider app shell`](/cli/commands/app#cloider-app-shell) | Open a shell inside the app's container |
 | [`cloider app status`](/cli/commands/app#cloider-app-status) | Print the app's status |
-| [`cloider app update`](/cli/commands/app#cloider-app-update) | Change the app's port or start command |
+| [`cloider app update`](/cli/commands/app#cloider-app-update) | Change the app's port, compute, health check, schedule or start command |
 | [`cloider app usage`](/cli/commands/app#cloider-app-usage) | Show the app's usage and cost this month |
 | [`cloider deploy`](/cli/commands/deploy) | Deploy a directory as an app, creating the app the first time |
 | [`cloider git`](/cli/commands/git) | Connect GitHub, GitLab or Bitbucket, and browse what apps can deploy from |

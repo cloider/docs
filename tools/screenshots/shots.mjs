@@ -35,6 +35,27 @@ async function fillImageDialog(page, h) {
   return dialog
 }
 
+// Unfolds the Advanced settings section of an app's create form or Settings tab
+async function openAdvancedSettings(page, h) {
+  await page.getByRole('button', { name: /Advanced settings/ }).click()
+  await page.evaluate(() => document.activeElement?.blur())
+  await h.sleep(300)
+}
+
+// Scrolls the dashboard's content pane so the element is offset px below its top
+async function scrollToLocator(page, locator, offset = 0) {
+  await locator.first().evaluate((el, offset) => {
+    el.scrollIntoView({ block: 'start' })
+    // the nearest ancestor that really scrolls, else the page
+    let pane = el.parentElement
+    while (pane && !(/(auto|scroll)/.test(getComputedStyle(pane).overflowY) && pane.scrollHeight > pane.clientHeight)) {
+      pane = pane.parentElement
+    }
+    ;(pane ?? document.scrollingElement)?.scrollBy(0, -offset)
+  }, offset)
+  await page.waitForTimeout(300)
+}
+
 export const actions = {
   // ---------- get started ----------
   'get-started/sign-in.webp': {
@@ -156,6 +177,13 @@ export const actions = {
     viewport: { height: 1000 },
     wait: 1200,
   },
+  'apps/restart-dialog.webp': {
+    async run(page, h) {
+      await h.rowMenu('blog')
+      await h.menuItem('Restart')
+      await h.dialog()
+    },
+  },
   'apps/resume-dialog.webp': {
     async run(page, h) {
       await h.rowMenu('web')
@@ -171,6 +199,86 @@ export const actions = {
       const dialog = await h.dialog()
       await dialog.locator('pre').waitFor()
     },
+  },
+  'apps/cron-configure.webp': {
+    async run(page, h) {
+      await page.getByRole('button', { name: 'GitHub' }).click()
+      const dialog = await h.dialog()
+      await dialog.getByText('acme/reports', { exact: true }).click()
+      await h.settle()
+      await dialog.getByRole('button', { name: 'Import' }).click()
+      await page.getByText('We had a look at your code').waitFor({ timeout: 20000 })
+      await page.getByRole('radio', { name: 'Cron job' }).or(page.getByText('Cron job', { exact: true })).first().click()
+      await page.locator('input[name=schedule]').waitFor()
+      await page.locator('.p-select', { hasText: 'Every day at 00:00 UTC' }).click()
+      await page.locator('.p-select-overlay .p-select-option', { hasText: 'Every hour' }).first().click()
+      await page.locator('input[name=start_command]').fill('python reports.py')
+      await page.evaluate(() => document.activeElement?.blur())
+      await h.sleep(300)
+    },
+    viewport: { height: 1100 },
+  },
+  'apps/cron-overview.webp': { run: (page, h) => h.tab('Overview') },
+  'apps/cron-runs.webp': { run: (page, h) => h.tab('Runs') },
+  'apps/cron-run-logs.webp': {
+    async run(page, h) {
+      await h.tab('Runs')
+      const row = page.locator('tr', { hasText: 'Exited with code 1' }).first()
+      await row.getByRole('button', { name: 'Logs' }).click()
+      const dialog = await h.dialog()
+      await dialog.getByText('statement timeout').first().waitFor()
+    },
+    wait: 600,
+  },
+  'apps/cron-run-terminal.webp': {
+    async run(page, h) {
+      await h.tab('Runs')
+      await page.getByRole('button', { name: 'Terminal' }).first().click()
+      const dialog = await h.dialog()
+      await dialog.locator('iframe.opacity-100').waitFor()
+    },
+    wait: 1200,
+  },
+  'apps/cron-insights.webp': { run: (page, h) => h.tab('Insights'), wait: 1200, viewport: { height: 1300 } },
+  'apps/cron-settings.webp': { run: (page, h) => h.tab('Settings') },
+  'apps/compute.webp': {
+    async run(page, h) {
+      await h.tab('Settings')
+      await openAdvancedSettings(page, h)
+      await scrollToLocator(page, page.getByRole('button', { name: /Advanced settings/ }), 24)
+    },
+    // the three options and every field of the picked one
+    viewport: { height: 1200 },
+  },
+  'apps/health-check.webp': {
+    async run(page, h) {
+      await h.tab('Settings')
+      await openAdvancedSettings(page, h)
+      await scrollToLocator(page, page.locator('input[name=health_check_path]'), 120)
+    },
+  },
+  'apps/new-app-compute.webp': {
+    async run(page, h) {
+      await page.getByRole('button', { name: 'GitHub' }).click()
+      const dialog = await h.dialog()
+      await dialog.getByText('acme/blog', { exact: true }).click()
+      await h.settle()
+      await dialog.getByRole('button', { name: 'Import' }).click()
+      await page.getByText('We had a look at your code').waitFor({ timeout: 20000 })
+      await page.getByText('is available').waitFor({ timeout: 10000 })
+      await openAdvancedSettings(page, h)
+      await scrollToLocator(page, page.getByRole('button', { name: /Advanced settings/ }), 24)
+    },
+    viewport: { height: 1100 },
+  },
+  'apps/replicas.webp': {
+    async run(page, h) {
+      await h.tab('Logs')
+      await page.getByText('/api/newsletter').first().waitFor()
+      await page.getByRole('combobox', { name: 'Replica' }).or(page.locator('.p-select[aria-label=Replica]')).first().click()
+      await page.locator('.p-select-overlay .p-select-option', { hasText: 'Failing its health check' }).waitFor()
+    },
+    wait: 800,
   },
   'apps/detail-environment.webp': { run: (page, h) => h.tab('Environment') },
   'apps/detail-settings.webp': { run: (page, h) => h.tab('Settings') },

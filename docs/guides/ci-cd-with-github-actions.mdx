@@ -646,7 +646,7 @@ lists the new version as `Ready`.
 | --- | --- |
 | Registry project `acme` | Per GiB of image data stored per month. Every commit adds an image: keep it in check with a [retention policy](/container-registry/retention-policies). Pushes and pulls are free |
 | Cluster `production` | Compute units for its running containers, including its control plane. The two `api` pods are billed for at least their `50m` CPU and `64Mi` memory requests |
-| App `api` (alternative) | Compute units for its one container while it runs. Builds are free |
+| App `api` (alternative) | Compute units for its replicas while they run. Builds are free |
 | Domains, targets, registry tokens, API tokens | Free |
 | GitHub Actions minutes | Billed by GitHub under your GitHub plan, not by Cloider |
 

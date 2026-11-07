@@ -41,6 +41,8 @@ sections' pages.
 - `terminal-and-exec.mdx`
 - `domains.mdx`: the app's free subdomain and custom domains
 - `settings.mdx`: what the Settings tab changes
+- `scaling.mdx`: replicas, the three compute configurations (automatic, autoscaling, fixed), thresholds, listing replicas, billing and running out of memory
+- `health-checks.mdx`: the HTTP health check path, its timings, what passing and failing do, writing a health endpoint, host allow-lists
 - `pause-resume-and-delete.mdx`
 - `troubleshooting.mdx`
 

@@ -17,10 +17,10 @@ This page lists every tool the Cloider MCP server (`cloider mcp`) offers, groupe
 | [`databases`](#database-tools-databases) | 16 | 6 | 8 | 2 |
 | [`buckets`](#object-storage-tools-buckets) | 29 | 13 | 8 | 9 |
 | [`registry`](#container-registry-tools-registry) | 23 | 8 | 7 | 8 |
-| [`apps`](#app-tools-apps) | 28 | 11 | 13 | 4 |
+| [`apps`](#app-tools-apps) | 30 | 12 | 14 | 4 |
 | [`domains`](#domain-dns-and-target-tools-domains) | 12 | 4 | 5 | 3 |
 | [`support`](#support-tools-support) | 5 | 3 | 2 | 0 |
-| **All** | **128** | **55** | **46** | **28** |
+| **All** | **130** | **56** | **47** | **28** |
 
 - **Read only** tools change nothing. They are the only tools `cloider mcp --read-only` offers.
 - **Changes resources** tools create or update something but don't delete anything.
@@ -1217,9 +1217,9 @@ Delete an immutability rule; the tags it protected can be pushed over and delete
 
 ## App tools (apps)
 
-The `apps` toolset deploys and runs [apps](/apps/overview): deploy a directory from the machine the MCP server runs on, create an app from a GitHub, GitLab or Bitbucket repository or from a Docker image, or a [cron job](/apps/cron-jobs) from any of them, follow builds, list and start a cron job's runs, read logs, manage environment variables, build args and build environments, run commands in the app's container, and pause, resume or delete apps. `deploy_app`, `create_app_from_git` and `create_app_from_image` follow the build until the app is up, reporting progress as they go, unless `detach` is set.
+The `apps` toolset deploys and runs [apps](/apps/overview): deploy a directory from the machine the MCP server runs on, create an app from a GitHub, GitLab or Bitbucket repository or from a Docker image, or a [cron job](/apps/cron-jobs) from any of them, follow builds, list and start a cron job's runs, size and [scale](/apps/scaling) an app's replicas and set its [health check](/apps/health-checks), read logs, manage environment variables, build args and build environments, run commands in the app's replicas, and restart, pause, resume or delete apps. `deploy_app`, `create_app_from_git` and `create_app_from_image` follow the build until the app is up, reporting progress as they go, unless `detach` is set.
 
-Tools: `list_apps`, `get_app`, `deploy_app`, `create_app_from_git`, `create_app_from_image`, `pause_app`, `resume_app`, `delete_app`, `update_app_settings`, `update_app_git`, `update_app_image`, `get_app_deploy_hook`, `get_app_logs`, `list_app_runs`, `run_app`, `list_app_builds`, `get_app_build_logs`, `retry_app_build`, `list_app_variables`, `get_app_variable`, `set_app_variables`, `unset_app_variables`, `app_exec`, `list_git_installations`, `list_git_repositories`, `list_git_branches`, `connect_git_provider`, `disconnect_git_installation`.
+Tools: `list_apps`, `get_app`, `deploy_app`, `create_app_from_git`, `create_app_from_image`, `pause_app`, `resume_app`, `restart_app`, `delete_app`, `update_app_settings`, `update_app_git`, `update_app_image`, `get_app_deploy_hook`, `get_app_logs`, `list_app_replicas`, `list_app_runs`, `run_app`, `list_app_builds`, `get_app_build_logs`, `retry_app_build`, `list_app_variables`, `get_app_variable`, `set_app_variables`, `unset_app_variables`, `app_exec`, `list_git_installations`, `list_git_repositories`, `list_git_branches`, `connect_git_provider`, `disconnect_git_installation`.
 
 
 ### list_apps
@@ -1234,7 +1234,7 @@ No parameters.
 
 ### get_app
 
-Show an app: status, URL, version, detected language and framework, port, start command, domains, and where it deploys from. A cron job shows its schedule and next run instead of a URL and port.
+Show an app: status, URL, version, detected language and framework, port, compute (how each replica is sized and how many run), start command, domains, and where it deploys from. A cron job shows its schedule and next run instead of a URL, port and compute.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1358,6 +1358,19 @@ Start a paused app again.
 | `app` | string | Yes | Name or id of the app. |
 | `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
 
+### restart_app
+
+Restart a running app on a fresh container with the same version and environment. The old container serves until the new one is up, and is kept if the new one does not start. Not for cron job apps, which start fresh on every run.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | No | none | [`cloider app restart`](/cli/commands/app#cloider-app-restart) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
+| `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
+
 ### delete_app
 
 Delete an app. Its free subdomains go with it unless keep_domains; a custom domain is never deleted, it only loses its route to the app.
@@ -1374,7 +1387,7 @@ Delete an app. Its free subdomains go with it unless keep_domains; a custom doma
 
 ### update_app_settings
 
-Change the port an app listens on, or a cron job's schedule, which redeploys the running version, or its start command, which builds it again, or only redeploys it for an app running its own image or built from a Dockerfile, where it replaces their ENTRYPOINT and CMD with sh -c.
+Change the port an app listens on, its compute (how each replica is sized and how many run), the health check its replicas are checked with, or a cron job's schedule, which redeploys the running version, or its start command, which builds it again, or only redeploys it for an app running its own image or built from a Dockerfile, where it replaces their ENTRYPOINT and CMD with sh -c. Requests are spread across the replicas. A param left out keeps the app's value.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1384,6 +1397,18 @@ Change the port an app listens on, or a cron job's schedule, which redeploys the
 | --- | --- | --- | --- |
 | `app` | string | Yes | Name or id of the app. |
 | `port` | integer | No | Port the app listens on, not for a cron job. |
+| `compute` | string | No | Automatic: each replica uses what it needs up to 1 vCPU and 2 GiB, billed for what it uses, and replicas are added on CPU from replicas up to max_replicas. autoscaling: each replica gets cpu and memory, billed for all of it, and replicas are added from replicas up to max_replicas at cpu_threshold, memory_threshold or both. fixed: replicas replicas of cpu and memory. Not for a cron job. One of `automatic`, `autoscaling`, `fixed`. |
+| `replicas` | integer | No | How many replicas run with fixed compute, the fewest with the other two, 1 to 20, not for a cron job. |
+| `max_replicas` | integer | No | The most replicas automatic or autoscaling compute runs, up to 20. |
+| `cpu` | string | No | vCPU of each replica with autoscaling or fixed compute, 0.05 to 2, e.g. 0.5. |
+| `memory` | integer | No | MiB of memory of each replica with autoscaling or fixed compute, 64 to 4096. |
+| `cpu_threshold` | integer | No | Percent of their CPU the replicas average before autoscaling compute adds one, 10 to 90, default 70, or 0 to scale on memory alone (not with memory_threshold 0). |
+| `memory_threshold` | integer | No | Percent of their memory the replicas average before autoscaling compute adds one, 10 to 90, 0 (the default) to scale on CPU alone. |
+| `health_check_path` | string | No | Path each replica is checked on with a GET, passing on 2xx or 3xx: a new version goes live once it passes, a failing replica stops receiving requests and is restarted after failure_threshold failures in a row. Empty checks only that the app listens on its port. Not for a cron job. |
+| `health_check_interval` | integer | No | Seconds between checks, 1 to 300, default 10. |
+| `health_check_timeout` | integer | No | Seconds a check waits for an answer, 1 to 60 and at most the interval, default 5. |
+| `health_check_failure_threshold` | integer | No | Failed checks in a row before a replica is restarted, 1 to 30, default 6. |
+| `health_check_grace_period` | integer | No | Seconds a starting replica has to pass its first check before it is restarted, 0 to 300, default 300. |
 | `schedule` | string | No | A cron job's cron schedule, in UTC. |
 | `start_command` | string | No | Command the app starts with, empty for the detected one. |
 | `wait` | boolean | No | Wait until it is done, up to 15 minutes, instead of returning while it is under way. |
@@ -1435,7 +1460,7 @@ The url that deploys an app created from an image when it receives a POST, for C
 
 ### get_app_logs
 
-The latest lines a running app printed, or a cron job's latest run, or the run named.
+The latest lines a running app printed, every replica's with each line starting with its replica's name in brackets when there is more than one, or the replica named. For a cron job, its latest run's, or the run named.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1446,6 +1471,19 @@ The latest lines a running app printed, or a cron job's latest run, or the run n
 | `app` | string | Yes | Name or id of the app. |
 | `lines` | integer | No | Lines of history: 100, 200 (the default), 500 or 1000. |
 | `run` | string | No | A cron job's run to read, by name, see list_app_runs. |
+| `replica` | string | No | One replica to read, by name, see list_app_replicas. |
+
+### list_app_replicas
+
+The replicas serving an app, oldest first, with status, whether each answers on the app's port, restarts, the version it runs, and why one isn't up. Read one's logs with get_app_logs and replica, or run a command in it with app_exec and replica.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider app replicas`](/cli/commands/app#cloider-app-replicas) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `app` | string | Yes | Name or id of the app. |
 
 ### list_app_runs
 
@@ -1573,7 +1611,7 @@ Remove variables. Changing the environment restarts the app; changing build args
 
 ### app_exec
 
-Run one command inside an app's container, e.g. a migration. Returns `{exit_code, stdout, stderr, timed_out}`; 127 means the command doesn't exist there.
+Run one command inside an app's container, e.g. a migration, in its newest replica or the one named. Returns `{exit_code, stdout, stderr, timed_out}`; 127 means the command doesn't exist there.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1585,6 +1623,7 @@ Run one command inside an app's container, e.g. a migration. Returns `{exit_code
 | `command` | string | Yes | The command line. With spaces it runs with sh -c, so pipes, && and $VARS work. |
 | `stdin` | string | No | Text passed to the command's stdin, up to 2 MiB. |
 | `timeout_seconds` | integer | No | Stop the command after this long, 1 to 3600 seconds (default 600). |
+| `replica` | string | No | The replica to run it in, by name, see list_app_replicas (default: the newest). |
 
 ### list_git_installations
 
@@ -1917,7 +1956,7 @@ Some CLI commands are interactive or only make sense in a terminal, so `cloider 
 - [`cloider mcp` command reference](/cli/commands/mcp)
 
 <FAQ items={[
-  {q: 'How many tools does the Cloider MCP server have?', a: '128 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 55 of them only read, 46 create or change resources, and 28 are destructive, which includes the three exec tools.'},
+  {q: 'How many tools does the Cloider MCP server have?', a: '130 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 56 of them only read, 47 create or change resources, and 28 are destructive, which includes the three exec tools.'},
   {q: 'Which Cloider MCP tools are destructive?', a: 'Every delete tool, the tools that replace a whole setting (bucket policy, lifecycle and CORS rules, retention rules), uploads (which overwrite files with the same key), unsetting app variables, untagging and running retention, disconnecting a git account, and the exec tools app_exec, cluster_exec and database_exec. They all carry destructiveHint, so clients ask before running them.'},
   {q: 'Can the MCP server show a database password?', a: 'Yes, with get_database_password, which is read only. get_database returns the connection details without the password, so a client can let the agent read connection details freely and still ask before it reads the password.'},
   {q: 'Can the agent deploy code from my computer?', a: 'Yes. deploy_app uploads a directory on the machine the MCP server runs on, given as an absolute path in dir, detects the language and port, and follows the build until the app is up.'},

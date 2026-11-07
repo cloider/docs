@@ -1,36 +1,37 @@
 ---
-title: Pause, resume and delete a Cloider app
-sidebar_label: Pause, resume and delete
+title: Restart, pause, resume and delete a Cloider app
+sidebar_label: Restart, pause and delete
 sidebar_position: 13
-description: Pause a Cloider app to stop paying for its compute while keeping its image, variables and domains, resume it on the same version, or delete it with its subdomains.
-keywords: [pause app, resume app, delete app, stop app, cloider app pause, scale to zero, app cost when paused]
+description: Restart a Cloider app without downtime, pause it to stop paying for compute while keeping its image and domains, resume it, or delete it with its subdomains.
+keywords: [restart app, pause app, resume app, delete app, stop app, cloider app restart, cloider app pause, scale to zero, app cost when paused]
 ---
 
+**Restarting** an app replaces its container with a fresh one on the same version, while the old one keeps serving.
 **Pausing** an app stops its container but keeps everything it needs to come back: its live version, its image, its
 environment variables, its domains and its build history. A paused app costs nothing for compute. **Resuming** starts it
 again on the same version. **Deleting** an app removes it for good, together with its images and, by default, its free
-subdomains. This page covers all three and what each one costs. Pausing a [cron job](/apps/cron-jobs) stops its schedule
+subdomains. This page covers all four and what each one costs. Pausing a [cron job](/apps/cron-jobs) stops its schedule
 and a run going at that moment, and resuming it puts the schedule back.
 
 ## At a glance
 
-| | Pause | Resume | Delete |
-| --- | --- | --- | --- |
-| **Container** | Stopped | Started on the version it was serving | Removed |
-| **Image, variables, builds** | Kept | Kept | Removed |
-| **Free subdomain** | Kept, answers with an error | Serves the app again | Deleted by default |
-| **Custom domain** | Kept, answers with an error | Serves the app again | Kept; only its route to the app is removed |
-| **Compute cost** | None | Billed again | None |
-| **Allowed when** | The app is `Ready` and no build is running | The app is `Paused` | Any time, unless it is already being deleted |
-| **Statuses** | `Pausing` then `Paused` | `Starting` then `Ready` | `Terminating`, then gone from the list |
+| | Restart | Pause | Resume | Delete |
+| --- | --- | --- | --- | --- |
+| **Container** | Replaced by a fresh one on the same version | Stopped | Started on the version it was serving | Removed |
+| **Image, variables, builds** | Kept | Kept | Kept | Removed |
+| **Free subdomain** | Keeps serving | Kept, answers with an error | Serves the app again | Deleted by default |
+| **Custom domain** | Keeps serving | Kept, answers with an error | Serves the app again | Kept; only its route to the app is removed |
+| **Compute cost** | Billed as before | None | Billed again | None |
+| **Allowed when** | The app is `Ready`, no build is running, and it isn't a cron job | The app is `Ready` and no build is running | The app is `Paused` | Any time, unless it is already being deleted |
+| **Statuses** | `Starting` then `Ready` | `Pausing` then `Paused` | `Starting` then `Ready` | `Terminating`, then gone from the list |
 
-Pause, resume and delete are in the actions menu (the three dots) of each app on the **Apps** list.
+Restart, pause, resume and delete are in the actions menu (the three dots) of each app on the **Apps** list.
 
 <Screenshot
   src="/img/screenshots/apps/actions-menu.webp"
   url="/dashboard/apps"
-  alt="The Apps list with the actions menu of the blog app open, showing Pause, Resume and Delete"
-  caption="Pause, Resume and Delete live in each app's actions menu."
+  alt="The Apps list with the actions menu of the blog app open, showing Restart, Pause and Delete"
+  caption="Restart, Pause, Resume and Delete live in each app's actions menu. Resume replaces Pause on a paused app."
 />
 
 ## Pause an app
@@ -101,8 +102,8 @@ Pause the blog app.
 
 While an app is paused:
 
-- **Can't**: deploy a new version, retry a build, change the port, start command, build arguments or build variables,
-  open a terminal, run commands or read logs. Pushes to a git app's branch are skipped.
+- **Can't**: restart it, deploy a new version, retry a build, change the port, start command, build arguments or build
+  variables, open a terminal, run commands or read logs. Pushes to a git app's branch are skipped.
 - **Can**: read the **Overview**, **Insights** and **Builds** tabs, change environment variables (they apply when it
   resumes), manage its domains, and delete it.
 
@@ -161,6 +162,82 @@ The app goes `Starting`, then `Ready`.
 
 A git app with commits pushed while it was paused isn't updated by resuming. Click **Deploy latest commit** afterwards
 to catch up.
+
+## Restart an app
+
+Restarting an app replaces its running container with a fresh one on the same version, with its current environment
+variables. Nothing is built. The old container keeps serving until the new one accepts connections on the app's port,
+then stops, so the app stays reachable. Restart an app to clear its memory and caches, or to reconnect to a database
+or service it only connects to at startup.
+
+You don't need to restart after changing [environment variables](/apps/environment-variables): saving them already
+restarts the app. A [cron job](/apps/cron-jobs) can't be restarted, since each run starts on a fresh container.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Apps** in the sidebar.
+2. Click the three dots of the app and choose **Restart**.
+3. In **Restart App**, which says the version the fresh container starts on, click **Restart app**.
+
+The status goes `Starting`, then `Ready`.
+
+<Screenshot
+  src="/img/screenshots/apps/restart-dialog.webp"
+  url="/dashboard/apps"
+  alt="The Restart App dialog for blog, saying a fresh container starts on version 12 with the same environment and takes over once it is up"
+  caption="The app keeps serving while it restarts."
+/>
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider app restart blog --wait
+```
+
+```text title="Output"
+✓ App blog is ready
+```
+
+Without `--wait` the command returns at once with `✓ App blog is restarting`.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider can't restart apps. Use the dashboard, the CLI or the API.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -X POST https://cloider.com/api/apps/a7c2mq/restart \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+The response is the account's app list, with this app in `Starting`. Poll `GET /api/apps/a7c2mq/status` until it
+answers `Ready`.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+Restart the blog app.
+```
+
+```json title="Tool call: restart_app"
+{"app": "blog", "wait": true}
+```
+
+</TabItem>
+</Tabs>
+
+### What if the new container doesn't start?
+
+If the new container doesn't accept connections on the app's port within 5 minutes, the same window a deploy gets,
+Cloider removes it and the old container keeps serving. The app goes back to `Ready` on its old container. The usual
+cause is something the app needs at startup that has gone away since it last started, such as a database it can't
+reach. See [start failures](/apps/troubleshooting#start-failures) for what to check.
 
 ## Delete an app
 
@@ -256,6 +333,9 @@ A build waiting in the queue when the app is deleted is `Canceled`. Billing for 
 | **Only a running app can be paused!** | The app isn't `Ready`, for example it is `Failed` or still deploying |
 | **This app is building, wait for that build to finish before pausing it!** | Wait for the build, then pause |
 | **Only a paused app can be resumed!** | The app isn't `Paused`. If it is `Pausing`, wait a moment |
+| **Only a running app can be restarted!** | The app isn't `Ready`, for example it is `Paused`, `Failed` or still deploying |
+| **This app is building, wait for that build to finish before restarting it!** | Wait for the build, then restart. The build replaces the container anyway |
+| **A cron job app starts fresh on every run, there is nothing running to restart!** | Cron jobs have no container between runs. Use **Run now** to start a run |
 | **This app is already being deleted!** | The app is `Terminating` |
 | **You have read-only access to this account, you can not pause apps!** | Ask an account admin for write access |
 | The address shows an error after resuming | The app is still starting. Wait for `Ready`, then check its [logs](/apps/logs) |
@@ -269,6 +349,7 @@ A build waiting in the queue when the app is deleted is `Canceled`. Billing for 
 <FAQ items={[
   {q: 'Does a paused Cloider app cost money?', a: 'Not for compute. A paused app has no running container, so it records no CPU or memory. Its images stay in the account\'s apps registry project, which is billed by the data it stores.'},
   {q: 'What happens to my app\'s URL when it is paused?', a: 'The free subdomain and custom domains stay attached. The address keeps resolving but answers with an error until you resume the app.'},
+  {q: 'Does restarting a Cloider app cause downtime?', a: 'No. The fresh container starts first, and the old one keeps serving until the new one accepts connections on the app\'s port. If the new one doesn\'t start within 5 minutes, it is removed and the old one keeps running.'},
   {q: 'Does resuming an app rebuild it?', a: 'No. Resuming starts the version the app was serving, with its current environment variables. To deploy newer code, deploy a new version after resuming.'},
   {q: 'Can I recover a deleted app?', a: 'No. Deleting an app removes its versions, images and variables permanently. Its custom domains stay in your account, and its free subdomains too if you chose to keep them.'},
   {q: 'Does deleting an app delete my custom domain?', a: 'No. A custom domain is never deleted with an app; it only stops routing to it. Only free cloider.app subdomains are offered for deletion, and you can keep those too.'},

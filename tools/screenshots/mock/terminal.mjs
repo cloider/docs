@@ -49,8 +49,9 @@ function clusterSession() {
   return lines.join('\r\n')
 }
 
+// every replica's hostname is the app's name, like the real containers'
 function appSession(name) {
-  const host = `${name}-6c9f7d8b5-q2xkp`
+  const host = name
   const prompt = (cmd = '') => `${c('1;32', `app@${host}`)}:${c('1;34', '/workspace')}$ ${cmd}`
   return [
     prompt('ls'),
@@ -60,8 +61,27 @@ function appSession(name) {
     prompt('env | grep -E "^(NODE_ENV|PORT)="'),
     'NODE_ENV=production',
     'PORT=3000',
-    prompt('curl -s localhost:3000/api/health'),
+    prompt('curl -s localhost:3000/healthz'),
     '{"status":"ok","uptime":11523}',
+    prompt(''),
+  ].join('\r\n')
+}
+
+// a shell in a cron job's running run, its pod named after the run's Job
+function runSession(name, run) {
+  const prompt = (cmd = '') => `${c('1;32', `app@${run}-x7q4m`)}:${c('1;34', '/app')}$ ${cmd}`
+  return [
+    prompt('ps aux'),
+    'USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND',
+    'app          1  0.0  0.0   2580   908 ?        Ss   15:29   0:00 sh -c python reports.py',
+    'app          7 38.2  2.1 412344 172816 ?       Sl   15:29   0:24 python reports.py',
+    'app         31  0.0  0.0   2580  1640 pts/0    Ss   15:30   0:00 sh',
+    'app         38  0.0  0.0   8100  3912 pts/0    R+   15:30   0:00 ps aux',
+    prompt('ls reports/2026-10-20'),
+    'churn.csv  daily-revenue.csv',
+    prompt('env | grep -E "^(REPORTS_TO|WAREHOUSE_URL)="'),
+    'REPORTS_TO=finance@example.com',
+    'WAREHOUSE_URL=postgresql://reports:••••••@orders-db-o2r6p.db.cloider.internal:5432/orders-db',
     prompt(''),
   ].join('\r\n')
 }
@@ -122,7 +142,7 @@ function databaseSession(engine, db, user) {
 
 export function terminalSession(kind, name, query) {
   if (kind == 'cluster') return clusterSession()
-  if (kind == 'app') return appSession(name)
+  if (kind == 'app') return query.get('run') ? runSession(name, query.get('run')) : appSession(name)
   return databaseSession(query.get('engine') ?? 'postgresql', name, query.get('user') ?? name)
 }
 

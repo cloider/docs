@@ -2,13 +2,14 @@
 title: Change a Cloider app's port, start command and branch
 sidebar_label: Settings
 sidebar_position: 12
-description: What the Settings tab of a Cloider app changes, the port, the start command and a git app's branch and auto deploy, and how each change reaches the running app.
-keywords: [cloider app settings, change app port, start command, procfile, auto deploy, change branch, cloider app update]
+description: What a Cloider app's Settings tab changes, the port, start command, compute, health check and a git app's branch, and how each change reaches the running app.
+keywords: [cloider app settings, change app port, start command, procfile, auto deploy, change branch, app replicas, health check, cloider app update]
 ---
 
-The **Settings** tab holds what an app is run with: the **Port** it listens on and its **Start command**, plus, for an
-app created from a repository, the **Branch** it deploys from and **Auto deploy on push**. Saving applies the change to
-the running app in the cheapest way that can carry it. This page explains each setting, what saving does, and how to
+The **Settings** tab holds what an app is run with: the **Port** it listens on and its **Start command**, then, under
+**Advanced settings**, its **Compute configuration** and **Health check**, plus, for an app created from a repository,
+the **Branch** it deploys from and **Auto deploy on push**. Saving applies the change to the running app in the cheapest
+way that can carry it. This page explains each setting, what saving does, and how to
 change them from every tool.
 
 ## At a glance
@@ -17,12 +18,14 @@ change them from every tool.
 | --- | --- | --- |
 | **Port** | Every app | Redeploys the running version on the new port, no rebuild |
 | **Start command** | Apps built by buildpacks | Rebuilds the source the app is serving, as a new version |
+| **Compute configuration** | Every app but cron jobs | Redeploys the running version with its new replicas and sizes, no rebuild |
+| **Health check** | Every app but cron jobs | Redeploys the running version, which must pass the new check to go live |
 | **Branch** | Git apps | Nothing until the next push or **Deploy latest commit** |
 | **Auto deploy on push** | Git apps | Turns deploys on push on or off |
 | **Image**, **Tag**, registry login | Image apps | Checks them with the registry, then deploys when the tag points at a different image |
 | **Deploy hook** | Image apps | Shows the URL that deploys the app, or replaces it with **Regenerate** |
 
-- Port and start command changes are refused while a build is running or the app is paused (the **Save changes** button
+- Changes are refused while a build is running or the app is paused (the **Save changes** button
   says why: **A build is already running** or **Resume the app to change its settings**).
 - On an app that has never deployed, the new values are saved and used by its next build.
 - The app's name, environment variables and domains are elsewhere: see
@@ -30,8 +33,8 @@ change them from every tool.
 
 <Screenshot
   src="/img/screenshots/apps/detail-settings.webp"
-  url="/dashboard/apps/api-k3m9tw"
-  alt="The Settings tab of the api app with Port 8080, an empty Start command, and the Repository section with branch main and Auto deploy on push switched on"
+  url="/dashboard/apps/blog-b7x2k"
+  alt="The Settings tab of the blog app with Port 3000, an empty Start command, the folded Advanced settings section for the compute configuration and health check, and the Repository section with branch main and Auto deploy on push switched on"
   caption="The Settings tab of a git app."
 />
 
@@ -56,7 +59,7 @@ app, and Dockerfile apps written to) follows the change on its own.
 
 1. Open the app and go to the **Settings** tab.
 2. Change **Port** (1 to 65535).
-3. Click **Save changes**. The toast says **Your app is redeploying on its new port.**
+3. Click **Save changes**. The toast says **Your app is redeploying with its new settings.**
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -175,6 +178,30 @@ curl -X PUT https://cloider.com/api/apps/k3m9tw/settings \
 </TabItem>
 </Tabs>
 
+## Change the compute configuration
+
+**Advanced settings** holds the app's **Compute configuration**: how many replicas run and how much CPU and memory each
+gets, either sized and scaled by Cloider, autoscaled at thresholds you pick, or fixed. Saving a new one redeploys the
+running version without a rebuild.
+
+```bash
+cloider app update blog --compute autoscaling --cpu 0.5 --memory 512 --replicas 2 --max-replicas 6
+```
+
+See [Scaling and compute](/apps/scaling) for the three options, their billing and every tool.
+
+## Set a health check
+
+Below the compute configuration, **Health check path** is a path such as `/healthz` that Cloider requests on every
+replica. A new version only goes live once it passes, and a replica that keeps failing it is taken out of traffic and
+restarted. Empty, Cloider only checks that the app listens on its port.
+
+```bash
+cloider app update blog --health-check-path /healthz
+```
+
+See [Health checks](/apps/health-checks) for its timings and what a failure looks like.
+
 ## Change the branch or auto deploy
 
 A git app has a **Repository** section with the **Branch** every deploy is taken from and the **Auto deploy on push**
@@ -218,10 +245,18 @@ The **Deploy hook** section below it shows the URL that deploys the app when you
 A [cron job](/apps/cron-jobs) has a **Schedule** instead of a port. Saving a new one redeploys the job on it in a few
 seconds, on the same version. See [Change the schedule](/apps/cron-jobs#change-the-schedule).
 
-## Where are pause and delete?
+<Screenshot
+  src="/img/screenshots/apps/cron-settings.webp"
+  url="/dashboard/apps/reports-r8c5j"
+  alt="The Settings tab of the reports cron job with the Schedule set to Every hour, its cron expression 0 * * * *, and the Start Command python reports.py"
+  caption="A cron job's Settings tab: a Schedule in place of the Port."
+/>
 
-**Pause**, **Resume** and **Delete** are in the actions menu (the three dots) of each app on the **Apps** list, and in
-the CLI as `cloider app pause`, `resume` and `delete`. See [Pause, resume and delete](/apps/pause-resume-and-delete).
+## Where are restart, pause and delete?
+
+**Restart**, **Pause**, **Resume** and **Delete** are in the actions menu (the three dots) of each app on the **Apps**
+list, and in the CLI as `cloider app restart`, `pause`, `resume` and `delete`. See
+[Restart, pause, resume and delete](/apps/pause-resume-and-delete).
 
 ## Troubleshooting
 
@@ -235,10 +270,12 @@ the CLI as `cloider app pause`, `resume` and `delete`. See [Pause, resume and de
 | **The settings were saved but the app could not be redeployed!** | The values are saved; save again or deploy a new version to apply them |
 | The app went `Failed` after a port change | Nothing answers on the new port. Set the port your app listens on |
 | A new start command fails with `sh: not found` | The image has no shell to run it with, like a distroless image. Clear the start command and change the image's `CMD` instead |
-| `nothing to change, give --port or --start-command` (CLI) | Pass at least one of the two flags |
+| `nothing to change, give --port, --compute, --replicas, --health-check-path, --schedule or --start-command` (CLI) | Pass at least one setting to change |
+| Errors on the compute or health check fields | See the troubleshooting of [Scaling and compute](/apps/scaling#troubleshooting) and [Health checks](/apps/health-checks#troubleshooting) |
 
 ## Next steps
 
+- [Scaling and compute](/apps/scaling) and [Health checks](/apps/health-checks): the Advanced settings in depth.
 - [Build configuration](/apps/build-configuration): how the port and start command are used during builds.
 - [Builds and deployments](/apps/builds-and-deployments): follow the rebuild a start command change starts.
 - [Pause, resume and delete](/apps/pause-resume-and-delete).

@@ -2,8 +2,8 @@
 title: App insights, requests, CPU, memory and cost per day
 sidebar_label: Insights
 sidebar_position: 9
-description: Read a Cloider app's requests per day by status class, data served, average CPU and memory, month to date cost and forecasts on the Insights tab, with cloider app usage or the REST API.
-keywords: [cloider app insights, app requests per day, app traffic, app bandwidth, app cpu usage, app memory usage, app cost, usage forecast, app metrics, cloider app usage]
+description: Read a Cloider app's requests per day by status class, data served, a cron job's runs and success rate, average CPU and memory, month to date cost and forecasts on the Insights tab, with cloider app usage or the REST API.
+keywords: [cloider app insights, app requests per day, app traffic, app bandwidth, cron job success rate, cron job runs, app cpu usage, app memory usage, app cost, usage forecast, app metrics, cloider app usage]
 ---
 
 The **Insights** tab shows how much traffic an app serves and what it uses and costs: requests per day split by status
@@ -30,6 +30,24 @@ data out are shown only and never billed.
 | **Memory Usage** | Average GB per day, last 31 days |
 | **Cost** | Cost per day, last 31 days |
 
+A [cron job](/apps/cron-jobs) has no domain, so its tab shows its runs in place of the **Requests** and **Server
+Errors** cards and the **Requests** and **Data Out** charts:
+
+| Card | Shows |
+| --- | --- |
+| **Jobs (Today)** | The **Runs** that ended so far today, and the **Run Minutes** they ran |
+| **Jobs (This Month)** | The runs that ended since the first of the month, and the minutes they ran |
+| **Job Success Rate (This Month)** | The share of this month's runs that succeeded and that failed, and how many of each |
+
+Its **Data Out (This Month)** card stays at `0 B`: data out is counted at the domains, and a cron job has none.
+
+<Screenshot
+  src="/img/screenshots/apps/cron-insights.webp"
+  url="/dashboard/apps/reports-r8c5j"
+  alt="The Insights tab of the reports cron job with the usage and cost cards, Jobs (Today) and Jobs (This Month) with their runs and run minutes, the Job Success Rate (This Month) pie of succeeded and failed runs, Data Out, and daily CPU, memory and cost charts"
+  caption="A cron job's Insights: its runs in place of requests."
+/>
+
 Usage is sampled every minute while the app runs. A new app shows **Usage is sampled every minute while the app runs,
 and shows here once the first samples are in.** until its first samples arrive.
 
@@ -52,15 +70,24 @@ the ones the app never sees, such as the `503` a client gets while the app is do
 - Counts are added every minute to the current day, in UTC.
 - Days from before requests were counted show no bar.
 
+## How are a cron job's runs counted?
+
+- A run is counted within a minute of ending, on the day it ended, in UTC. A run still going isn't counted yet.
+- A run counts as **Succeeded** or **Failed** as the **Runs** tab shows it: it failed when it exited with any code other
+  than `0`, was stopped after 12 hours, or never started. A run a pause stops isn't counted.
+- **Run Minutes** go from the run's container starting to it finishing, the time a run is
+  [billed](/apps/cron-jobs#billing) for. Waiting to start, such as pulling the image, isn't counted.
+
 ## How is usage measured?
 
-Each sample reads the CPU and memory of the app's container. The terminal that the dashboard's **Terminal** tab opens
-isn't counted, only your app.
+Each sample adds up the CPU and memory of all the app's running [replicas](/apps/scaling), each counting the larger
+of what it is given and what it uses, which is what the app is [billed](/apps/scaling#how-is-a-scaled-app-billed) for.
+The terminal that the dashboard's **Terminal** tab opens isn't counted, only your app.
 
 - **CPU** is in cores: `0.25 cores` is a quarter of one CPU core on average.
 - **Memory** is in GB.
 - Samples are averaged over time, so a short spike barely moves a daily average.
-- A **paused** app has no container, so its samples are zero and it costs nothing for compute.
+- A **paused** app has no running replicas, so its samples are zero and it costs nothing for compute.
 
 Cost is calculated from the same averages: the larger of the CPU cores used and the memory used converted to cores at a
 fixed ratio, times the compute rate, times the time the app ran. The rate is on the [pricing page](/reference/pricing),
@@ -151,7 +178,8 @@ The response is the app with its usage. A trimmed example:
 `metrics.cpu` and `monthly_usage.avg_cpu_usage` are in millicores (1000 = one core), `metrics.memory` and
 `avg_memory_usage` in MiB. `metrics.requests` is the day's request count and `metrics.requests_by` its split by status
 class, `metrics.bytes_out` the bytes sent back. Days from before requests were counted have none of the three.
-`daily_usage` holds up to the last 31 days.
+A cron job's days also have `metrics.runs`, the runs that ended, `metrics.runs_failed`, how many of them failed, and
+`metrics.run_seconds`, how long they ran, each absent when zero. `daily_usage` holds up to the last 31 days.
 
 </TabItem>
 <TabItem value="mcp" label="MCP">
@@ -196,6 +224,7 @@ cloider app exec blog -- ps aux
 
 <FAQ items={[
   {q: 'How many requests does my app get per day?', a: 'The app\'s Insights tab shows requests per day for the last 31 days, split into 2xx, 3xx, 4xx and 5xx, with today\'s and this month\'s totals and the data sent back. They are counted at the ingress for every domain of the app, and are not billed.'},
+  {q: 'Where can I see how often my cron job\'s runs fail?', a: 'On the cron job\'s Insights tab: the runs that ended today and this month, the minutes they ran, and this month\'s success and failure rate with how many runs succeeded and failed. The Runs tab lists the last 5 succeeded and 5 failed runs with their output.'},
   {q: 'Where can I see how much CPU and memory my app uses?', a: 'On the app\'s Insights tab in the dashboard: average CPU in cores and memory in GB for this month and today, and daily charts for the last 31 days. cloider app usage <app> -o json returns the same figures.'},
   {q: 'How often is app usage measured?', a: 'Usage is sampled every minute while the app runs, and averaged per day. A paused app has no running container, so it records zero usage.'},
   {q: 'Does the web terminal count towards my app\'s usage?', a: 'No. Only the app\'s own container is measured and billed. The terminal that the dashboard opens runs separately and isn\'t counted.'},

@@ -6,9 +6,9 @@ description: Stream a running Cloider app's stdout and stderr live from the Logs
 keywords: [cloider app logs, stream logs, tail logs, stdout stderr, cloider app logs -f, runtime logs, debug app]
 ---
 
-An app's **logs** are everything its running container prints to standard output and standard error: requests your
+An app's **logs** are everything its running containers print to standard output and standard error: requests your
 framework logs, `console.log` and `print` calls, warnings and stack traces. Cloider streams them live from the app's
-container to the dashboard's **Logs** tab, to `cloider app logs`, to the REST API and to AI agents. This page shows each
+[replicas](/apps/scaling) to the dashboard's **Logs** tab, to `cloider app logs`, to the REST API and to AI agents. This page shows each
 way to read them and explains what the stream keeps and what it doesn't. A [cron job](/apps/cron-jobs)'s logs are its
 runs' instead, on the **Runs** tab.
 
@@ -16,8 +16,8 @@ runs' instead, on the **Runs** tab.
 
 | | |
 | --- | --- |
-| **What** | The stdout and stderr of the app's running container |
-| **History** | The last 100, 200 (default), 500 or 1000 lines the current container printed |
+| **What** | The stdout and stderr of the app's running replicas, all of them at once or one |
+| **History** | The last 100, 200 (default), 500 or 1000 lines each running replica printed |
 | **Live** | New lines arrive as the app prints them, for up to 60 minutes per stream |
 | **Kept** | Not stored by Cloider: logs live in the container, so a restart or a new deploy starts a fresh log |
 | **Build output** | Separate, on the **Builds** tab. See [Builds and deployments](/apps/builds-and-deployments) |
@@ -136,23 +136,96 @@ It calls the `get_app_logs` tool, which returns the latest lines and doesn't fol
 </TabItem>
 </Tabs>
 
+## Read one replica's logs
+
+An app that can run more than one [replica](/apps/scaling) shows all of them at once: each line starts with the name of
+the replica that printed it, in brackets, so you can tell them apart. To read only one replica, pick it.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+The **Logs** tab has a replica picker next to **Lines**. It starts on **All replicas**, with each line marked with its
+replica in its own color. Pick a replica to follow only its output; the list shows each replica's status, version and
+restarts, so you can find the one that is failing.
+
+<Screenshot
+  src="/img/screenshots/apps/replicas.webp"
+  url="/dashboard/apps/blog-b7x2k"
+  alt="The Logs tab of the blog app with the replica picker open over log lines marked app-x2k4p, app-m8q3z and app-r5t7n, listing All replicas and the three replicas with their status and version"
+  caption="Every replica's lines at once, each marked with its replica, or one replica picked."
+/>
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+Without `--replica`, every replica's lines are printed, each starting with its replica's name:
+
+```bash
+cloider app logs blog -n 100
+```
+
+```text title="Output"
+[app-7c9d8f6b5-x2k4p] 2026-10-20T15:29:13.474Z HEAD / 200 8ms
+[app-7c9d8f6b5-r5t7n] 2026-10-20T15:29:16.998Z GET  /posts/shipping-faster-with-preview-deploys 200 37ms
+[app-7c9d8f6b5-m8q3z] 2026-10-20T15:29:22.255Z GET  /archive?page=2 200 31ms
+```
+
+List the replicas, then read one:
+
+```bash
+cloider app replicas blog
+cloider app logs blog --replica app-7c9d8f6b5-r5t7n -f
+```
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider can't read app logs. Use the dashboard, the CLI or the API.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+Add `replica`, a name from [`GET /apps/<id>/replicas`](/api/endpoints/apps#list-an-apps-replicas):
+
+```bash
+curl -N "https://cloider.com/api/apps/b7x2k/logs/stream?lines=200&replica=app-7c9d8f6b5-r5t7n"   -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+One replica of the blog app is failing its health check. Show me its logs.
+```
+
+The agent lists the replicas with `list_app_replicas`, then reads the failing one:
+
+```json title="Tool call: get_app_logs"
+{"app": "blog", "replica": "app-7c9d8f6b5-r5t7n", "lines": 200}
+```
+
+</TabItem>
+</Tabs>
+
 ## What do the logs contain?
 
 - Everything the app's process writes to **stdout** and **stderr**, in order. Write your logs there rather than to files
   inside the container: files aren't streamed and are lost with the container.
-- Only the app's **current** container. During a rollout the stream moves to the new version's container once it is
-  running.
-- Lines your app prints while starting, including crash output. If the container restarts, the stream picks up the new
-  one, and prints `--- waiting for a pod ---` while there is no container to read.
+- Only the app's **current** replicas. During a rollout the stream moves to the new version's replicas once they are
+  running, and a replica added by autoscaling joins the stream when it starts.
+- Lines your app prints while starting, including crash output. If a replica restarts, the stream picks it up again,
+  and prints `--- waiting for a pod ---` while there is nothing to read. A stream of one picked replica ends with
+  `--- this replica has stopped ---` once that replica is removed, after a scale down, a restart or a new version.
 
 They don't contain the build output (see the **Builds** tab), nor requests that never reached your app.
 
 ## How long are app logs kept?
 
-Cloider doesn't store app logs. The stream reads them from the running container, so:
+Cloider doesn't store app logs. The stream reads them from the running replicas, so:
 
-- A restart (saving environment variables, a crash) or a new deploy starts with an empty log.
-- History is limited to what the container still holds, up to the 1000 lines you can ask for.
+- A restart (saving environment variables, a crash) or a new deploy starts with an empty log, and a replica removed
+  when the app scales down takes its lines with it.
+- History is limited to what each replica still holds, up to the 1000 lines you can ask for.
 
 To keep logs, send them from your app to a logging service of your choice, or write them to an
 [object storage bucket](/object-storage/overview).
@@ -161,7 +234,7 @@ To keep logs, send them from your app to a logging service of your choice, or wr
 
 | What you see | Meaning |
 | --- | --- |
-| **Nothing printed yet.** | The stream is open and the app hasn't printed anything since its container started |
+| **Nothing printed yet.** | The stream is open and the app hasn't printed anything since its replicas started |
 | **Nothing was printed.** | The stream ended without output |
 | `This app has not deployed a version yet.` | No version is running yet. Check the **Builds** tab |
 | `The logs could not be read, try again!` | The stream couldn't be opened. Reconnect in a moment |

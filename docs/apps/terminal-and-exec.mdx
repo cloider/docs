@@ -24,9 +24,10 @@ between runs, so it has no **Terminal** tab: a running run has a **Terminal** bu
 | **Time limit** | Until you exit; idle for 10 minutes ends the terminal | 10 minutes by default, up to 1 hour |
 | **Needs** | A deployed, running app; read and write access | Same |
 
-Both run inside the app's current container, with its files and environment variables, as the container's user.
-Anything you change there (files, installed packages) is lost when the container restarts or a new version deploys, so
-make lasting changes in your source and deploy them.
+Both run inside one of the app's current [replicas](/apps/scaling), the newest unless you
+[pick one](#pick-a-replica), with its files and environment variables, as the container's user. Anything you change
+there (files, installed packages) is lost when the replica restarts or a new version deploys, and the app's other
+replicas never see it, so make lasting changes in your source and deploy them.
 
 ## Open a terminal
 
@@ -41,7 +42,7 @@ make lasting changes in your source and deploy them.
 <Screenshot
   src="/img/screenshots/apps/detail-terminal.webp"
   url="/dashboard/apps/blog-a7c2mq"
-  alt="The Terminal tab of the blog app with a bash prompt inside the container after running ls"
+  alt="The Terminal tab of the blog app with the Replica picker set to app-x2k4p and a shell inside it after running ls, node --version and a curl to /healthz"
   caption="A shell inside the app's running container."
 />
 
@@ -83,6 +84,22 @@ An MCP client has no terminal. Agents run commands one at a time with the `app_e
 </Tabs>
 
 The prompt shows the app's name as the host name: Cloider sets the container's hostname to the app name.
+
+### Pick a replica
+
+On an app that can run more than one replica, the **Terminal** tab has a **Replica** picker next to **Reconnect**. It
+opens on the oldest running replica; pick another to open new sessions in it. Only running replicas can be picked, and
+each one shows its status and version, so you can open a shell in the one that misbehaves.
+
+```bash
+cloider app replicas blog
+cloider app shell blog --replica app-7c9d8f6b5-r5t7n
+cloider app exec --replica app-7c9d8f6b5-r5t7n blog -- cat /tmp/state.json
+```
+
+Without `--replica`, `cloider app shell` and `cloider app exec` use the newest replica. In the API, `GET
+/apps/<id>/terminal?replica=<name>` and the `replica` field of `POST /apps/<id>/exec` do the same, and the MCP tool
+`app_exec` takes a `replica` too.
 
 ### When does the terminal stop?
 
@@ -249,6 +266,9 @@ cloider app exec blog "wget -qO- http://localhost:\$PORT/health"
 | **You have read-only access to this account, you can not run commands!** | Your role in the account is read-only |
 | **The terminal could not be started, try again in a moment!** | The terminal didn't wake in time. Try again |
 | **This app has no running container right now!** | The app is between containers (a restart or a rollout). Try again in a few seconds |
+| **This app has no running replica named app-7c9d8f6b5-r5t7n!** | That replica has stopped, for example after a scale down or a new version. List the current ones with `cloider app replicas` |
+| **Replica not found!** / **That is not a replica's name!** | The name isn't one of a replica. Copy it from `cloider app replicas` |
+| **A cron job app has no replicas!** | A cron job runs a container per run. Open a running run's terminal from the **Runs** tab |
 | `127` exit code | The command isn't installed in the image. Buildpack images don't include every tool, so check with `cloider app exec <app> "command -v <tool>"` |
 
 ## Next steps

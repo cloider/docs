@@ -24,6 +24,12 @@ Cloider, then gives the exact format, rules and examples for every record type.
 | **Takes effect** | Cloider's nameservers answer with the change right after you save. Resolvers see it within the old TTL |
 | **Cost** | No charge |
 
+:::tip[We recommend using an ALIAS record]
+To point a name at Cloider or another hosted service, use an [`ALIAS`](#alias-record) record to its host name rather
+than an `A` record with a copy of its address: the `ALIAS` follows the address when it changes. Unlike a `CNAME`, it
+also works on the domain itself and leaves the `MX` and `TXT` records at the same name working.
+:::
+
 ## How records work on Cloider
 
 A record on Cloider has four fields:

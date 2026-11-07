@@ -51,7 +51,7 @@ flowchart LR
 
 | You have | On Cloider | Notes |
 | --- | --- | --- |
-| A web service built from git or a Dockerfile (Heroku, Render, Railway, App Runner, Cloud Run, a VM) | An [app](/apps/overview) | Built with your Dockerfile or a buildpack. One container per app, which must answer on its port |
+| A web service built from git or a Dockerfile (Heroku, Render, Railway, App Runner, Cloud Run, a VM) | An [app](/apps/overview) | Built with your Dockerfile or a buildpack. 1 to 20 [replicas](/apps/scaling) per app, which must answer on its port |
 | Several services, workers, cron jobs, or prebuilt images | A [Kubernetes cluster](/kubernetes/overview) | Standard Kubernetes: Deployments, CronJobs, Services |
 | Managed PostgreSQL, MySQL, MongoDB or Redis | A [managed database](/databases/overview) | Same engines, one primary server, automatic backups with point-in-time restore |
 | S3, Spaces, R2, B2 or another S3 compatible store | A [bucket](/object-storage/overview) | S3 API at `https://s3.eu-central-2.cloider.com` |
@@ -369,7 +369,7 @@ Things that work differently from some providers:
 
 - **Release phase or migrations on deploy**: run them yourself after a deploy with
   `cloider app exec --timeout 15m api -- npm run migrate`, or in your CI pipeline.
-- **Workers and cron jobs**: an app runs one container that must answer HTTP on its port to go live. Run background
+- **Workers and cron jobs**: an app's replicas must answer HTTP on its port to go live. Run background
   workers and scheduled jobs as Deployments and CronJobs in a [cluster](/kubernetes/overview), or give a worker a tiny
   health endpoint on `$PORT`.
 - **Procfile**: a `web:` line starts the app, as on Heroku.

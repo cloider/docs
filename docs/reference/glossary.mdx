@@ -32,6 +32,9 @@ Your source code, built into a container image and run by Cloider on a free HTTP
 ### Apps project
 The container registry project Cloider creates in your account with your first app, where your apps' images are stored. It can't be deleted and doesn't count toward the trial's project limit. See [Container Registry overview](/container-registry/overview).
 
+### Autoscaling
+Cloider adding replicas to an app as they get busy and removing them when traffic drops, between a minimum and a maximum you set. See [Scaling and compute](/apps/scaling).
+
 ### Auto deploy
 The option that makes an app imported from Git deploy a new version on every push to its branch. See [Deploy from Git](/apps/deploy-from-git).
 
@@ -145,6 +148,9 @@ A connection between your Cloider account and a GitHub, GitLab or Bitbucket acco
 ### Helm
 The Kubernetes package manager, which installs applications packaged as charts. It works with Cloider clusters as with any cluster. See [Helm](/kubernetes/helm).
 
+### Health check
+A path of an app, such as `/healthz`, that Cloider requests on every replica: a new version only goes live once it passes, and a replica that keeps failing it is taken out of traffic and restarted. See [Health checks](/apps/health-checks).
+
 ### HTTPS certificate
 The TLS certificate that lets browsers reach a domain over HTTPS. Cloider manages them for free subdomains and custom domains. See [HTTPS certificates](/domains/https-certificates).
 
@@ -250,6 +256,9 @@ A private (or public) space in the Cloider container registry at `registry.cloid
 
 ### Registry token
 A credential for `docker login` and Kubernetes pull secrets, with pull or pull and push access to chosen projects. See [Registry tokens](/container-registry/tokens).
+
+### Replica
+One running copy of an app. An app runs 1 to 20 replicas of the same version, which share its requests. See [Scaling and compute](/apps/scaling).
 
 ### Repository
 A named set of images inside a registry project, such as `acme/api`, told apart by tags. See [Repositories and tags](/container-registry/repositories-and-tags).

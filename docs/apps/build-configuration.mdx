@@ -36,6 +36,13 @@ flowchart TD
 All three build for `linux/amd64`, push the image to your account's private apps registry project, and are limited to
 30 minutes for the whole build.
 
+:::tip[We recommend adding a Dockerfile]
+Put a `Dockerfile` at the root of your project when you can: Cloider builds it exactly as written, so you decide the
+base image, the runtime version and how the app starts. Without one, Cloider does its best to analyze your code, detect
+its language and provide the runtime your app needs, with [buildpacks](#build-with-buildpacks) or a
+[static site](#static-sites) server.
+:::
+
 ## What does Cloider detect?
 
 When you create an app, Cloider reads the uploaded source once to fill in the **Configure your app** form for you. It

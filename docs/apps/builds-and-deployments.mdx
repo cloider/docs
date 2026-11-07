@@ -15,9 +15,11 @@ how to follow and read build logs, and how to retry or redeploy.
 
 - Builds are numbered per app: `1`, `2`, `3` and so on. A retry keeps the number and counts as another attempt.
 - One build runs at a time per app. A deploy, retry or push that arrives during a build is refused or skipped.
-- A new version goes live only once it is running and has stayed up for 15 seconds. Until then the previous version
-  keeps serving, so a broken build never takes a working app down.
-- The whole build is limited to 30 minutes, and the new version must answer on its port within 5 minutes of deploying.
+- A new version goes live only once every one of its replicas is running, passes its
+  [health check](/apps/health-checks), and has stayed up for 15 seconds. Until then the previous version keeps serving,
+  so a broken build never takes a working app down.
+- The whole build is limited to 30 minutes, and the new version must answer on its port, or pass its health check,
+  within 5 minutes of deploying.
 - Each build keeps the last 64 KB of its output, including the app's own output when it fails to start.
 - Cloider keeps the images of the two most recently deployed versions. There is no rollback to older images.
 
@@ -63,7 +65,7 @@ flowchart LR
 | `Queued` | The source is in place and the build is waiting for a builder |
 | `Building` | Downloading the source and building the image |
 | `Deploying` | The image is pushed and being applied to the platform |
-| `Starting` | The new container is starting. Cloider waits for it to accept connections on the app's port and stay up for 15 seconds |
+| `Starting` | The new replicas are starting. Cloider waits for each to accept connections on the app's port, or pass its health check, and stay up for 15 seconds |
 | `Ready` | This version is running. It is the app's live version, marked **live** in the list |
 | `Superseded` | This version was live and a newer one replaced it |
 | `Failed` | The build, the deploy or the start failed. The message says which. A failed build can be retried |
@@ -77,12 +79,14 @@ marked `Failed` so it can't block the app's next build.
 Deploys are rolling and safe by default:
 
 1. While the new version builds, the current one keeps serving.
-2. When the image is ready, Cloider starts a container of the new version **next to** the old one.
-3. The new container only receives traffic once it accepts connections on the app's port.
-4. Cloider then watches it for 15 seconds. If it stays up, the build is `Ready`, the previous build becomes
-   `Superseded`, and the old container is stopped.
-5. If the new container crashes, never opens the port within 5 minutes, or its image can't be pulled, the build is
-   `Failed` and the app stays `Ready` on its previous version.
+2. When the image is ready, Cloider starts the new version's [replicas](/apps/scaling) **next to** the old ones, as
+   many as are running.
+3. A new replica only receives traffic once it accepts connections on the app's port, or passes its
+   [health check](/apps/health-checks) when the app has one.
+4. Once every new replica does, Cloider watches them for 15 seconds. If they stay up, the build is `Ready`, the previous
+   build becomes `Superseded`, and the old replicas are stopped.
+5. If a new replica crashes, runs out of memory, fails its health check, never opens the port within 5 minutes, or its
+   image can't be pulled, the build is `Failed` and the app stays `Ready` on its previous version.
 
 The first version of an app has nothing to fall back to, so when its build fails the app itself is `Failed` until a
 build succeeds.
@@ -327,6 +331,8 @@ live version, you rarely need to roll back after a bad deploy: fix the problem a
 | `The app started and then stopped` | The container exited or crashed. See the app output at the end of the logs |
 | `The app did not start in time` | Nothing accepted connections on the app's port within 5 minutes. Usually a port mismatch |
 | `The app could not be started` | The container couldn't be created, for example an invalid command or entrypoint |
+| `The health check at /healthz failed: ...` | The new version didn't pass its [health check](/apps/health-checks#what-happens-when-the-health-check-fails). The message says why |
+| `The app ran out of memory, past the 512 MiB each replica can use.` | A replica needed more memory than it can use. Raise its memory, see [Scaling and compute](/apps/scaling#what-happens-when-a-replica-runs-out-of-memory) |
 | `The source upload did not finish` | The upload was interrupted or never confirmed. Deploy again |
 | `The build did not finish in time` | The build made no progress for 45 minutes. Retry it |
 | `The app's registry couldn't be prepared, retry the build in a moment.` | A temporary registry problem. Retry |
@@ -342,7 +348,7 @@ live version, you rarely need to roll back after a bad deploy: fix the problem a
 - [App builds API](/api/endpoints/app-builds): every build endpoint.
 
 <FAQ items={[
-  {q: 'Does a Cloider deploy cause downtime?', a: 'No. The new version starts next to the old one and only receives traffic once it accepts connections on the app\'s port and stays up for 15 seconds. If it fails, the previous version keeps serving.'},
+  {q: 'Does a Cloider deploy cause downtime?', a: 'No. The new version starts next to the old one and only receives traffic once it accepts connections on the app\'s port, or passes its health check, and stays up for 15 seconds. If it fails, the previous version keeps serving.'},
   {q: 'How long can a build take?', a: 'The whole build, from downloading the source to pushing the image, is limited to 30 minutes. After the deploy, the new version has 5 minutes to accept connections on its port.'},
   {q: 'Can I run two builds of the same app at once?', a: 'No. An app builds one version at a time, and a deploy, retry or git push that arrives during a build is refused or skipped. Different apps build in parallel.'},
   {q: 'How do I roll back a Cloider app?', a: 'Deploy the earlier code again as a new version, for example by reverting the commit and pushing, or checking out the earlier commit and running cloider deploy. Cloider keeps only the two latest deployed images and has no rollback button.'},

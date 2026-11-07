@@ -39,7 +39,7 @@
     {
       "file": "apps/list.webp",
       "route": "/dashboard/apps",
-      "state": "Apps list with blog (from GitHub), api and web (uploads) and admin (a Docker image) in different statuses",
+      "state": "Apps list with blog (from GitHub), api and web (uploads), admin (a Docker image) and the reports cron job (clock icon) in different statuses",
       "actions": ""
     },
     {

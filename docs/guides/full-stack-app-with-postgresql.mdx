@@ -35,7 +35,7 @@ flowchart LR
   cli["cloider db exec (migrations)"] --> db
 ```
 
-- The **app** runs your Express server in one container. Cloider builds it from your GitHub repository with a
+- The **app** runs your Express server on two or more [replicas](/apps/scaling). Cloider builds it from your GitHub repository with a
   buildpack (no Dockerfile needed) and gives it a free `cloider.app` address.
 - The **database** is a managed PostgreSQL server. The app reaches it on its **private host**, inside Cloider's
   network, with TLS. Only the app (and your own IP address while you develop) may connect.
@@ -935,7 +935,7 @@ Cloider is pay as you go: each resource is billed while it exists, by the second
 
 | Resource | How it is billed |
 | --- | --- |
-| App `web` | Compute units: the larger of the CPU and the memory its one container requests or uses, while it runs. Builds, requests and traffic aren't billed. A paused app costs nothing |
+| App `web` | Compute units: the larger of the CPU and the memory its replicas are given or use, while they run. Builds, requests and traffic aren't billed. A paused app costs nothing |
 | App images | The two most recently deployed images are kept in the account's apps registry project, billed by the GiB stored |
 | Database `orders-db` | The flat monthly price of its plan (Hobby here), prorated while it is **Ready**. While paused, only its storage |
 | Domains, DNS records, targets, HTTPS certificates | Free |
