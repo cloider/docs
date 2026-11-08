@@ -90,6 +90,7 @@ A `Pending` pod hasn't been scheduled or is waiting for something. `kubectl desc
 | `0/N nodes are available: N Insufficient cpu` or `Insufficient memory` | The pod requests more CPU or memory than a node can offer. Lower `resources.requests` to what the app really needs |
 | `0/N nodes are available: N node(s) didn't match Pod's node affinity/selector` | The pod has a `nodeSelector` or affinity that no node matches. Nodes are managed by Cloider, so remove selectors that target specific nodes |
 | `pod has unbound immediate PersistentVolumeClaims` | A claim isn't bound. Run `kubectl describe pvc` (see [Volumes](#volumes) below) |
+| `SyncError` with `violates PodSecurity "baseline:latest"` | The pod asks for host access, such as a privileged container, `hostPath` or `hostNetwork`, which Cloider refuses. Remove the field the message names, see [Pods must meet the baseline Pod Security Standard](/kubernetes/limits-and-compatibility#pods-must-meet-the-baseline-pod-security-standard) |
 
 ## Image pull errors
 

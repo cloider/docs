@@ -72,7 +72,23 @@ PriorityClasses work as on any cluster: a pod of a higher class is scheduled fir
 
 Your pods run on nodes that Cloider operates. `kubectl get nodes` lists the nodes your cluster can schedule onto, but you don't administer them: you can't add, remove, resize or log in to nodes, and there are no node pools. Nodes can change over time, so don't pin workloads to specific node names.
 
-Workloads built to administer nodes, such as node-level monitoring agents, CNI plugins, node provisioners or containers that need host access, are designed for clusters where you own the machines. On Cloider the nodes are managed for you, so design workloads that don't depend on host access.
+Workloads built to administer nodes, such as node-level monitoring agents, CNI plugins, node provisioners or containers that need host access, are designed for clusters where you own the machines. On Cloider the nodes are managed for you, so design workloads that don't depend on host access. Pods that ask for host access are refused, see [Pods must meet the baseline Pod Security Standard](#pods-must-meet-the-baseline-pod-security-standard).
+
+### Pods must meet the baseline Pod Security Standard
+
+Your pods run on nodes shared with other customers, so every pod must meet the Kubernetes [baseline Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/#baseline). A pod is refused when it:
+
+- runs a privileged container (`securityContext.privileged: true`)
+- uses the node's network, process or IPC namespace (`hostNetwork`, `hostPID` or `hostIPC`)
+- mounts a `hostPath` volume or sets a `hostPort`
+- adds Linux capabilities beyond the default set, such as `SYS_ADMIN` or `NET_ADMIN`
+- sets seccomp or AppArmor to `Unconfined`, or an unsafe sysctl
+
+Running as root, the default capabilities and `NET_BIND_SERVICE` are allowed, so most images work unchanged. The error names the field: `kubectl apply` refuses the pod with `violates PodSecurity "baseline:latest"`, and for a Deployment, StatefulSet, DaemonSet or Job the same message is in the events of the object that creates the pods. On some clusters the pod is created instead and stays `Pending`, with a `SyncError` event carrying the same message.
+
+### Create PersistentVolumeClaims, not PersistentVolumes
+
+Volumes come from PersistentVolumeClaims of the cluster's storage classes, `cloider-standard` and `cloider-standard-rwx`, and their PersistentVolumes are created for you. A PersistentVolume you create yourself, such as a `hostPath`, `local` or NFS volume, is never created on the nodes, so a pod that uses it doesn't start. See [Persistent volumes](/kubernetes/persistent-volumes).
 
 ### A single control plane
 
