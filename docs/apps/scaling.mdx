@@ -15,11 +15,11 @@ every tool. A [cron job](/apps/cron-jobs) has no compute configuration: each run
 
 | Option in the dashboard | You set | Each replica | Billed for | Replicas |
 | --- | --- | --- | --- | --- |
+| **Configure autoscaling** (Recommended) | CPU and memory per replica, minimum and maximum replicas, CPU and memory thresholds | Gets exactly the CPU and memory you set | All of its CPU and memory | Added on CPU, memory or both, between the minimum and the maximum |
+| **Fixed resource management** (Simple) | Replicas, CPU and memory per replica | Gets exactly the CPU and memory you set | All of its CPU and memory | Always the number you set |
 | **Automatic resource management** (Experimental) | Minimum and maximum replicas | Uses what it needs, up to 1 vCPU and 2 GB of memory | What it uses | Added on CPU, between the minimum and the maximum |
-| **Manually configure auto-scaling** (Recommended) | CPU and memory per replica, minimum and maximum replicas, CPU and memory thresholds | Gets exactly the CPU and memory you set | All of its CPU and memory | Added on CPU, memory or both, between the minimum and the maximum |
-| **Disable automatic resource management** (Simple) | Replicas, CPU and memory per replica | Gets exactly the CPU and memory you set | All of its CPU and memory | Always the number you set |
 
-- **Replicas:** 1 to 20 per app. A new app starts on automatic resource management with 2 to 5 replicas.
+- **Replicas:** 1 to 20 per app. A new app starts on configured autoscaling with 2 to 5 replicas of 0.1 vCPU and 250 MB.
 - **CPU per replica:** 0.05 to 2 vCPU. **Memory per replica:** 64 to 4096 MB.
 - **Where:** in the **Advanced settings** section of the app's **Settings** tab, and of the form that creates the app.
 - **Managed with:** dashboard, [`cloider app update`](/cli/commands/app#cloider-app-update),
@@ -29,7 +29,7 @@ every tool. A [cron job](/apps/cron-jobs) has no compute configuration: each run
 <Screenshot
   src="/img/screenshots/apps/compute.webp"
   url="/dashboard/apps/blog-b7x2k"
-  alt="The Settings tab of the blog app with Advanced settings open, showing the Compute configuration with three options, Manually configure auto-scaling picked with 0.5 vCPU and 512 MB per replica, 2 to 6 replicas and a 70% CPU threshold"
+  alt="The Settings tab of the blog app with Advanced settings open, showing the Compute configuration with three options, Configure autoscaling picked first with 0.5 vCPU and 512 MB per replica, 2 to 6 replicas and a 70% CPU threshold"
   caption="The compute configuration, in the Advanced settings section of the Settings tab."
 />
 
@@ -50,22 +50,9 @@ A user whose session lives in one replica's memory is logged out the moment thei
 With only 1 replica, the dashboard warns: **Your application may experience downtime if its instance or node becomes
 unavailable. For better availability and fault tolerance, we recommend at least 2 replicas.**
 
-## Automatic resource management
+## Configure autoscaling
 
-With **Automatic resource management**, you only choose how many replicas may run. Each replica uses the CPU and memory
-it needs, up to **1 vCPU** and **2 GB** of memory, and is billed for what it uses.
-
-- **Minimum replicas** always run, **Maximum replicas** is the most Cloider adds.
-- Another replica is added once the replicas average **0.7 vCPU** each, and removed after 5 quieter minutes.
-- A replica that needs more than 2 GB of memory runs out of memory and is restarted. If your app needs more, or more
-  than 1 vCPU, configure the size yourself with one of the other two options.
-
-This option is marked **Experimental**: it suits apps whose usage you don't know yet. Once you know what a replica
-needs, sizing it yourself gives steadier performance.
-
-## Manually configure auto-scaling
-
-With **Manually configure auto-scaling**, you size each replica and Cloider adds replicas as they get busy. This is the
+With **Configure autoscaling**, you size each replica and Cloider adds replicas as they get busy. This is the
 recommended option for production apps.
 
 | Field | Range | Default | What it does |
@@ -93,12 +80,25 @@ For example, `blog` set to 0.5 vCPU, 512 MB, 2 to 6 replicas and a 70% CPU thres
 When they average 0.35 vCPU each, Cloider adds a third, and so on up to 6. It is billed for 1 vCPU and 1 GB while 2 run,
 and 3 vCPU and 3 GB at 6.
 
-## Disable automatic resource management
+## Fixed resource management
 
-With **Disable automatic resource management**, a fixed number of **Replicas** run, each with the **CPU per replica** and
-**Memory per replica** you set (same ranges as above). Nothing is added or removed with the traffic, and each replica
+With **Fixed resource management**, a fixed number of **Replicas** run, each with the **CPU per replica** and
+**Memory per replica** you set (same ranges as autoscaling). Nothing is added or removed with the traffic, and each replica
 is billed for all of its CPU and memory. Use it when the load is steady, or when the app must never run more copies than
 you chose.
+
+## Automatic resource management
+
+With **Automatic resource management**, you only choose how many replicas may run. Each replica uses the CPU and memory
+it needs, up to **1 vCPU** and **2 GB** of memory, and is billed for what it uses.
+
+- **Minimum replicas** always run, **Maximum replicas** is the most Cloider adds.
+- Another replica is added once the replicas average **0.7 vCPU** each, and removed after 5 quieter minutes.
+- A replica that needs more than 2 GB of memory runs out of memory and is restarted. If your app needs more, or more
+  than 1 vCPU, configure the size yourself with one of the other two options.
+
+This option is marked **Experimental**: it suits apps whose usage you don't know yet. Once you know what a replica
+needs, sizing it yourself gives steadier performance.
 
 ## Change the compute configuration
 
@@ -212,14 +212,14 @@ It calls the `update_app_settings` tool:
 ## Choose the compute when you create an app
 
 The form that creates an app has the same **Compute configuration** in its **Advanced settings** section, below the
-environment variables. It starts on **Automatic resource management** with 2 to 5 replicas. Change it there, or create
-the app first and change it in **Settings** later.
+environment variables. It starts on **Configure autoscaling** with 0.1 vCPU and 250 MB per replica, 2 to 5 replicas
+and a 70% CPU threshold. Change it there, or create the app first and change it in **Settings** later.
 
 <Screenshot
   src="/img/screenshots/apps/new-app-compute.webp"
   url="/dashboard/apps/new-app"
-  alt="The Configure your app form for blog with Advanced settings open, showing the Compute configuration with Automatic resource management picked, Minimum replicas 2 and Maximum replicas 5"
-  caption="A new app starts on automatic resource management with 2 to 5 replicas."
+  alt="The Configure your app form for blog with Advanced settings open, showing the Compute configuration with Configure autoscaling picked, 0.1 vCPU and 250 MB per replica, Minimum replicas 2, Maximum replicas 5 and a 70% CPU threshold"
+  caption="A new app starts on configured autoscaling with 2 to 5 replicas of 0.1 vCPU and 250 MB."
 />
 
 `cloider deploy`, `cloider app create` and the MCP tools create the app with that default, and the
@@ -315,9 +315,9 @@ replicas together, prorated to the second. Each replica counts the larger of wha
 
 | Option | Each running replica counts |
 | --- | --- |
+| Configure autoscaling | The CPU and memory you set |
+| Fixed resource management | The CPU and memory you set |
 | Automatic resource management | What it uses, at least 0.01 vCPU and 64 MB |
-| Manually configure auto-scaling | The CPU and memory you set |
-| Disable automatic resource management | The CPU and memory you set |
 
 So an autoscaled app's bill follows its replica count: more replicas during busy hours, fewer at night. A
 [paused](/apps/pause-resume-and-delete) app runs no replicas and costs nothing. See the
@@ -358,8 +358,8 @@ management. CPU works differently: a replica that reaches its CPU is slowed down
 
 <FAQ items={[
   {q: 'Can a Cloider app run more than one instance?', a: 'Yes. An app runs 1 to 20 replicas, identical copies that share its requests. Set a fixed count, or let Cloider add and remove replicas between a minimum and a maximum as the app gets busy. New apps start with 2 to 5 replicas.'},
-  {q: 'How does autoscaling work on Cloider?', a: 'With Automatic resource management, a replica is added once the replicas average 0.7 vCPU each. With Manually configure auto-scaling, a replica is added once they average your CPU threshold (70% by default), your memory threshold, or either. Replicas are removed after 5 quieter minutes, never below the minimum.'},
-  {q: 'What is the difference between automatic and manual autoscaling?', a: 'Automatic resource management lets each replica use what it needs, up to 1 vCPU and 2 GB, and bills what it uses. Manually configure auto-scaling gives each replica the CPU and memory you set, bills all of it, and lets you pick the CPU and memory thresholds.'},
+  {q: 'How does autoscaling work on Cloider?', a: 'With Configure autoscaling, a replica is added once the replicas average your CPU threshold (70% by default), your memory threshold, or either. With Automatic resource management, a replica is added once they average 0.7 vCPU each. Replicas are removed after 5 quieter minutes, never below the minimum.'},
+  {q: 'What is the difference between Configure autoscaling and Automatic resource management?', a: 'Configure autoscaling gives each replica the CPU and memory you set, bills all of it, and lets you pick the CPU and memory thresholds. Automatic resource management lets each replica use what it needs, up to 1 vCPU and 2 GB, and bills what it uses.'},
   {q: 'How many replicas should my app run?', a: 'At least 2 for anything users depend on, so one replica can restart or move while the other keeps serving. With 1 replica the app is down whenever that replica is.'},
   {q: 'Does changing the compute configuration rebuild my app?', a: 'No. Saving it redeploys the version that is running, and the old replicas keep serving until the new ones are up.'},
   {q: 'Can I scale an app to zero?', a: 'No. At least 1 replica runs while the app is up. To stop an app and its billing completely, pause it.'},
