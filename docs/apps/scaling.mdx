@@ -105,6 +105,10 @@ With **Fixed resource management**, a fixed number of **Replicas** run, each wit
 is billed for all of its CPU and memory. Use it when the load is steady, or when the app must never run more copies than
 you chose.
 
+With the same minimum and maximum, **Automatic resource management** and **Configure autoscaling** never add or remove a
+replica either, so the dashboard suggests **Fixed resource management** instead. Its link switches to it with that
+number of replicas, and coming from **Configure autoscaling**, the same CPU and memory per replica.
+
 ## Change the compute configuration
 
 Saving a new compute configuration redeploys the version the app is running, without a rebuild: the app goes
