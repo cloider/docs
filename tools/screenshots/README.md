@@ -35,7 +35,8 @@ A run:
 5. stops and removes the container, and lists any shot that failed or was skipped and any API route the dashboard
    asked for that the mock has no fixture for.
 
-Environment variables: `SHOTS_PORT` (3210), `SHOTS_TLS_PORT` (3443), `SHOTS_NUXT_PORT` (3211), `SHOTS_WEB_DIR` (where the copy of web lives,
+Environment variables: `SHOTS_WEB_SRC` (the dashboard to shoot, `../web`; point it at a worktree to shoot another branch),
+`SHOTS_PORT` (3210), `SHOTS_TLS_PORT` (3443), `SHOTS_NUXT_PORT` (3211), `SHOTS_WEB_DIR` (where the copy of web lives,
 `out/web`), `SHOTS_CONTAINER`, `SHOTS_CHROME` (path to the Chrome binary), `SHOTS_NOW` (the demo "now", see below).
 
 To click around the demo dashboard yourself, run `npm run shots -- --keep apps/list`, then `npm run mock` and open

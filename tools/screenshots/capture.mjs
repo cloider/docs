@@ -20,7 +20,7 @@ import { actions, params } from './shots.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const docsDir = path.resolve(here, '..', '..')
-const webSrc = path.resolve(docsDir, '..', 'web')
+const webSrc = path.resolve(process.env.SHOTS_WEB_SRC ?? path.join(docsDir, '..', 'web'))
 const outDir = path.join(docsDir, 'static', 'img', 'screenshots')
 
 const config = {
@@ -52,8 +52,9 @@ function prepareWeb() {
     // jiti's cache moves whenever the dev server reloads, and means nothing to a build
     '--exclude', 'nuxt.config.ts', '--exclude', 'node_modules/.cache',
     `${webSrc}/`, `${config.webDir}/`,
-  ], { encoding: 'utf8' })
-  if (rsync.status != 0) throw new Error(`rsync failed: ${rsync.stderr}`)
+  // a first copy itemizes every file in node_modules, far past the 1 MB default
+  ], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+  if (rsync.status != 0) throw new Error(`rsync failed: ${rsync.error?.message ?? rsync.stderr}`)
 
   const configSrc = fs.readFileSync(path.join(webSrc, 'nuxt.config.ts'), 'utf8')
   const patched = configSrc

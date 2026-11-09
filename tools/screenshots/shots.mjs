@@ -758,7 +758,9 @@ export const actions = {
   },
   // tall enough for the credits and the invoices under the charts
   'account/billing.webp': { viewport: { height: 1640 }, wait: 1200 },
+  // tall enough for the whole dialog, down to what paid for it and the statement
   'account/invoice.webp': {
+    viewport: { height: 1680 },
     async run(page, h) {
       await page.locator('tr', { hasText: 'September 2026' }).first().click()
       await h.dialog()
