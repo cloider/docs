@@ -93,7 +93,7 @@ URL:            https://api-x2p7.cloider.app
 Version:        23
 Detected:       Go
 Port:           8080
-Compute:        automatic, 2 to 5 replicas, each using up to 1 vCPU and 2 GiB
+Compute:        automatic, 1 to 3 replicas, each using up to 0.25 vCPU and 500 MiB
 Health check:   GET /healthz every 10s, 5s timeout, restarted after 6 failures, 300s grace period
 Start command:  -
 Domains:        api-x2p7.cloider.app, api.example.com
@@ -340,9 +340,9 @@ cloider app update <app> [flags]
 | `--port` | int | | Port the app listens on |
 | `--compute` | string | | How replicas are sized and how many run: `automatic`, `autoscaling` or `fixed` |
 | `--replicas` | int | | How many replicas run with `fixed`, the fewest with the other two, 1 to 20 |
-| `--max-replicas` | int | | The most replicas `automatic` or `autoscaling` runs, up to 20 |
-| `--cpu` | float | | vCPU of each replica with `autoscaling` or `fixed`, 0.05 to 2 |
-| `--memory` | int | | MiB of memory of each replica with `autoscaling` or `fixed`, 64 to 4096 |
+| `--max-replicas` | int | | The most replicas `automatic` or `autoscaling` runs, up to 20. A new app starts on `automatic`, 1 to 3 replicas |
+| `--cpu` | float | | vCPU of each replica with `autoscaling` or `fixed`, up to 2 |
+| `--memory` | int | | MiB of memory of each replica with `autoscaling` or `fixed`, up to 4096 |
 | `--cpu-threshold` | int | `70` | Percent of their CPU the replicas average before `autoscaling` adds one, 10 to 90, `0` for memory alone |
 | `--memory-threshold` | int | `0` | Percent of their memory the replicas average before `autoscaling` adds one, 10 to 90, `0` for CPU alone |
 | `--health-check-path` | string | | Path each replica is checked on, such as `/healthz`. Empty (`--health-check-path ""`) for the port check alone |

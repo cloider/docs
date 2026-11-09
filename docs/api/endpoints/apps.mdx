@@ -111,7 +111,7 @@ All paths are relative to `https://cloider.com/api`. See [Authentication](/api/a
 | `app_name` | string | The name you gave it |
 | `app_label` | string | A name unique among the account's apps (`-1`, `-2` appended when taken) |
 | `port` | integer | The port the app listens on. It is passed to the app as the `PORT` environment variable |
-| `compute_mode` | string | How the app's [replicas](/apps/scaling) are sized and how many run: `automatic` (each uses what it needs, up to 1 vCPU and 2048 MiB, scaled on CPU), `autoscaling` (each gets `cpu` and `memory`, scaled at the thresholds) or `fixed` (`replicas` replicas of `cpu` and `memory`) |
+| `compute_mode` | string | How the app's [replicas](/apps/scaling) are sized and how many run: `automatic` (each uses what it needs, up to 0.25 vCPU and 500 MiB, scaled at 80% of the CPU or 70% of the memory), `autoscaling` (each gets `cpu` and `memory`, scaled at the thresholds) or `fixed` (`replicas` replicas of `cpu` and `memory`) |
 | `replicas` | integer | The number of replicas with `fixed`, the minimum with the other two. 1 for a cron job, which has no compute configuration |
 | `max_replicas` | integer | The most replicas `automatic` and `autoscaling` run |
 | `cpu`, `memory` | integer | Each replica's CPU in millicores (1000 is 1 vCPU) and memory in MiB, with `autoscaling` and `fixed` |
@@ -353,7 +353,7 @@ Creates the app from a staged source and starts its first build right away. Opti
 | `source_token` | string | Yes | The `token` from step 1, or from an import |
 | `start_command` | string | No | One line, up to 1000 characters. A buildpack build writes it into a `Procfile`; an image app and an app built from a `Dockerfile` run it with `sh -c` in place of the image's `ENTRYPOINT` and `CMD` |
 | `schedule` | string | No | Makes the app a [cron job](/apps/cron-jobs) run on this cron schedule, in UTC, for example `0 3 * * *`. Five fields or a shorthand like `@daily`. A cron job takes no `port` or `subdomain` |
-| `compute_mode`, `replicas`, `max_replicas`, `cpu`, `memory`, `cpu_threshold`, `memory_threshold` | | No | The [compute configuration](/apps/scaling), as [the settings](#change-the-port-compute-health-check-schedule-or-start-command) take it. Each one left out starts on the default: `autoscaling` with 2 to 5 replicas, `cpu` 100, `memory` 250, `cpu_threshold` 70 and `memory_threshold` 0. Ignored for a cron job |
+| `compute_mode`, `replicas`, `max_replicas`, `cpu`, `memory`, `cpu_threshold`, `memory_threshold` | | No | The [compute configuration](/apps/scaling), as [the settings](#change-the-port-compute-health-check-schedule-or-start-command) take it. Each one left out starts on the default: `automatic`, `replicas` 1, `max_replicas` 3, `cpu` 100, `memory` 250, `cpu_threshold` 70 and `memory_threshold` 0. Ignored for a cron job |
 | `subdomain` | string | No | A full free subdomain to claim, for example `blog.cloider.app`. Empty for none |
 | `env_vars` | object list | No | Runtime environment variables, see [Variables](#environment-variables-build-variables-and-build-arguments) |
 | `build_env_vars` | object list | No | Build variables |
@@ -577,8 +577,8 @@ Changes the port the app listens on, its [compute configuration](/apps/scaling) 
 | `compute_mode` | string | No | `automatic`, `autoscaling` or `fixed`. Left out, keeps the app's. Ignored for a cron job, like every field below |
 | `replicas` | integer | No | 1 to 20. The number of replicas with `fixed`, the minimum with the other two |
 | `max_replicas` | integer | No | From `replicas` to 20, for `automatic` and `autoscaling` |
-| `cpu` | integer | No | Millicores per replica, 50 to 2000, for `autoscaling` and `fixed` |
-| `memory` | integer | No | MiB per replica, 64 to 4096, for `autoscaling` and `fixed` |
+| `cpu` | integer | No | Millicores per replica, up to 2000, for `autoscaling` and `fixed` |
+| `memory` | integer | No | MiB per replica, up to 4096, for `autoscaling` and `fixed` |
 | `cpu_threshold`, `memory_threshold` | integer | No | 10 to 90, or `0` for off, for `autoscaling`. At least one must be on |
 | `health_check_path` | string | No | Up to 200 characters, starting with `/`, no spaces. Empty removes the health check |
 | `health_check_interval` | integer | No | 1 to 300 seconds |

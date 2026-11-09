@@ -306,7 +306,7 @@ the [billing model](/concepts/billing-model).
 | Port | 1 to 65535 |
 | Start command | One line, up to 1000 characters |
 | Variables | 100 per list (environment, build variables, build arguments), 16 KB per value, 64 KB per list |
-| Replicas | 1 to 20 per app. Each up to 2 vCPU and 4096 MB when you size it, up to 1 vCPU and 2 GB on automatic resource management |
+| Replicas | 1 to 20 per app. Each up to 2 vCPU and 4096 MB when you size it, up to 0.25 vCPU and 500 MB on automatic resource management |
 | Build log kept | The last 64 KB of each build's output |
 
 See [Limits and quotas](/reference/limits-and-quotas) for every product.
@@ -351,7 +351,7 @@ token with read access has the same limits. See [Accounts and roles](/concepts/a
   {q: 'Do I need a Dockerfile to deploy an app?', a: 'No. Without a Dockerfile, Cloider builds Node.js, Python, Go, Java, Scala, PHP, Ruby and .NET projects with Cloud Native Buildpacks, and serves a folder of HTML files as a static site. With a Dockerfile at the root of the project, Cloider builds exactly that Dockerfile.'},
   {q: 'Which port should my app listen on?', a: 'Listen on the port in the PORT environment variable. Cloider sets PORT to the app\'s port, which is detected from the project or defaults to 8080, and only routes traffic to that port. You can change the port on the Settings tab.'},
   {q: 'How much does an app cost?', a: 'An app is billed for the CPU and memory its running container uses, for the time it runs. Builds, requests and traffic are free, and a paused app costs nothing for compute. The app\'s images are stored in a registry project billed by storage.'},
-  {q: 'Can an app run more than one instance?', a: 'Yes. An app runs 1 to 20 replicas that share its requests, a fixed number or added and removed by Cloider as the app gets busy. New apps start with 2 to 5. For several services that talk to each other, use a Cloider Kubernetes cluster.'},
+  {q: 'Can an app run more than one instance?', a: 'Yes. An app runs 1 to 20 replicas that share its requests, a fixed number or added and removed by Cloider as the app gets busy. New apps start with 1 to 3. For several services that talk to each other, use a Cloider Kubernetes cluster.'},
   {q: 'What happens to my running app when a new build fails?', a: 'Nothing. The version that is live keeps serving until a new version builds, starts and stays up. A failed build only marks that build Failed, and you can retry it or deploy again.'},
   {q: 'Can I manage apps with Terraform?', a: 'Not directly. The Terraform provider has no app resource, but a cloider_target can route one of your domains to an existing app by its id.'},
 ]} />

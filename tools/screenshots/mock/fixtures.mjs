@@ -164,7 +164,7 @@ export const deployHookUrl = (appId) =>
 
 // What a new app starts on (the api's appNewCompute), and an app checked only on its port
 const newAppCompute = {
-  compute_mode: 'automatic', replicas: 2, max_replicas: 5, cpu: 100, memory: 250, cpu_threshold: 70, memory_threshold: 0,
+  compute_mode: 'automatic', replicas: 1, max_replicas: 3, cpu: 100, memory: 250, cpu_threshold: 70, memory_threshold: 0,
 }
 const noHealthCheck = {
   health_check_path: '', health_check_interval: 10, health_check_timeout: 5,
@@ -194,7 +194,7 @@ export const apps = [
   },
   {
     hashed_id: 'a9m4q', app_name: 'api', app_label: 'api', port: 8080, start_command: '',
-    ...newAppCompute, ...noHealthCheck, ...notCron,
+    ...newAppCompute, replicas: 2, max_replicas: 5, ...noHealthCheck, ...notCron,
     status: 'Building', language: 'Go', framework: '',
     image_ref: 'registry.cloider.com/jane-apps/api-a9m4q:7',
     dockerfile_args: [{ name: 'GO_VERSION', default: '1.25' }], version: '7',
@@ -207,7 +207,7 @@ export const apps = [
   },
   {
     hashed_id: 'w3n8r', app_name: 'web', app_label: 'web', port: 8080, start_command: 'npm run start',
-    ...newAppCompute, ...noHealthCheck, ...notCron,
+    ...newAppCompute, replicas: 2, max_replicas: 5, ...noHealthCheck, ...notCron,
     status: 'Paused', language: 'JavaScript', framework: 'Express',
     image_ref: 'registry.cloider.com/jane-apps/web-w3n8r:5', dockerfile_args: [], version: '5',
     url: 'https://web-q4m8.cloider.app',

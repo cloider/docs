@@ -1397,11 +1397,11 @@ Change the port an app listens on, its compute (how each replica is sized and ho
 | --- | --- | --- | --- |
 | `app` | string | Yes | Name or id of the app. |
 | `port` | integer | No | Port the app listens on, not for a cron job. |
-| `compute` | string | No | Automatic: each replica uses what it needs up to 1 vCPU and 2 GiB, billed for what it uses, and replicas are added on CPU from replicas up to max_replicas. autoscaling: each replica gets cpu and memory, billed for all of it, and replicas are added from replicas up to max_replicas at cpu_threshold, memory_threshold or both. fixed: replicas replicas of cpu and memory. Not for a cron job. One of `automatic`, `autoscaling`, `fixed`. |
+| `compute` | string | No | Automatic: each replica uses what it needs up to 0.25 vCPU and 500 MiB, billed for what it uses, and replicas are added at 80% of the CPU or 70% of the memory from replicas up to max_replicas. autoscaling: each replica gets cpu and memory, billed for all of it, and replicas are added from replicas up to max_replicas at cpu_threshold, memory_threshold or both. fixed: replicas replicas of cpu and memory. Not for a cron job. One of `automatic`, `autoscaling`, `fixed`. |
 | `replicas` | integer | No | How many replicas run with fixed compute, the fewest with the other two, 1 to 20, not for a cron job. |
-| `max_replicas` | integer | No | The most replicas automatic or autoscaling compute runs, up to 20. |
-| `cpu` | string | No | vCPU of each replica with autoscaling or fixed compute, 0.05 to 2, e.g. 0.5. |
-| `memory` | integer | No | MiB of memory of each replica with autoscaling or fixed compute, 64 to 4096. |
+| `max_replicas` | integer | No | The most replicas automatic or autoscaling compute runs, up to 20. A new app starts on automatic, 1 to 3 replicas. |
+| `cpu` | string | No | vCPU of each replica with autoscaling or fixed compute, up to 2, e.g. 0.5. |
+| `memory` | integer | No | MiB of memory of each replica with autoscaling or fixed compute, up to 4096. |
 | `cpu_threshold` | integer | No | Percent of their CPU the replicas average before autoscaling compute adds one, 10 to 90, default 70, or 0 to scale on memory alone (not with memory_threshold 0). |
 | `memory_threshold` | integer | No | Percent of their memory the replicas average before autoscaling compute adds one, 10 to 90, 0 (the default) to scale on CPU alone. |
 | `health_check_path` | string | No | Path each replica is checked on with a GET, passing on 2xx or 3xx: a new version goes live once it passes, a failing replica stops receiving requests and is restarted after failure_threshold failures in a row. Empty checks only that the app listens on its port. Not for a cron job. |
