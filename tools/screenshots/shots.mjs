@@ -42,6 +42,13 @@ async function openAdvancedSettings(page, h) {
   await h.sleep(300)
 }
 
+// Picks a range of an app Insights chart card, such as CPU & Memory's 6h
+async function pickInsightsRange(page, title, range) {
+  const card = page.locator('.glass-card', { has: page.getByText(title, { exact: true }) })
+  await card.getByRole('button', { name: range, exact: true }).click()
+  await page.evaluate(() => document.activeElement?.blur())
+}
+
 // Scrolls the dashboard's content pane so the element is offset px below its top
 async function scrollToLocator(page, locator, offset = 0) {
   await locator.first().evaluate((el, offset) => {
@@ -171,10 +178,31 @@ export const actions = {
   'apps/insights-traffic.webp': {
     async run(page, h) {
       await h.tab('Insights')
-      await h.scrollTo('Requests (Today)', 24)
+      // the traffic charts come right after the Ready Replicas card
+      const replicas = page.locator('.glass-card', { has: page.getByText('Ready Replicas', { exact: true }) })
+      // past the wrapper's top margin, so the charts sit 24px below the header
+      await scrollToLocator(page, replicas.locator('xpath=following-sibling::div[1]'), -4)
     },
-    // the four traffic cards and both traffic charts
-    viewport: { height: 1000 },
+    // the Requests chart stacked by status class and the Data Out chart
+    viewport: { height: 640 },
+    wait: 1200,
+  },
+  'apps/insights-cpu-memory.webp': {
+    async run(page, h) {
+      await h.tab('Insights')
+      await pickInsightsRange(page, 'CPU & Memory', '6h')
+      await h.scrollTo('CPU & Memory', 24)
+    },
+    viewport: { height: 500 },
+    wait: 1200,
+  },
+  'apps/insights-replicas.webp': {
+    async run(page, h) {
+      await h.tab('Insights')
+      await pickInsightsRange(page, 'Ready Replicas', '6h')
+      await h.scrollTo('Ready Replicas', 24)
+    },
+    viewport: { height: 560 },
     wait: 1200,
   },
   'apps/restart-dialog.webp': {

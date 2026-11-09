@@ -1283,6 +1283,91 @@ export function appUsageById(hashedId) {
   return usage().apps.find(a => a.hashed_id == hashedId)
 }
 
+// The blog's last 12 hours a minute at a time, for the Insights tab's CPU & Memory
+// and Ready Replicas charts: a quiet night, a morning climb to a midday peak and a
+// newsletter at 14:55, with its autoscaling (2 to 6 replicas at 70% of 0.5 vCPU)
+// simulated so the replicas, CPU and memory tell the same story
+const blogMinutes = (() => {
+  const STEP = 60, POINTS = 721
+  const start = NOW.getTime() / 1000 - (POINTS - 1) * STEP
+  const app = apps[0]
+  const target = app.cpu * app.cpu_threshold / 100
+  // deterministic noise in [0, 1)
+  const rand = (i, k = 0) => {
+    const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453
+    return x - Math.floor(x)
+  }
+  // the traffic's CPU in millicores, by UTC hour
+  const load = h => 150 + 1150 * Math.exp(-(((h - 12.1) / 2.3) ** 2)) + 420 * Math.exp(-(((h - 14.9) / 0.2) ** 2))
+  // each replica's steady share of the traffic, the first one taking the most
+  const share = [1.14, 0.95, 1.04, 0.9, 1.0, 0.97]
+  const pods = [{ start: -3000 }, { start: -2900 }]
+  const wanted = []
+  const minutes = []
+  for (let i = 0; i < POINTS; i++) {
+    const t = start + i * STEP
+    const n = pods.length
+    const wobble = 1 + 0.05 * (0.6 * Math.sin(i / 7.3) + 0.4 * Math.sin(i / 3.1 + 1)) + (rand(i) - 0.5) * 0.04
+    const avg = load((t % 86400) / 3600) * wobble / n
+    const ratio = avg / target
+    wanted.push(Math.min(app.max_replicas, Math.max(app.replicas, Math.abs(ratio - 1) <= 0.1 ? n : Math.ceil(n * ratio))))
+    // a new replica is slow for its first minutes, and its memory grows as it warms up
+    const weights = pods.map((p, k) => share[k] + 0.05 * Math.sin(i / 23 + k * 2.4) + (rand(i, k + 1) - 0.5) * 0.04)
+    const mean = weights.reduce((a, b) => a + b, 0) / n
+    const cpu = pods.map((p, k) => Math.max(5, avg * weights[k] / mean * (i - p.start < 3 ? 0.4 : 1)))
+    const memory = pods.map((p, k) =>
+      148 + 64 * (1 - Math.exp(-(i - p.start) / 80)) + cpu[k] * 0.09 + (rand(i, k + 11) - 0.5) * 6)
+    minutes.push({ t, cpu, memory, ready: pods.filter(p => i - p.start >= 2).length })
+    // up at once, down once 5 minutes all wanted fewer, newest replica first
+    const recent = Math.max(...wanted.slice(-5))
+    const next = wanted[i] > n ? wanted[i] : Math.min(n, recent)
+    while (pods.length < next) pods.push({ start: i + 1 })
+    while (pods.length > next) pods.pop()
+  }
+  return { start, step: STEP, minutes }
+})()
+
+// GET /apps/:id/metrics, CPU in millicores and memory in MiB
+export function appMetricsHistory(hashedId) {
+  const app = apps.find(a => a.hashed_id == hashedId)
+  if (hashedId != 'b7x2k') {
+    const empty = { average: [], busiest: [], total: [], limit: [] }
+    return { start: 0, step: 60, replicas: [], cpu: empty, memory: empty }
+  }
+  const { start, step, minutes } = blogMinutes
+  const series = (key, limit) => ({
+    average: minutes.map(m => round(m[key].reduce((a, b) => a + b, 0) / m[key].length, 1)),
+    busiest: minutes.map(m => round(Math.max(...m[key]), 1)),
+    total: minutes.map(m => round(m[key].reduce((a, b) => a + b, 0), 1)),
+    limit: minutes.map(() => limit),
+  })
+  return {
+    start, step,
+    replicas: minutes.map(m => m.cpu.length),
+    cpu: series('cpu', app.cpu),
+    memory: series('memory', app.memory),
+  }
+}
+
+// GET /apps/:id/replicas/history: each change of the ready count and each hour's
+// peak, sampled 25 seconds before every metrics point
+export function appReplicasHistory(hashedId) {
+  if (hashedId != 'b7x2k') return { changes: [], hourly_peaks: [], last_sample_at: 0 }
+  const changes = []
+  const peaks = new Map()
+  for (const m of blogMinutes.minutes) {
+    const at = m.t - 25
+    if (changes.at(-1)?.replicas !== m.ready) changes.push({ at, replicas: m.ready })
+    const hour = Math.floor(at / 3600) * 3600
+    peaks.set(hour, Math.max(peaks.get(hour) ?? 0, m.ready))
+  }
+  return {
+    changes,
+    hourly_peaks: [...peaks].map(([hour, peak]) => ({ hour, peak })),
+    last_sample_at: blogMinutes.minutes.at(-1).t - 25,
+  }
+}
+
 function databaseUsage(db) {
   const price = pricing.database[db.service][db.database_plan].price
   const daily = monthDays.map((offset, i) => {

@@ -181,6 +181,11 @@ route('GET', '/apps/:id/logs/stream', (req, res, p, q) => {
   sse(res, fx.appLogLines(40, replicas), { end: false })
 })
 route('GET', '/apps/:id/replicas', (req, res, p) => ok(res, fx.appReplicas[p.id] ?? []))
+// a cron job has neither
+route('GET', '/apps/:id/replicas/history', (req, res, p) =>
+  byId(fx.apps, p.id)?.schedule ? notFound(res) : ok(res, fx.appReplicasHistory(p.id)))
+route('GET', '/apps/:id/metrics', (req, res, p) =>
+  byId(fx.apps, p.id)?.schedule ? notFound(res) : ok(res, fx.appMetricsHistory(p.id)))
 route('GET', '/apps/:id/runs', (req, res, p) => ok(res, fx.appRuns[p.id] ?? []))
 route('POST', '/apps/:id/runs', (req, res, p) => ok(res, { name: fx.appRuns[p.id]?.[0]?.name ?? '' }))
 route('GET', '/apps/:id/terminal', (req, res, p, q) => {

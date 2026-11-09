@@ -2,15 +2,16 @@
 title: App insights, requests, CPU, memory and cost per day
 sidebar_label: Insights
 sidebar_position: 9
-description: Read a Cloider app's requests per day by status class, data served, a cron job's runs and success rate, average CPU and memory, month to date cost and forecasts on the Insights tab, with cloider app usage or the REST API.
-keywords: [cloider app insights, app requests per day, app traffic, app bandwidth, cron job success rate, cron job runs, app cpu usage, app memory usage, app cost, usage forecast, app metrics, cloider app usage]
+description: Read a Cloider app's requests, data out, CPU, memory, ready replicas, cron job runs, cost and forecasts on the Insights tab, with cloider app usage or the API.
+keywords: [cloider app insights, app requests per day, app cpu and memory over time, app replicas over time, autoscaling history, app traffic, app bandwidth, cron job success rate, cron job runs, app cpu usage, app memory usage, app cost, usage forecast, app metrics, cloider app usage]
 ---
 
 The **Insights** tab shows how much traffic an app serves and what it uses and costs: requests per day split by status
 class, the data sent back, average CPU and memory for this month and today, the cost so far this month, a forecast for
-this month and next, and daily charts for the last 31 days. The same numbers come from `cloider app usage` and the REST
-API. CPU and memory are the figures an app is billed on, so this page also explains how they are measured. Requests and
-data out are shown only and never billed.
+this month and next, daily charts for the last 31 days, and CPU, memory and ready replicas over the last 12 hours. The same numbers
+come from `cloider app usage` and the REST API. CPU and memory are the figures an app is billed on, so this page also
+explains how they are measured. Requests, data out, replicas and the 12 hour CPU and memory charts are shown only and
+never billed.
 
 ## At a glance
 
@@ -20,6 +21,8 @@ data out are shown only and never billed.
 | **Requests (This Month)** | Requests since the first of the month |
 | **Server Errors (This Month)** | The share of this month's requests answered with a 5xx status, and how many |
 | **Data Out (This Month)** | Bytes sent back to clients since the first of the month |
+| **CPU & Memory** | CPU and memory per replica, minute by minute, against each replica's limit, last hour by default, up to 12 hours |
+| **Ready Replicas** | Replicas ready to serve, minute by minute, and each hour's peak, last hour by default, up to 12 hours |
 | **Requests** | Requests per day, stacked by 2xx, 3xx, 4xx and 5xx, last 31 days |
 | **Data Out** | Bytes sent back per day, last 31 days |
 | **Avg. Usage (This Month)** | Average CPU in cores and memory in GB over the days of this month |
@@ -31,7 +34,7 @@ data out are shown only and never billed.
 | **Cost** | Cost per day, last 31 days |
 
 A [cron job](/apps/cron-jobs) has no domain, so its tab shows its runs in place of the **Requests** and **Server
-Errors** cards and the **Requests** and **Data Out** charts:
+Errors** cards and the **Requests**, **Data Out**, **CPU & Memory** and **Ready Replicas** charts:
 
 | Card | Shows |
 | --- | --- |
@@ -54,8 +57,8 @@ and shows here once the first samples are in.** until its first samples arrive.
 <Screenshot
   src="/img/screenshots/apps/detail-insights.webp"
   url="/dashboard/apps/blog-a7c2mq"
-  alt="The Insights tab of the blog app with average CPU and memory cards, cost to date, cost forecast, and daily CPU, memory and cost bar charts"
-  caption="Insights: averages, cost and 31 days of daily usage."
+  alt="The Insights tab of the blog app as it opens: the Avg. Usage, Cost to Date and Cost Forecast cards, the Requests (Today), Requests (This Month), Server Errors (This Month) and Data Out (This Month) cards, and the top of the CPU & Memory card"
+  caption="Insights as it opens: usage, cost and traffic at a glance."
 />
 
 ## How are requests counted?
@@ -70,6 +73,13 @@ the ones the app never sees, such as the `503` a client gets while the app is do
 - Counts are added every minute to the current day, in UTC.
 - Days from before requests were counted show no bar.
 
+<Screenshot
+  src="/img/screenshots/apps/insights-traffic.webp"
+  url="/dashboard/apps/blog-a7c2mq"
+  alt="The blog app's Requests chart, a bar per day of the month stacked by 2xx Success, 3xx Redirect, 4xx Client error and 5xx Server error, next to its Data Out chart in GB per day"
+  caption="Requests per day by status class, and the data sent back."
+/>
+
 ## How are a cron job's runs counted?
 
 - A run is counted within a minute of ending, on the day it ended, in UTC. A run still going isn't counted yet.
@@ -77,6 +87,55 @@ the ones the app never sees, such as the `503` a client gets while the app is do
   than `0`, was stopped after 12 hours, or never started. A run a pause stops isn't counted.
 - **Run Minutes** go from the run's container starting to it finishing, the time a run is
   [billed](/apps/cron-jobs#billing) for. Waiting to start, such as pulling the image, isn't counted.
+
+## How are CPU and memory charted?
+
+The **CPU & Memory** charts show what the app's [replicas](/apps/scaling) use, minute by minute, next to what each one
+is allowed. They open on the last hour: pick **3h**, **6h** or **12h** to look further back, and **Refresh** for the
+latest minute, which also shows next to each chart's title.
+
+<Screenshot
+  src="/img/screenshots/apps/insights-cpu-memory.webp"
+  url="/dashboard/apps/blog-a7c2mq"
+  alt="The blog app's CPU & Memory card with 6h picked: CPU per replica climbing towards 0.4 vCPU through the morning and dropping each time a replica is added, under a dotted 0.5 vCPU limit, and memory holding around 230 MB under a dotted 512 MB limit, each chart with its Average per Replica and dashed Busiest Replica lines and the latest value next to its title"
+  caption="Six hours of CPU and memory: CPU per replica drops when a replica is added and rises when one is removed."
+/>
+
+- **CPU** is in vCPU, the unit of the compute settings: `0.25 vCPU` is a quarter of one CPU core. Each point is the
+  average over the two minutes before it.
+- **Memory** is in MB, the memory the replica's processes hold (its working set), which is what counts towards its
+  limit. A replica past its memory limit is restarted.
+- With more than one replica, the solid line is the **Average per Replica**, which is what autoscaling compares with
+  its target, and the dashed line the **Busiest Replica**. The tooltip adds the total of **All replicas**.
+- The dotted **Limit per Replica** line is what each replica can use. It starts hidden when the app uses less than a
+  quarter of it, so the usage isn't flattened at the bottom of the chart: click it in the legend to show it.
+- The app's own container is measured, not the dashboard's terminal or the app's builds.
+- Times are in your browser's time zone. A **paused** app, or a stretch the app wasn't running, shows as a gap.
+
+These are the measurements as they happen, so they move with each spike. The daily **CPU Usage** and **Memory Usage**
+charts are the billed averages, and count each replica at no less than what it is given.
+
+## How are replicas counted?
+
+The **Ready Replicas** chart shows how many of the app's [replicas](/apps/scaling) were ready to serve requests, which
+is where autoscaling shows: the line climbs when the app scales up and drops when it scales back down. The dashed line
+is the most replicas of each hour. It opens on the last hour: pick **3h**, **6h** or **12h** to look further back, and
+**Refresh** for the latest count, which also shows next to the title.
+
+<Screenshot
+  src="/img/screenshots/apps/insights-replicas.webp"
+  url="/dashboard/apps/blog-a7c2mq"
+  alt="The blog app's Ready Replicas card with 6h picked and 2 replicas now: a stepped line going from 2 to 3 and 4 through the morning, back to 2 in the early afternoon and briefly to 3 before 15:00, with the dashed Peak per Hour line above it"
+  caption="Six hours of autoscaling: up for the midday traffic, down after it, and a short step up for a burst."
+/>
+
+- Replicas are counted every minute. Each change of the count and each hour's peak are kept for 12 hours.
+- A replica counts once it is ready: when its [health check](/apps/health-checks) passes, or without one, when it
+  accepts connections on the app's port. A replica still starting or failing its check isn't counted. A deploy
+  doesn't add one: the old replica stops being counted as its replacement takes over.
+- A **paused** app has `0`.
+- Times are in your browser's time zone.
+- A stretch without samples, such as before replicas were counted, shows as a gap.
 
 ## How is usage measured?
 
@@ -181,6 +240,66 @@ class, `metrics.bytes_out` the bytes sent back. Days from before requests were c
 A cron job's days also have `metrics.runs`, the runs that ended, `metrics.runs_failed`, how many of them failed, and
 `metrics.run_seconds`, how long they ran, each absent when zero. `daily_usage` holds up to the last 31 days.
 
+A web app's ready replicas over the last 12 hours have their own endpoint:
+
+```bash
+curl https://cloider.com/api/apps/a7c2mq/replicas/history \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+A trimmed example:
+
+```json title="Response"
+{
+  "changes": [
+    {"at": 1794229200, "replicas": 2},
+    {"at": 1794240660, "replicas": 3},
+    {"at": 1794241500, "replicas": 2}
+  ],
+  "hourly_peaks": [{"hour": 1794240000, "peak": 3}, {"hour": 1794243600, "peak": 2}],
+  "last_sample_at": 1794248535
+}
+```
+
+`changes` lists each time the count changed, oldest first, `at` in Unix seconds. The first can be the count already
+standing 12 hours ago, and `replicas` is `null` from a sample that was missed until the next one. `hourly_peaks` has
+the most replicas of each hour, `hour` being its start, and `last_sample_at` the latest sample, which the last change
+holds until.
+
+Its CPU and memory over the last 12 hours, a point a minute:
+
+```bash
+curl https://cloider.com/api/apps/a7c2mq/metrics \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+A trimmed example:
+
+```json title="Response"
+{
+  "start": 1794206160,
+  "step": 60,
+  "replicas": [2, 2, 3],
+  "cpu": {
+    "average": [41.2, 44.8, 52.1],
+    "busiest": [47.9, 51.3, 66.4],
+    "total": [82.4, 89.6, 156.3],
+    "limit": [250, 250, 250]
+  },
+  "memory": {
+    "average": [188.4, 190.1, 176.9],
+    "busiest": [201.7, 203.2, 204.5],
+    "total": [376.8, 380.2, 530.7],
+    "limit": [500, 500, 500]
+  }
+}
+```
+
+The first point is at `start`, in Unix seconds, and each next one `step` seconds later, up to the current minute, so
+every array has 721 values. `replicas` is how many were measured at each point. `cpu` is in millicores (1000 = one
+vCPU) and `memory` in MiB, per replica on average, for the busiest replica, for all of them together, and the limit
+each one has. A value is `null` where no replica ran, and `limit` where the replicas had none.
+
 </TabItem>
 <TabItem value="mcp" label="MCP">
 
@@ -201,7 +320,11 @@ It calls the `get_usage` tool for one app:
 
 ## Use insights to size and save
 
+- **Ready replicas sit at the maximum**: the autoscaler wants more than it is allowed. Raise the maximum, or give each
+  replica more CPU or memory, under [compute](/apps/scaling).
 - **5xx share goes up**: the app is failing requests. Check the [logs](/apps/logs) around the days it rose.
+- **Memory climbs towards its limit on the CPU & Memory chart**: the replica restarts when it gets there. Give each
+  replica more memory under [compute](/apps/scaling), or look for what holds on to it.
 - **Memory climbs day after day**: the app probably leaks memory. Check the [logs](/apps/logs) and restart it by saving
   the **Environment** tab, then fix the leak.
 - **High CPU at idle**: look for busy loops, aggressive polling or a development server running in production (for
@@ -209,7 +332,7 @@ It calls the `get_usage` tool for one app:
 - **An app nobody uses**: [pause it](/apps/pause-resume-and-delete). A paused app costs nothing for compute and keeps its
   configuration.
 
-For live numbers rather than daily averages, look inside the container, if its image has `ps`:
+For a single process rather than the whole replica, look inside the container, if its image has `ps`:
 
 ```bash
 cloider app exec blog -- ps aux
@@ -225,7 +348,8 @@ cloider app exec blog -- ps aux
 <FAQ items={[
   {q: 'How many requests does my app get per day?', a: 'The app\'s Insights tab shows requests per day for the last 31 days, split into 2xx, 3xx, 4xx and 5xx, with today\'s and this month\'s totals and the data sent back. They are counted at the ingress for every domain of the app, and are not billed.'},
   {q: 'Where can I see how often my cron job\'s runs fail?', a: 'On the cron job\'s Insights tab: the runs that ended today and this month, the minutes they ran, and this month\'s success and failure rate with how many runs succeeded and failed. The Runs tab lists the last 5 succeeded and 5 failed runs with their output.'},
-  {q: 'Where can I see how much CPU and memory my app uses?', a: 'On the app\'s Insights tab in the dashboard: average CPU in cores and memory in GB for this month and today, and daily charts for the last 31 days. cloider app usage <app> -o json returns the same figures.'},
+  {q: 'How can I see when my app scaled up or down?', a: 'The app\'s Insights tab charts its ready replicas minute by minute and the peak of each hour, over the last hour by default and up to the last 12 hours. A paused app shows 0.'},
+  {q: 'Where can I see how much CPU and memory my app uses?', a: 'On the app\'s Insights tab in the dashboard: CPU and memory per replica minute by minute over the last 12 hours against each replica\'s limit, average CPU in cores and memory in GB for this month and today, and daily charts for the last 31 days. cloider app usage <app> -o json returns the daily figures.'},
   {q: 'How often is app usage measured?', a: 'Usage is sampled every minute while the app runs, and averaged per day. A paused app has no running container, so it records zero usage.'},
   {q: 'Does the web terminal count towards my app\'s usage?', a: 'No. Only the app\'s own container is measured and billed. The terminal that the dashboard opens runs separately and isn\'t counted.'},
   {q: 'How is the cost forecast calculated?', a: 'The forecast projects the app\'s current usage over the rest of this month and over next month, at the current rates. It changes as the app\'s usage changes.'},

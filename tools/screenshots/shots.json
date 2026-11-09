@@ -75,7 +75,7 @@
     {
       "file": "apps/detail-insights.webp",
       "route": "/dashboard/apps/:app",
-      "state": "Insights tab with CPU and memory charts",
+      "state": "Insights tab of blog as it opens: the usage and cost cards, the four traffic cards and the top of the CPU & Memory card",
       "actions": "Insights tab"
     },
     {
