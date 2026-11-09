@@ -153,7 +153,7 @@ Compare the failing request in the browser's network tab with the [browser uploa
 | Message | Cause and fix |
 | --- | --- |
 | `This bucket name is already taken` | Bucket names are shared by every Cloider account. Choose another. See [Create a bucket](/object-storage/create-a-bucket#choose-a-bucket-name) |
-| `Free plan users can not create more than one bucket. UPGRADE NOW!` | The Free plan allows one bucket |
+| `Your account has no credit left. Top up to continue.` or `Your account is suspended because its credit ran out. Top up to continue.` (HTTP 402) | Creating a bucket needs funds in the account. [Add funds](/account/billing#add-funds) |
 | `Buckets aren't available at the moment!` | Bucket creation is temporarily unavailable. Try again later |
 | `The bucket isn't ready!` | The bucket is still being created, failed, or is being deleted |
 | `The file browser isn't available for this bucket!` | The dashboard can't reach this bucket's files. Contact support with the bucket's name |

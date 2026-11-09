@@ -204,9 +204,9 @@ const config: Config = {
       maxHeadingLevel: 4,
     },
     announcementBar: {
-      id: 'trial',
+      id: 'welcome-credit',
       content:
-        'New to Cloider? Every account starts with a 14 day free trial and $25 in free credit. <a href="https://cloider.com" target="_blank" rel="noopener">Sign up</a>',
+        'New to Cloider? Every new account gets a 14-day trial with $25 of credit. <a href="https://cloider.com" target="_blank" rel="noopener">Sign up</a>',
       backgroundColor: '#003c71',
       textColor: '#e4f6ff',
       isCloseable: true,

@@ -344,9 +344,9 @@ The API request sets more than one of `latest`, `backup` and `target_time`. Send
 
 The request sets none of `latest`, `backup` and `target_time`, or `backup` isn't in the `YYYY-MM-DD_HH-MM` format. Send `{"latest": true}` or a `target_time`.
 
-### Free plan users can not create more than one database. UPGRADE NOW!
+### Your account has no credit left. Top up to continue.
 
-A restore creates a database, and accounts on the free plan can have only one. Delete the other database first or upgrade, see [billing](/account/billing).
+A restore creates a database, which needs funds in the account (HTTP `402`). [Add funds](/account/billing#add-funds). A suspended account gets `Your account is suspended because its credit ran out. Top up to continue.` instead.
 
 ### The moment I need is outside the window
 

@@ -1,15 +1,15 @@
 ---
-title: cloider usage, billing, pricing, member, token and whoami
+title: cloider usage, wallet, billing, pricing and whoami
 sidebar_label: account
 sidebar_position: 13
-description: "Reference for the cloider account commands: usage and forecast, monthly bills, current prices, members, API tokens and whoami, and which account actions are dashboard only."
-keywords: [cloider usage, cloider billing, cloider pricing, cloider member list, cloider token list, cloider whoami, cloud cost cli, invoice cli]
+description: "Reference for the cloider account commands: usage, balance and credits, payments, monthly bills, prices, members, API tokens and whoami."
+keywords: [cloider usage, cloider wallet, cloider balance, cloider billing, cloider pricing, cloider member list, cloider token list, cloider whoami, invoice cli]
 ---
 
-These commands show what is going on in your Cloider account: what it costs this month (`usage`), past bills (`billing`), current prices (`pricing`), who has access (`member`), which API tokens exist (`token`), and who the CLI is acting as (`whoami`). Managing members and tokens is deliberately left to the dashboard, so these commands only read them.
+These commands show what is going on in your Cloider account: what it costs this month (`usage`), its balance, credits and payments (`wallet`), past bills (`billing`), current prices (`pricing`), who has access (`member`), which API tokens exist (`token`), and who the CLI is acting as (`whoami`). Adding funds, managing members and managing tokens are left to the dashboard, so these commands only read them.
 
 ```text
-cloider usage | billing | pricing | member | token | whoami [flags]
+cloider usage | wallet | billing | pricing | member | token | whoami [flags]
 ```
 
 ## Commands
@@ -17,8 +17,10 @@ cloider usage | billing | pricing | member | token | whoami [flags]
 | Command | Description |
 | --- | --- |
 | [`cloider usage`](#cloider-usage) | Show this month's cost so far, and the forecast, per resource |
+| [`cloider wallet`](#cloider-wallet) | Show the account's balance, credits and this month's charges |
+| [`cloider wallet payments`](#cloider-wallet-payments) | List the account's top-ups and refunds |
 | [`cloider billing`](#cloider-billing) | List the account's monthly bills |
-| [`cloider billing show`](#cloider-billing-show) | Show a bill's items |
+| [`cloider billing show`](#cloider-billing-show) | Show a bill's items, what paid for it and its statement |
 | [`cloider pricing`](#cloider-pricing) | Show current prices |
 | [`cloider member list`](#cloider-member-list) | List the account's owner and members |
 | [`cloider member add`, `role`, `remove`](#cloider-member-add-role-and-remove) | Point to the dashboard, where members are managed |
@@ -60,9 +62,74 @@ cloider usage -o json | jq '[.. | .forecast_this_month? // empty] | add'
 
 For one resource, see `cloider app usage`, `cloider bucket usage` and `cloider registry usage`. See [Usage](/account/usage) and the [billing model](/concepts/billing-model). MCP tool: `get_usage`.
 
+## cloider wallet
+
+Show the account's funds: the balance and credits, how long they last at the current usage, this month's charges and forecast, and every credit with what is left of it. Only the account's **Owner** can see it. Members see the balance and any warning with [`cloider whoami`](#cloider-whoami).
+
+```text
+cloider wallet [flags]
+```
+
+```bash
+cloider wallet
+```
+
+```text title="Output"
+Available:        $99.80, balance and credits
+Account balance:  $87.30
+Credits:          $12.50, $12.50 expires in 22 days
+Lasts:            about 32 days at $3.10 a day
+
+November so far
+Charged so far:  $23.40, $7.50 to credits, $15.90 to the balance
+Forecast:        ~$93.15
+October:         $61.80, this month 51% more
+Next invoice:    2026-12-01
+
+CREDIT           TYPE             STATUS   LEFT     OF       EXPIRES
+Launch promo     Promo            Active   $12.50   $20.00   expires in 22 days
+Welcome credit   Welcome credit   Used     $0.00    $25.00   used up
+```
+
+When something needs doing, a notice comes first, followed by a link to **Add funds** in the dashboard, for example *At the current usage, the account is suspended in about 6 days, around 2026-11-14, with compute paused, unless you add funds.* Instead of **Lasts**, the summary can show **Payment due** with the amount the account owes, or **Spending** when it spends nothing right now. While a new account hasn't claimed its welcome credit, the output ends with a link to claim it in the dashboard.
+
+The CLI can't add funds or claim the welcome credit, both are done in the dashboard. `-o json` prints the API's answer, see [Get the wallet](/api/endpoints/account#get-the-wallet):
+
+```bash
+# When the funds run out, or null when the account spends nothing
+cloider wallet -o json | jq '.runs_out_at'
+```
+
+See [Billing](/account/billing). MCP tool: `get_wallet`.
+
+### cloider wallet payments
+
+List the account's top-ups and refunds, the newest first. Only the account's **Owner** can see them.
+
+```text
+cloider wallet payments [flags]
+```
+
+| Flag | Description |
+| --- | --- |
+| `--year` | Only this year's, for example `2026` |
+| `--type` | Only `top_up` or `refund` |
+
+```bash
+cloider wallet payments --year 2026
+```
+
+```text title="Output"
+DATE               TYPE     AMOUNT     DESCRIPTION                        CHANNEL
+2026-11-02 10:14   Top-up   +$100.00   Bank transfer of Nov 1, ref 4471   Recorded by support
+2026-10-20 16:40   Top-up   +$40.00    -                                  Recorded by support
+```
+
+A refund shows as a negative amount, such as `-$40.00`. Any other `--type` fails with exit code `2` and `--type is top_up or refund`. `-o json` prints every payment as the API returns it, see [List payments](/api/endpoints/account#list-payments). MCP tool: `list_payments`.
+
 ## cloider billing
 
-List the account's monthly bills. Only the account's **Owner** can see them.
+List the account's monthly bills, what paid for each and its status. Only the account's **Owner** can see them.
 
 ```text
 cloider billing [flags]
@@ -73,12 +140,20 @@ cloider billing
 ```
 
 ```text title="Output"
-MONTH            AMOUNT   STATUS
-September 2026   $45.63   Unpaid
-August 2026      $38.10   Paid
+MONTH          AMOUNT   PAID BY                      STATUS
+October 2026   $61.80   1 credit + account balance   Paid
 ```
 
-MCP tool: `get_billing`.
+**PAID BY** sums up what paid for the month: the number of credits, then `account balance`, and `left owed` or `paid later` when the balance couldn't pay all of it. **STATUS** is one of:
+
+| Status | Meaning |
+| --- | --- |
+| `Paid`, or `Paid on 2026-12-03` | Nothing is owed on it. The date is when a later top-up paid it |
+| `Due, $12.40 left to pay` | The account still owes part of it |
+| `Carried over to the December 2026 statement` | An older bill still owed, included in the amount due of a later bill |
+| `Waived, nothing to pay` | Nothing to pay |
+
+See [Invoice status](/account/billing#invoice-status). MCP tool: `get_billing`.
 
 ### cloider billing show
 
@@ -89,22 +164,34 @@ cloider billing show <month> [flags]
 ```
 
 ```bash
-cloider billing show "September 2026"
+cloider billing show "October 2026"
 ```
 
-The table has one bold row per billed resource, such as `Cluster: "production"` with its service (`Kubernetes`, `App`, `Bucket`, `Registry` or the database engine) and amount. Below it come that resource's lines, for example compute, persistent volumes or load balancers, each with its description (average usage), quantity and unit (`Compute-Hour`, `GB-Hour`, `Hour`), unit price and amount. The last line is the total:
+The table has one bold row per billed resource, such as `Cluster: "production"` with its service (`Kubernetes`, `App`, `Bucket`, `Registry` or the database engine) and amount. Below it come that resource's lines, for example compute, persistent volumes or load balancers, each with its description (average usage), quantity and unit (`Compute-Hour`, `GB-Hour`, `Hour`), unit price and amount. Then come the total and status, what paid for the month, and the statement of the account balance:
 
-```text title="Output (last line)"
-Total: $45.63 (unpaid)
+```text title="Output (end)"
+Total: $61.80, Paid
+
+Paid by
+Welcome credit:   $25.00
+Account balance:  $36.80
+
+Statement of the account balance
+Opening balance:     $0.00
+Payments:            +$40.00
+Charged to balance:  -$36.80
+Closing balance:     $3.20
 ```
+
+When the closing balance is below zero, the statement ends with **Amount due**, which includes any earlier months still owed (`includes $8.20 carried from earlier months`).
 
 Line descriptions can span several lines, which makes the table hard to read in a narrow terminal. For a script or a spreadsheet, use JSON:
 
 ```bash
-cloider billing show "September 2026" -o json | jq -r '.items[] | [.description, .service_type, .amount] | @tsv'
+cloider billing show "October 2026" -o json | jq -r '.items[] | [.description, .service_type, .amount] | @tsv'
 ```
 
-A month without a bill fails with exit code `4` and lists the months there are: `no bill for "October 2026", there are: September 2026, August 2026`. `-o json` prints the bill. See [Billing](/account/billing) and current prices with [`cloider pricing`](#cloider-pricing).
+A month without a bill fails with exit code `4` and lists the months there are: `no bill for "November 2026", there are: October 2026`. `-o json` prints the bill. See [Billing](/account/billing) and current prices with [`cloider pricing`](#cloider-pricing).
 
 ## cloider pricing
 
@@ -209,7 +296,7 @@ To revoke the CLI's own token, run [`cloider logout`](/cli/commands/auth-and-pro
 
 ## cloider whoami
 
-Show who the CLI acts as, in which account, with which access, and where the token came from.
+Show who the CLI acts as, in which account, with which access, the account's balance and anything that will suspend it soon, and where the token came from.
 
 ```text
 cloider whoami [flags]
@@ -225,12 +312,18 @@ Account:     billing@acme.example
 Role:        Admin
 Access:      Read & Write
 Token:       Cloider CLI on janes-macbook
+Balance:     $99.80, balance and credits
 Profile:     acme
 API:         https://cloider.com/api
 Token from:  profile acme (/Users/jane/.cloider/tokens/acme)
 ```
 
-**Access** is `Read` for a read only token or a Restricted member. `-o json` prints the API's answer with `user`, `account`, `role` and `token`:
+**Access** is `Read` for a read only token or a Restricted member. **Balance** is the account's funds, for every role. Two more lines appear when they apply:
+
+- **Suspended**: `since 2026-11-14, resources removed on 2026-11-28 unless funds are added`.
+- **Warning**, for what will suspend the account soon, for example `suspended in about 6 days, around 2026-11-14 at the current usage, unless funds are added`, `suspended on 2026-11-30, when a credit expires, unless funds are added`, or `no funds left, suspended soon unless funds are added`.
+
+`-o json` prints the API's answer with `user`, `account`, `role`, `token` and `wallet`:
 
 ```bash
 cloider whoami -o json | jq -r '.role'
@@ -246,7 +339,8 @@ See [Authentication](/cli/authentication#check-who-you-are-logged-in-as-whoami).
 
 <FAQ items={[
   {q: 'How do I see what my Cloider account costs this month?', a: 'Run cloider usage. It lists every cluster, database, app, bucket and registry project with its cost so far and the forecast for the month, plus a total.'},
-  {q: 'How do I download my invoices with the CLI?', a: 'cloider billing lists the monthly bills and cloider billing show "September 2026" shows one bill\'s items. Only the account Owner can see bills. Use -o json to save them.'},
+  {q: 'How do I check my Cloider balance from the command line?', a: 'Run cloider wallet as the account Owner. It shows the balance and credits, how long they last at the current usage, and this month\'s charges. Any member can see the balance and warnings with cloider whoami.'},
+  {q: 'How do I download my invoices with the CLI?', a: 'cloider billing lists the monthly bills and cloider billing show "October 2026" shows one bill\'s items, what paid for it and its statement. Only the account Owner can see bills. Use -o json to save them.'},
   {q: 'Can I invite members or create API tokens with the CLI?', a: 'No. cloider member list and cloider token list show them, but adding members, changing roles and creating or revoking tokens is done in the dashboard under Access Control, so a leaked token can\'t grant more access.'},
   {q: 'Does cloider pricing need a login?', a: 'No. cloider pricing works without a token and shows the current prices of compute, storage, load balancers and every database plan.'}
 ]} />

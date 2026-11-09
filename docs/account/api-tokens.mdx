@@ -144,22 +144,23 @@ More in [CI/CD with GitHub Actions](/guides/ci-cd-with-github-actions) and [CI/C
 
 ### Check what a token can do
 
-`GET /api/whoami` tells you who a token acts as, in which account, with which role, and whether it is read only:
+`GET /api/whoami` tells you who a token acts as, in which account, with which role, whether it is read only, and the account's balance:
 
 ```bash
 curl -H "Authorization: Bearer $CLOIDER_TOKEN" https://cloider.com/api/whoami
 ```
 
-```json title="Response"
+```json title="Response (trimmed)"
 {
-  "user": {"first_name": "Jane", "last_name": "Doe", "email": "jane@acme.com", "picture": "https://...", "plan": "Paid", "trial_end_date": null, "suspended": false},
-  "account": {"first_name": "Acme", "last_name": "Inc", "email": "ops@acme.com", "picture": "https://...", "plan": "Paid", "trial_end_date": null, "suspended": false},
+  "user": {"first_name": "Jane", "last_name": "Doe", "email": "jane@acme.com", "picture": "https://...", "suspended_at": null},
+  "account": {"first_name": "Acme", "last_name": "Inc", "email": "ops@acme.com", "picture": "https://...", "suspended_at": null},
   "role": "Admin",
-  "token": {"hashed_id": "t4k9p", "description": "GitHub Actions deploy", "read_only": false, "creator": {"first_name": "Jane", "last_name": "Doe", "email": "jane@acme.com", "picture": "https://..."}, "last_used_at": "2026-10-20T08:01:00Z", "created_at": "2026-09-02T10:20:00Z"}
+  "token": {"hashed_id": "t4k9p", "description": "GitHub Actions deploy", "read_only": false, "creator": {"first_name": "Jane", "last_name": "Doe", "email": "jane@acme.com", "picture": "https://..."}, "last_used_at": "2026-10-20T08:01:00Z", "created_at": "2026-09-02T10:20:00Z"},
+  "wallet": {"balance": 87.3, "credits_total": 12.5, "available_balance": 99.8, "daily_spend": 3.1, "runs_out_at": "2026-12-10T15:00:00Z", "suspended_at": null, "alert": null}
 }
 ```
 
-`cloider whoami` prints the same as a table.
+`cloider whoami` prints the same as a table, with the account's balance and any warning that could suspend it soon.
 
 ## List tokens
 

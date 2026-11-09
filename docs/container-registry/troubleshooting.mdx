@@ -166,7 +166,7 @@ Pods that already pulled an image keep running, but new pods (scaling, a new nod
 | Message | Cause and fix |
 | --- | --- |
 | `This project name is already taken` | Project names are shared by every account. Choose another |
-| `Free plan users can not create more than one project. UPGRADE NOW!` | Upgrade on [Billing](/account/billing) |
+| `Your account has no credit left. Top up to continue.` or `Your account is suspended because its credit ran out. Top up to continue.` (HTTP 402) | Creating a project needs funds in the account. [Add funds](/account/billing#add-funds) |
 | `The project must be ready to browse its images.` | Wait until the project is **Ready**. A **Failed** project should be deleted and created again |
 | `Couldn't reach the registry, try again in a moment!` | A temporary problem. Retry |
 | `Couldn't read the project, try again in a moment!` | The live storage summary couldn't be read. Retry |

@@ -97,7 +97,7 @@ const route = (method, pattern, handler) => {
 route('GET', '/session', (req, res) => ok(res, fx.session(sessionVariant(req))))
 route('GET', '/whoami', (req, res) => {
   const s = fx.session('jane')
-  ok(res, { user: s.user, account: s.account, role: s.role, token: null })
+  ok(res, { user: s.user, account: s.account, role: s.role, token: null, wallet: s.wallet })
 })
 route('POST', '/auth/select-account', (req, res) => ok(res, fx.session('jane')))
 route('POST', '/auth/refresh', (req, res) => ok(res, {}))
@@ -217,6 +217,15 @@ route('POST', '/clusters/:id/resume', (req, res) => ok(res, fx.clusters))
 route('DELETE', '/clusters/:id', (req, res) => ok(res, fx.clusters))
 route('GET', '/usage', (req, res) => ok(res, fx.usage()))
 route('GET', '/billing', (req, res) => ok(res, fx.bills))
+route('GET', '/wallet', (req, res) => ok(res, fx.wallet()))
+route('GET', '/wallet/summary', (req, res) => ok(res, sessionVariant(req) == 'trial' ? fx.trialWalletSummary() : fx.walletSummary()))
+route('GET', '/wallet/charges', (req, res, p, q) => ok(res, fx.charges(q.get('range') ?? '30')))
+route('GET', '/wallet/payments', (req, res, p, q) => {
+  const year = q.get('year'), type = q.get('type')
+  const page = Number(q.get('page') ?? 1), size = Number(q.get('page_size') ?? 25)
+  const shown = fx.payments.filter(pm => (!year || pm.created_at.startsWith(year)) && (!type || pm.type == type))
+  ok(res, shown.slice((page - 1) * size, page * size))
+})
 
 // databases
 const engineSlug = { PostgreSQL: 'postgresql', MySQL: 'mysql', Redis: 'redis', MongoDB: 'mongodb' }

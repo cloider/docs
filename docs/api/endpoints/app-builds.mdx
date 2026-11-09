@@ -180,8 +180,8 @@ It answers `200`. Confirming twice is harmless. With `"uploaded": false` it answ
 | `400` | `source` | `Please select your app folder, a zip file or an HTML file!`, `The app source exceeded the allowed size of 100MB!`, `Invalid app source!` |
 | `400` | `_` | `This app is already building, wait for that build to finish before deploying a new version!` |
 | `400` | `_` | `This app is paused. Resume it before deploying a new version!`, `This app is being deleted!` |
-| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
 | `400` | `_` | `Operation failed, Couldn't start the build!`, `The source upload could not be started!` |
+| `402` | `_` | `Your account has no credit left. Top up to continue.`, `Your account is suspended because its credit ran out. Top up to continue.`, `Claim your $25 welcome credit from the dashboard to start your trial.` |
 | `403` | `_` | `This API token is read only!` |
 | `404` | `_` | `App not found!` |
 
@@ -248,6 +248,7 @@ The response is the new [build object](#the-build-object), with `status` `Pendin
 | `400` | `This app is already building, wait for that build to finish!` |
 | `400` | `This app's GitHub connection is gone. Reconnect GitHub and try again.` (and the same for GitLab and Bitbucket) |
 | `400` | `This app is paused. Resume it before deploying a new version!` |
+| `402` | `Your account has no credit left. Top up to continue.` and the other [account funds](/api/errors#account-funds-402-general) messages |
 | `403` | `This API token is read only!` |
 
 ## Deploy a tag of an image app
@@ -283,6 +284,7 @@ The response is the new [build object](#the-build-object), with `status` `Queued
 | `400` | `_` | `This app is paused. Resume it before deploying a new version!` |
 | `400` | `tag` | `ghcr.io/acme/api has no tag v2.` |
 | `400` | `password` | `The registry refused this login, check the username and the token, and that it can pull ghcr.io/acme/api.` |
+| `402` | `_` | `Your account has no credit left. Top up to continue.` and the other [account funds](/api/errors#account-funds-402-general) messages |
 | `403` | `_` | `This API token is read only!` |
 
 An image app can also be deployed without an API token, through its
@@ -311,6 +313,7 @@ The response is the build, now `Queued` with `attempt` increased by one.
 | `400` | `This build never received its source, deploy a new version instead!` |
 | `400` | `This app is already building, wait for that build to finish before retrying!` |
 | `400` | `This app is paused. Resume it before deploying a new version!` |
+| `402` | `Your account has no credit left. Top up to continue.` and the other [account funds](/api/errors#account-funds-402-general) messages |
 | `404` | `App not found!`, `Build not found!` |
 
 ## Get a build's log

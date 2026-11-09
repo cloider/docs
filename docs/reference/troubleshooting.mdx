@@ -2,8 +2,8 @@
 title: Troubleshoot Cloider sign in, tokens, API errors and the CLI
 sidebar_label: Troubleshooting
 sidebar_position: 7
-description: "Fix common Cloider problems: sign in and sessions, API tokens, HTTP 401, 403, 404 and 429 errors, CLI exit codes, trial limits and product fixes."
-keywords: [cloider troubleshooting, cloider login problem, invalid or revoked api token, 403 forbidden, 429 too many requests, cli exit codes, account suspended]
+description: "Fix common Cloider problems: sign in and sessions, API tokens, HTTP 401, 402, 403, 404 and 429 errors, CLI exit codes, funds and suspension, and product fixes."
+keywords: [cloider troubleshooting, cloider login problem, invalid or revoked api token, 402 payment required, 403 forbidden, 429 too many requests, cli exit codes, account suspended, no credit left]
 ---
 
 This page covers problems that aren't specific to one product: signing in, sessions and accounts, API tokens, HTTP errors, CLI exit codes and account limits. Product specific problems have their own pages, listed at the end.
@@ -18,8 +18,9 @@ This page covers problems that aren't specific to one product: signing in, sessi
 | `This API token is read only!` (403) | A Read token tried to change something | [API tokens](#api-token-errors) |
 | `This endpoint can't be used with an API token!` (403) | Members, tokens, account switching and Git connections need the dashboard | [API tokens](#api-token-errors) |
 | `You have read-only access to this account, ...` | Your role in the account is Restricted | [Roles](#permission-errors) |
-| `Free plan users can not create more than one ...` | The trial allows one of each | [Account limits](#trial-and-suspension) |
-| `Your account is suspended. ...` | The trial ended without an upgrade | [Account limits](#trial-and-suspension) |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` (402) | A new account hasn't claimed its welcome credit | [Funds and suspension](#funds-and-suspension) |
+| `Your account has no credit left. Top up to continue.` (402) | The account's funds are used up | [Funds and suspension](#funds-and-suspension) |
+| `Your account is suspended because its credit ran out. ...` (402) | The account is suspended | [Funds and suspension](#funds-and-suspension) |
 | `404 Not Found` | Wrong id, or the resource is in another account | [HTTP errors](#http-errors) |
 | `429 Too Many Requests` | Over the rate limit | [HTTP errors](#http-errors) |
 
@@ -90,6 +91,7 @@ API errors are JSON with an `errors` object. The key `_` holds messages about th
 | --- | --- | --- |
 | `400 Bad Request` | Validation failed, a limit was reached, or the action isn't allowed right now. Some refusals because of a Restricted role also answer 400 | Read the messages in `errors` |
 | `401 Unauthorized` | No valid session or token | See [API token errors](#api-token-errors) |
+| `402 Payment Required` | The account has no funds for this, or is suspended. Only creating and starting things charged for compute answer 402 | See [Funds and suspension](#funds-and-suspension) |
 | `403 Forbidden` | The role or token isn't allowed to do this | See [Permission errors](#permission-errors) |
 | `404 Not Found` | The id doesn't exist **in this account**. Resources of other accounts always answer 404. Some 404s are plain text (`Not Found`) rather than JSON | Check the id and which account the token is for (`GET /api/whoami`) |
 | `409 Conflict` | The resource is in a state that doesn't allow it, for example a command for an app that isn't running | Wait for the resource to be **Ready** |
@@ -124,14 +126,17 @@ See [API errors](/api/errors) and [Rate limits](/api/rate-limits).
 
 Run any command with `--debug` to see each API request and its status on stderr.
 
-## Trial and suspension
+## Funds and suspension
+
+Creating a cluster, database, bucket, registry project or app, deploying an app, and resuming a paused resource need funds in the account. Without them the API answers `402` with one of these messages:
 
 | Message | Meaning | Fix |
 | --- | --- | --- |
-| `Free plan users can not create more than one cluster. UPGRADE NOW!` | The trial allows one cluster at a time (same for databases, buckets and registry projects) | Delete the existing one, or upgrade |
-| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | The trial ended without an upgrade | The Owner upgrades, or contacts support@cloider.com |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` | A new account hasn't claimed its welcome credit | Click **Start trial** in the prompt at the top of the dashboard |
+| `Your account has no credit left. Top up to continue.` | The account's balance and credits are used up | The Owner [adds funds](/account/billing#add-funds) |
+| `Your account is suspended because its credit ran out. Top up to continue.` | The account is suspended: its clusters, databases and apps are paused | The Owner [adds funds](/account/billing#add-funds). The account is active again once its funds are back above $1 |
 
-See [Create an account](/get-started/create-an-account#the-free-trial) and [Limits and quotas](/reference/limits-and-quotas).
+Pausing, deleting and reading resources keep working, and so do buckets, the registry, domains and DNS. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out) and [Create an account](/get-started/create-an-account#the-welcome-credit).
 
 ## A change didn't happen
 
@@ -162,6 +167,7 @@ Open a [support request](/account/support) with the resource's name, the exact m
   {q: 'Why does the Cloider API answer Invalid or revoked API token?', a: 'The token in the Authorization header does not exist any more, is mistyped, or belongs to a member who was removed or deactivated. Generate a new token in Access Control, API Tokens.'},
   {q: 'Why do I get This API token is read only?', a: 'The request changes something and the token has Read access. Use a Read & Write token, or log the CLI in again choosing Read and write.'},
   {q: 'Why does the API answer 404 for a resource I can see in the dashboard?', a: 'The token belongs to a different account than the one you are looking at in the dashboard. Check GET /api/whoami and use a token generated in the right account.'},
+  {q: 'Why does the Cloider API answer 402 Payment Required?', a: 'The account has no funds for the request, or is suspended because its funds ran out. A new account first claims its $25 welcome credit in the dashboard. Otherwise the account Owner adds funds on the Billing page.'},
   {q: 'What does CLI exit code 3 mean?', a: 'The CLI is not logged in, or its token was revoked. Run cloider login again.'},
   {q: 'How do I see what the CLI sends to the API?', a: 'Add --debug to the command. It logs every API request and its status to stderr, without the token.'},
   {q: 'Why was I logged out of the dashboard?', a: 'Dashboard sessions last 24 hours. Click Reload page on the Login session lost! message and sign in again.'}

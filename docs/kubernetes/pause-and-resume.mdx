@@ -227,7 +227,7 @@ A paused cluster runs no pods, so its compute meter is zero for as long as it is
 The **Usage** page in the dashboard shows the effect: a paused cluster's daily compute cost drops to zero while its volume cost continues.
 
 :::tip[Pause or delete?]
-Pause a cluster you will need again: it comes back with all its objects and data. If you won't need it, [delete it](/kubernetes/delete-a-cluster) to stop volume and load balancer charges as well. On the Free plan, a paused cluster still counts as your one cluster.
+Pause a cluster you will need again: it comes back with all its objects and data. If you won't need it, [delete it](/kubernetes/delete-a-cluster) to stop volume and load balancer charges as well.
 :::
 
 ## Pause and resume on a schedule
@@ -269,6 +269,7 @@ The token needs the **Read & Write** permission. See [API tokens](/account/api-t
 | **Resume** is disabled | The cluster is still `Pausing`. Wait until it is `Paused` |
 | `kubectl` times out, the terminal and kubeconfig are unavailable | The cluster is paused. Resume it |
 | `This cluster is paused. Resume it to run a command!` (HTTP 409) | `cloider cluster exec` was run against a paused cluster. Resume it first |
+| `Your account is suspended because its credit ran out. Top up to continue.` or `Your account has no credit left. Top up to continue.` (HTTP 402) | Resuming needs funds in the account. [Add funds](/account/billing#add-funds). A cluster the suspension paused is resumed for you once the account is active again |
 | `You have read-only access to this account, ...` (HTTP 403) | Your role in the account is read-only. Ask an owner or admin |
 | `This API token is read only!` (HTTP 403) | Use a **Read & Write** token. The CLI exits with code `5` |
 | A pod lost files after resuming | The files were in the container filesystem or an `emptyDir`. Store data that must survive on a [PersistentVolumeClaim](/kubernetes/persistent-volumes) |
@@ -286,5 +287,5 @@ The token needs the **Read & Write** permission. See [API tokens](/account/api-t
   {q: 'Am I billed for a paused Kubernetes cluster?', a: 'Not for compute: a paused cluster runs no pods. Its persistent volumes are still billed per GiB, and a LoadBalancer Service that still has an external IP is still metered.'},
   {q: 'Can I use kubectl on a paused cluster?', a: 'No. The control plane is stopped while the cluster is paused, so kubectl, the kubeconfig, the browser terminal and cloider cluster exec are unavailable until you resume it.'},
   {q: 'Can Cloider pause my cluster automatically at night?', a: 'There is no built-in schedule, but any scheduler can run cloider cluster pause and cloider cluster resume with an API token, for example a GitHub Actions workflow with two cron triggers.'},
-  {q: 'Does a paused cluster count toward the Free plan limit?', a: 'Yes. The Free plan allows one cluster that is not deleted, paused or not.'},
+  {q: 'Why was my cluster paused when I did not pause it?', a: 'The account ran out of funds and was suspended, which pauses its clusters, databases and apps. Once funds are added and the account is active again, Cloider resumes the clusters the suspension paused. Clusters you paused yourself stay paused.'},
 ]} />

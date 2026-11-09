@@ -10,7 +10,7 @@ This tutorial takes you from nothing to a running Kubernetes cluster and a Postg
 
 ## Before you begin
 
-- A Cloider account. See [Create an account](/get-started/create-an-account). The configuration on this page creates one cluster and one database, which fits in the free trial.
+- A Cloider account. See [Create an account](/get-started/create-an-account). The configuration on this page creates one cluster and one database, which the trial's $25 welcome credit covers.
 - A way to give Terraform an API token: either the [`cloider` CLI](/cli/install), logged in with `cloider login`, or a **Read & Write** [API token](/account/api-tokens) from **Access Control**, **API Tokens** in the dashboard.
 - A terminal. `kubectl` is optional, for the step that connects to the cluster (see [Connect with kubectl](/kubernetes/connect-with-kubectl)).
 
@@ -464,7 +464,7 @@ Terraform deletes the database first, because it depends on the cluster, and wai
 | --- | --- | --- |
 | `No Cloider API token` with `no API token: set token or CLOIDER_TOKEN, or run 'cloider login'` | The provider found no token in any of its sources | Run `cloider login`, or `export CLOIDER_TOKEN=...` in the same terminal |
 | `Cloider refused the API token` | The token is mistyped, revoked or expired | Create a new token, or run `cloider login` again |
-| `Can't create the cluster` with `Free plan users can not create more than one cluster. UPGRADE NOW!` | The trial allows one cluster, database, bucket and registry project at a time | Delete the other one, or upgrade. See [Limits and quotas](/reference/limits-and-quotas) |
+| `Can't create the cluster` with `Your account has no credit left. Top up to continue.` | The account's funds are used up, or it is suspended (`Your account is suspended because its credit ran out. Top up to continue.`) | The account Owner [adds funds](/account/billing#add-funds), then apply again. A new account first claims its welcome credit in the dashboard. See [Limits and quotas](/reference/limits-and-quotas#account-funds) |
 | `This API token is read only!` when applying, while `plan` works | The token is a **Read** token | Use a **Read & Write** token for `apply` and `destroy` |
 | `Cluster staging didn't become ready` with `gave up waiting, raise the timeout with a timeouts block` | The cluster took longer than the 20 minute default | Add `timeouts = { create = "40m" }`. The cluster stays in state as tainted, so the next apply replaces it, or run `terraform untaint cloider_cluster.staging` once it is `Ready` |
 | `Failed to query available provider packages` during `init` | Typo in `source`, or no access to the registry | Use `source = "cloider/cloider"` and check that the machine can reach `registry.terraform.io` (or `registry.opentofu.org` with OpenTofu) |
@@ -478,7 +478,7 @@ Terraform deletes the database first, because it depends on the cluster, and wai
 
 <FAQ items={[
   {q: 'How long does terraform apply take for a Cloider cluster?', a: 'A few minutes. The provider creates the cluster and waits until its status is Ready, checking every 5 seconds, for up to 20 minutes by default. A database usually takes a minute or two.'},
-  {q: 'Can I follow this tutorial on the free trial?', a: 'Yes. It creates one Kubernetes cluster and one database, which is what the trial allows at a time. Destroy them before creating others.'},
+  {q: 'Can I follow this tutorial on the free trial?', a: 'Yes. It creates one Kubernetes cluster and one database, which the $25 welcome credit covers. Run terraform destroy when you are done so they stop using the credit.'},
   {q: 'Where does Terraform keep the database password?', a: 'In the state file, terraform.tfstate, together with the cluster\'s kubeconfig. Outputs marked sensitive are hidden in the terminal but stored in plain text in the state. Keep the state private, ideally in a remote backend such as a Cloider bucket.'},
   {q: 'Does terraform destroy delete my data?', a: 'Yes. Destroying a cloider_database deletes the database and its data, and destroying a cloider_cluster deletes everything running in it. Use lifecycle { prevent_destroy = true } on resources that must never be deleted by Terraform.'},
   {q: 'Do I need the cloider CLI to use the Terraform provider?', a: 'No. The provider only needs an API token, for example in the CLOIDER_TOKEN environment variable. The CLI is a convenience: after cloider login the provider can use the token the CLI saved.'},

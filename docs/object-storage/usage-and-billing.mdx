@@ -174,11 +174,11 @@ Without arguments, `get_usage` returns the whole account, and `get_pricing` the 
 - **Compress before uploading.** Database dumps, logs and exports shrink a lot with `gzip` or `zstd`.
 - **Delete buckets you don't use.** An empty bucket costs nothing, but forgotten data does. The **Size** column of the Buckets list shows where the data is.
 
-## Billing and the Free plan
+## Billing and account funds
 
-Buckets are billed like Cloider's other resources: the cost accrues as you go, appears on the [Usage](/account/usage) page, and is charged on your invoice under **Object Storage**. See the [billing model](/concepts/billing-model) and [Billing](/account/billing).
+Buckets are billed like Cloider's other resources: the cost is paid from the account's funds as it accrues, appears on the [Usage](/account/usage) page, and is listed on your monthly invoice under **Object Storage**. See the [billing model](/concepts/billing-model) and [Billing](/account/billing).
 
-On the Free plan you can create one bucket. Accounts that are suspended can't create buckets until the account is back in good standing.
+There is no fixed number of buckets per account, but creating one needs funds. When the account runs out of funds and is suspended, its buckets keep working and their storage is still charged, while new buckets can't be created until funds are added. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out).
 
 ## Next steps
 

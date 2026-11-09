@@ -11,7 +11,7 @@ sections' pages.
 
 ## get-started/
 - `index.mdx`: overview of the getting started path
-- `create-an-account.mdx`: sign up with Google or GitHub, the free trial and credit, verifying, first login
+- `create-an-account.mdx`: sign up with Google or GitHub, the welcome credit and trial, verifying, first login
 - `dashboard-tour.mdx`: the dashboard layout, sidebar, search, account menu, notifications
 - `choose-a-tool.mdx`: dashboard vs CLI vs Terraform vs API vs MCP, when to use which
 - `deploy-your-first-app.mdx`: first app, step by step
@@ -22,7 +22,7 @@ sections' pages.
 - `index.mdx`
 - `how-cloider-works.mdx`: the platform, serverless model, how each product runs, regions
 - `accounts-and-roles.mdx`: users, accounts, members, roles and what each can do
-- `billing-model.mdx`: pay as you go, metering, trial, credit, invoices, what paused resources cost
+- `billing-model.mdx`: pay as you go from prepaid funds, metering, credits and the welcome credit, invoices, what paused resources cost
 - `resource-lifecycle.mdx`: create, provisioning, ready, paused, deleting; names, labels and ids
 - `security.mdx`: isolation, TLS, tokens, trusted sources, shared responsibility
 
@@ -129,7 +129,7 @@ sections' pages.
 - `access-control.mdx`: members and roles
 - `api-tokens.mdx`
 - `switch-accounts.mdx`
-- `billing.mdx`
+- `billing.mdx`: balance, credits, adding funds, running out of funds, invoices and payments
 - `usage.mdx`
 - `notifications.mdx`
 - `support.mdx`

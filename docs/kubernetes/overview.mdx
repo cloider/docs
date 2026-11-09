@@ -21,7 +21,7 @@ This page explains how a cluster works, what it costs, what you can and can't do
 | **Networking** | Services of type `LoadBalancer` get a public IP. HTTP(S) services are published on a domain with a [target](/domains/targets), with automatic HTTPS. Ingress objects inside the cluster are not served |
 | **Storage** | Standard PersistentVolumeClaims, billed per GiB provisioned |
 | **Lifecycle** | Create, pause, resume, delete. A paused cluster keeps its state and isn't billed for compute |
-| **Plans** | The Free plan allows one cluster at a time. Paid accounts can create more |
+| **How many** | No fixed number per account. Creating or resuming a cluster needs funds in the account, see [Billing](/account/billing) |
 | **Tools** | [Dashboard](https://cloider.com/dashboard/clusters), [CLI](/cli/commands/cluster), [Terraform](/terraform/resources/cluster), [REST API](/api/endpoints/clusters), [MCP](/mcp/tools) |
 
 <Screenshot
@@ -207,5 +207,5 @@ Everything on this section's pages can be done in five ways, shown in tabs on ea
   {q: 'Does a paused cluster cost anything?', a: 'A paused cluster runs no pods, so it accrues no compute charge. Its persistent volumes are kept and still billed per GiB, and any LoadBalancer Service that still holds an external IP is still metered.'},
   {q: 'Can I use kubectl and Helm with Cloider?', a: 'Yes. Download the kubeconfig and use kubectl, Helm, Kustomize, Lens, k9s or any other Kubernetes client. The browser terminal and cloider cluster exec also come with kubectl and helm preinstalled and already pointed at the cluster.'},
   {q: 'Does Ingress work on Cloider Kubernetes?', a: 'Ingress objects created inside a Cloider cluster are not served. To publish an HTTP service on a domain, create a target that routes the domain, or a path of it, to your Service. Cloider creates the ingress and the HTTPS certificate for you.'},
-  {q: 'How many clusters can I create?', a: 'The Free plan allows one cluster at a time. Accounts on a paid plan can create more clusters.'},
+  {q: 'How many clusters can I create?', a: 'There is no fixed number. Creating a cluster needs funds in the account: its balance or credits. When the funds run out, the account\'s clusters are paused until funds are added.'},
 ]} />

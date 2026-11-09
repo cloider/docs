@@ -245,7 +245,7 @@ Delete the database staging-db.
 </TabItem>
 </Tabs>
 
-Billing stops when the database is deleted. On the free plan, a deleted database no longer counts toward the one database limit.
+Billing stops when the database is deleted.
 
 ## Pause or delete: which one?
 
@@ -266,6 +266,14 @@ Only a `Ready` database can be paused. Wait until a running change (creating, re
 ### The database stays in Pausing or Starting
 
 Pausing and resuming usually take a minute or two. If the status hasn't changed after 15 minutes, [contact support](/account/support) with the database's id.
+
+### The database was paused, but not by me
+
+The account ran out of funds and was suspended, which pauses its databases, clusters and apps. Once funds are added and the account is active again, Cloider resumes the databases the suspension paused. Databases you paused yourself stay paused. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out).
+
+### Your account has no credit left. Top up to continue.
+
+Resuming a database needs funds in the account (HTTP `402`). [Add funds](/account/billing#add-funds). A suspended account gets `Your account is suspended because its credit ran out. Top up to continue.` instead.
 
 ### This database is paused. Resume it to open a terminal!
 

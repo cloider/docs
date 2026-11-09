@@ -101,7 +101,7 @@ The provider covers the infrastructure that is natural to declare in code. These
 | Registry retention policies, repositories and tags | The dashboard or [`cloider registry`](/cli/commands/registry) |
 | Database backups and restores, terminals and exec | The dashboard or [`cloider db`](/cli/commands/db) |
 | Account members, roles and API tokens | The dashboard, see [Access control](/account/access-control) and [API tokens](/account/api-tokens). The CLI can list them with [`cloider member list` and `cloider token list`](/cli/commands/account) |
-| Billing, usage and pricing | The dashboard or the [CLI](/cli/commands/account) |
+| Billing, the balance, usage and pricing | The dashboard or the [CLI](/cli/commands/account). Funds are added in the dashboard, and a create the account has no funds for fails with the API's message, see [Errors when funds run out](/account/billing#errors-when-funds-run-out) |
 | Support requests | The dashboard or [`cloider support`](/cli/commands/support) |
 
 An API token reaches exactly one account, so a provider block manages exactly one account. To manage several, see [Multiple accounts](/terraform/provider-configuration#manage-several-accounts-with-provider-aliases).

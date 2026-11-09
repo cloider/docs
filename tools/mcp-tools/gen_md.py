@@ -5,7 +5,7 @@ out = open(sys.argv[2], 'w')
 
 CLI_PAGE = {'cluster': 'cluster', 'db': 'db', 'bucket': 'bucket', 'registry': 'registry', 'app': 'app', 'deploy': 'deploy',
             'git': 'git', 'domain': 'domain', 'dns': 'dns', 'target': 'target', 'support': 'support',
-            'whoami': 'account', 'usage': 'account', 'billing': 'account', 'pricing': 'account', 'member': 'account', 'token': 'account'}
+            'whoami': 'account', 'usage': 'account', 'billing': 'account', 'wallet': 'account', 'pricing': 'account', 'member': 'account', 'token': 'account'}
 
 # What the docs add to a tool, where its own description doesn't tell the whole story
 NOTES = {

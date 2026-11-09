@@ -13,8 +13,8 @@ Short answers to the questions people ask most about Cloider, grouped by topic. 
 <FAQ title="" items={[
   {q: 'What is Cloider?', a: 'Cloider is a pay-as-you-go cloud platform. It runs apps from your source code, serverless Kubernetes clusters, managed PostgreSQL, MySQL, MongoDB and Redis databases, S3 compatible object storage, a private container registry, and domains and DNS, all from one account and one invoice.'},
   {q: 'How do I sign up for Cloider?', a: 'Go to cloider.com, click Login / Register and choose Sign in with Google or Sign in with Github. The first sign in creates your account.'},
-  {q: 'Is there a free trial?', a: 'Yes. New accounts get a 14-day free trial with $25 of free credit. During the trial an account can have one Kubernetes cluster, one database, one bucket and one registry project at a time.'},
-  {q: 'What happens when my trial ends?', a: 'If the account owner has not upgraded to the paid plan, the account is suspended the day after the trial ends and its resources are deleted. Reminder emails are sent before that, on days 4, 7, 10, 12, 13 and 14 and on the trial end date.'},
+  {q: 'Is there a free trial?', a: 'Yes. New accounts get a 14-day trial with $25 of credit, which starts when the Owner clicks Start trial in the dashboard. The credit pays for any mix of resources, with no limit on how many of each.'},
+  {q: 'What happens when my trial ends?', a: 'Resources keep running while the account has funds. To keep going after the trial, the account Owner adds funds on the Billing page. When an account has no funds left, it is suspended: clusters, databases and apps are paused, and after 14 days without a top-up its resources are removed. Cloider emails the Owner before each step.'},
   {q: 'Can I invite my team?', a: 'Yes. In Access Control, the Owner or an Admin invites people by email and gives them the Admin or Restricted role. Members keep their own accounts and switch between accounts from the account menu.'},
   {q: 'Can I sign in with an email and password?', a: 'No. Cloider only supports Google and GitHub sign in, and identifies you by that email address.'}
 ]} />
@@ -24,16 +24,18 @@ Read more: [Create an account](/get-started/create-an-account), [Accounts and ro
 ## Billing and pricing
 
 <FAQ title="" items={[
-  {q: 'How does Cloider charge?', a: 'Pay as you go. Cloider measures what each resource uses, prices it at monthly rates prorated by the second over a 30 day month, and sends one invoice per month for the month before.'},
+  {q: 'How does Cloider charge?', a: 'Pay as you go, from prepaid funds. Cloider measures what each resource uses, prices it at monthly rates prorated by the second over a 30 day month, and pays for it from the account\'s credits and then its balance as it is used. A monthly invoice records what the month before cost.'},
+  {q: 'How do I add funds?', a: 'The account Owner opens Billing in the dashboard, clicks Add funds, picks an amount and emails support, who reply with how to pay. Card payments are coming soon.'},
+  {q: 'What happens when my balance runs out?', a: 'Cloider emails the Owner 7 days and 1 day before. When the funds run out, the account is suspended: clusters, databases and apps are paused, while buckets and registries keep working. After 14 days without a top-up, its resources are removed. Adding funds before then makes it active again.'},
   {q: 'Where are the current prices?', a: 'On cloider.com/#pricing, from cloider pricing in the CLI, or from GET https://cloider.com/api/pricing, which needs no token.'},
   {q: 'What is a compute unit?', a: 'The unit apps and clusters pay for: one vCPU, or the memory the CPU to memory ratio pairs with one vCPU, whichever a workload uses more of.'},
   {q: 'Do I pay for requested or actual CPU?', a: 'For the larger of the two, per container and separately for CPU and memory. Small requests on idle workloads keep costs low.'},
   {q: 'What does a paused resource cost?', a: 'A paused cluster pays for its persistent volumes, a paused database for the storage of its plan, and a paused app nothing. Compute stops while paused.'},
   {q: 'Is network traffic billed?', a: 'Bucket requests and traffic are free, and so are registry pushes and pulls. Buckets and registry projects pay only for the data they store.'},
-  {q: 'Who can see invoices?', a: 'Only the account Owner, in Billing. Every member can see costs on the Usage page.'}
+  {q: 'Who can see invoices?', a: 'Only the account Owner, in Billing. Every member can see costs on the Usage page and the account\'s balance in the sidebar.'}
 ]} />
 
-Read more: [Billing model](/concepts/billing-model), [Pricing](/reference/pricing), [Usage](/account/usage).
+Read more: [Billing model](/concepts/billing-model), [Billing](/account/billing), [Pricing](/reference/pricing), [Usage](/account/usage).
 
 ## Apps
 

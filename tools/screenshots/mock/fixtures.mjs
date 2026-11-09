@@ -71,24 +71,18 @@ export const avatars = {
   github: ['A', '#24292f'],
 }
 
-const userOf = (p, extra = {}) => ({
-  ...p,
-  plan: 'Paid',
-  trial_end_date: null,
-  suspended: false,
-  ...extra,
-})
+const userOf = (p) => ({ ...p, suspended_at: null })
 
 // The signed in user is the owner of their own account. On the dashboard an
 // account is the user that owns it, so it is Jane's account that holds the demo
 // resources. She is also a member of two other accounts, which is what fills the
-// account switcher.
+// account switcher. "trial" is the same account before its welcome credit is claimed.
 export function session(variant) {
   if (variant == 'anonymous') {
-    return { user: null, account: null, accounts: [], role: '', is_crm_agent: false, is_impersonating: false }
+    return { user: null, account: null, accounts: [], role: '', is_crm_agent: false, is_impersonating: false, wallet: null }
   }
 
-  const user = userOf(jane, variant == 'trial' ? { plan: 'Free', trial_end_date: inDays(12).slice(0, 10) } : {})
+  const user = userOf(jane)
   const accounts = [
     { ...people.acme, role: 'Admin', status: 'Active' },
     { ...people.globex, role: 'Restricted', status: 'Pending' },
@@ -102,6 +96,7 @@ export function session(variant) {
     role: 'Owner',
     is_crm_agent: false,
     is_impersonating: false,
+    wallet: variant == 'choose' ? null : variant == 'trial' ? trialWalletSummary() : walletSummary(),
   }
 }
 
@@ -1370,12 +1365,12 @@ function item(service_type, description, subitems) {
   return { service_type, description, subitems, amount: round(subitems.reduce((s, i) => s + i.amount, 0)) }
 }
 
-function bill(month, paid, items) {
-  return { month, items, amount: round(items.reduce((s, i) => s + i.amount, 0)), paid }
+function bill(month, items) {
+  return { month, items, amount: round(items.reduce((s, i) => s + i.amount, 0)) }
 }
 
 export const bills = [
-  bill('September 2026', false, [
+  bill('September 2026', [
     item('Kubernetes', 'Cluster: "production"', [
       computeLine(1.58, 4.86, 1.62), volumesLine(31.2),
       lbLine('shop/storefront', '198.51.100.41'), lbLine('ingress-nginx/ingress-nginx-controller', '198.51.100.42'),
@@ -1388,7 +1383,7 @@ export const bills = [
     item('App', 'App: "blog"', [computeLine(0.13, 0.42, 0.13)]),
     item('Bucket', 'Bucket: "acme-backups"', [storedLine(34.6)]),
   ]),
-  bill('August 2026', true, [
+  bill('August 2026', [
     item('Kubernetes', 'Cluster: "production"', [
       computeLine(1.44, 4.37, 1.48), volumesLine(28),
       lbLine('shop/storefront', '198.51.100.41'), lbLine('ingress-nginx/ingress-nginx-controller', '198.51.100.42'),
@@ -1396,10 +1391,163 @@ export const bills = [
     item('PostgreSQL', 'Database: "orders-db"', [planLine('PostgreSQL', 'Standard', 14.99)]),
     item('App', 'App: "blog"', [computeLine(0.11, 0.38, 0.11)]),
   ]),
-  bill('July 2026', true, [
+  bill('July 2026', [
     item('Kubernetes', 'Cluster: "production"', [
       computeLine(1.27, 3.98, 1.31), volumesLine(24), lbLine('shop/storefront', '198.51.100.41'),
     ]),
     item('PostgreSQL', 'Database: "orders-db"', [planLine('PostgreSQL', 'Basic', 12.99)]),
   ]),
 ]
+
+// ---------- wallet ----------
+// Jane's account is prepaid: its bills' statements chain into this month's opening
+// balance, and this month's charges are the usage page's costs. Shapes follow
+// web/composables/api/wallet.ts and billing.ts.
+
+const welcomeCredit = {
+  id: 391, type: 'welcome', status: 'used', original_amount: 25, remaining_amount: 0,
+  expires_at: ago(96), description: '', created_at: ago(110),
+}
+const launchPromo = {
+  id: 418, type: 'promo', status: 'active', original_amount: 20, remaining_amount: 8.4,
+  expires_at: inDays(11), description: 'Launch promo', created_at: ago(17),
+}
+export const credits = [launchPromo, welcomeCredit]
+
+// newest first, one top-up in each billed month and one in this one
+export const payments = [
+  { id: 84, type: 'top_up', channel: 'manual', auto: false, amount: 300, description: 'Bank transfer, ref 8812', created_at: ago(14) },
+  { id: 71, type: 'top_up', channel: 'manual', auto: false, amount: 200, description: 'Bank transfer, ref 7730', created_at: ago(47) },
+  { id: 58, type: 'top_up', channel: 'manual', auto: false, amount: 150, description: 'Bank transfer, ref 6405', created_at: ago(77) },
+  { id: 41, type: 'top_up', channel: 'manual', auto: false, amount: 100, description: '', created_at: ago(108) },
+]
+
+// The bills' statements, oldest first: the welcome credit paid the first $25
+let closing = 0
+for (const m of [
+  { month: 'July 2026', periodEnd: '2026-08-01', payments: 100, credit: welcomeCredit, fromCredit: 25 },
+  { month: 'August 2026', periodEnd: '2026-09-01', payments: 150 },
+  { month: 'September 2026', periodEnd: '2026-10-01', payments: 200 },
+]) {
+  const b = bills.find(b => b.month == m.month)
+  const fromCredit = m.fromCredit ?? 0
+  const charged = round(b.amount - fromCredit)
+  const opening = closing
+  closing = round(opening + m.payments - charged)
+  Object.assign(b, {
+    status: 'paid',
+    created_at: `${m.periodEnd}T02:10:00Z`,
+    statement: {
+      period_end: `${m.periodEnd}T00:00:00Z`, opening_balance: opening, payments: m.payments, balance_charged: charged,
+      closing_balance: closing, amount_due: 0, carried_in: 0, remaining: 0, paid_at: null,
+    },
+    payment_sources: [
+      ...(fromCredit ? [{ source: 'credit', credit_id: m.credit.id, credit_type: m.credit.type, amount: fromCredit }] : []),
+      { source: 'balance', amount: charged },
+    ],
+  })
+}
+const openingBalance = closing
+
+const KINDS = ['clusters', 'databases', 'apps', 'buckets', 'registries']
+
+// this month's charges per resource type and day, oldest first, today's so far last
+const monthCharges = (() => {
+  const u = usage()
+  const groups = { clusters: u.clusters, databases: u.databases, apps: u.apps, buckets: u.buckets, registries: u.registry_projects }
+  return monthDays.map((offset, i) => {
+    const day = { date: dayDate(offset) }
+    for (const kind of KINDS) day[kind] = round(groups[kind].reduce((s, r) => s + r.daily_usage[i].total_cost, 0), 4)
+    day.total = round(KINDS.reduce((s, k) => s + day[k], 0), 4)
+    return day
+  })
+})()
+
+const fullDays = monthCharges.slice(0, -1)
+const dailySpend = round(fullDays.reduce((s, d) => s + d.total, 0) / fullDays.length)
+const usageSoFar = round(monthCharges.reduce((s, d) => s + d.total, 0))
+const fromCredits = round(launchPromo.original_amount - launchPromo.remaining_amount)
+const fromBalance = round(usageSoFar - fromCredits)
+const topUpsThisMonth = payments.filter(p => p.created_at >= dayDate(NOW.getUTCDate() - 1)).reduce((s, p) => s + p.amount, 0)
+const balance = round(openingBalance + topUpsThisMonth - fromBalance)
+const available = round(balance + launchPromo.remaining_amount)
+const nextMonth = new Date(Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth() + 1, 1))
+const toCome = round(dailySpend * (nextMonth.getTime() - NOW.getTime()) / DAY)
+const lastMonth = bills[0].amount
+
+export function walletSummary() {
+  return {
+    balance, credits_total: launchPromo.remaining_amount, available_balance: available,
+    out_of_funds: false, daily_spend: dailySpend,
+    runs_out_at: new Date(NOW.getTime() + available / dailySpend * DAY).toISOString(),
+    runs_out_credit: null,
+    next_expiry: {
+      id: launchPromo.id, type: launchPromo.type, description: launchPromo.description,
+      remaining: launchPromo.remaining_amount, expires_at: launchPromo.expires_at,
+    },
+    credits_granted: launchPromo.original_amount, amount_due: 0, welcome_credit_claimable: false,
+    suspended_at: null, removal_at: null, suspends_at: null, alert: null,
+  }
+}
+
+// a new account that hasn't claimed its welcome credit yet
+export function trialWalletSummary() {
+  return {
+    balance: 0, credits_total: 0, available_balance: 0, out_of_funds: true, daily_spend: 0,
+    runs_out_at: null, runs_out_credit: null, next_expiry: null, credits_granted: 0, amount_due: 0,
+    welcome_credit_claimable: true, suspended_at: null, removal_at: null, suspends_at: null, alert: null,
+  }
+}
+
+export function wallet() {
+  const forecast = round(usageSoFar + toCome)
+  return {
+    ...walletSummary(),
+    this_month: {
+      usage: usageSoFar, from_credits: fromCredits, from_balance: fromBalance,
+      opening_balance: openingBalance, payments: topUpsThisMonth, owed: 0,
+      forecast, to_come: toCome, last_month: lastMonth,
+      vs_last_month: Math.round((forecast / lastMonth - 1) * 100),
+      invoiced_on: nextMonth.toISOString(),
+    },
+    credits,
+    payments_by_year: [{ year: NOW.getUTCFullYear(), count: payments.length }],
+  }
+}
+
+// GET /wallet/charges: every day of the range, the days after today still to come
+// at the spending rate, and the rest of today's on today
+export function charges(range) {
+  const todayDate = dayDate(0)
+  const restOfToday = round(dailySpend * (1 - (NOW.getTime() - Date.parse(todayDate)) / DAY), 4)
+  // before this month, days like this month's on average, so the last 30 days read as one series
+  const average = Object.fromEntries(KINDS.map(k => [k, fullDays.reduce((s, d) => s + d[k], 0) / fullDays.length]))
+  const before = (offset, i) => {
+    const day = { date: dayDate(offset) }
+    for (const [j, kind] of KINDS.entries()) day[kind] = round(average[kind] * wave(i, 1, 0.12, j), 4)
+    day.total = round(KINDS.reduce((s, k) => s + day[k], 0), 4)
+    return day
+  }
+
+  let days
+  if (range == 'month') {
+    const daysInMonth = new Date(Date.UTC(NOW.getUTCFullYear(), NOW.getUTCMonth() + 1, 0)).getUTCDate()
+    const ahead = Array.from({ length: daysInMonth - NOW.getUTCDate() }, (_, i) => {
+      const day = { date: dayDate(-(i + 1)), total: 0, to_come: dailySpend }
+      for (const kind of KINDS) day[kind] = 0
+      return day
+    })
+    days = [...monthCharges.map(d => ({ ...d, to_come: 0 })), ...ahead]
+  } else {
+    const earlier = 30 - monthCharges.length
+    days = [
+      ...Array.from({ length: Math.max(0, earlier) }, (_, i) => ({ ...before(monthCharges.length + earlier - 1 - i, i), to_come: 0 })),
+      ...monthCharges.slice(-30).map(d => ({ ...d, to_come: 0 })),
+    ]
+  }
+  days.find(d => d.date == todayDate).to_come = restOfToday
+
+  const totals = Object.fromEntries(KINDS.map(k => [k, round(days.reduce((s, d) => s + d[k], 0))]))
+  totals.total = round(KINDS.reduce((s, k) => s + totals[k], 0))
+  return { today: todayDate, days, totals }
+}

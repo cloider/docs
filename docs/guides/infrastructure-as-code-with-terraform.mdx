@@ -24,10 +24,10 @@ workload into the cluster from the same configuration, wired to the database, th
 | **Time** | About 60 minutes, plus the time your registrar takes to switch nameservers |
 | **Cost** | A cluster, a database, two buckets and a registry project. See [What it costs](#what-it-costs) |
 
-:::note[Free trial accounts]
-A trial account can hold one bucket at a time, and this guide uses two: one for Terraform's state and one for the
-app. On the trial, skip [part 2](#part-2-create-the-state-bucket), leave out the `backend "s3"` block (the state then
-stays in a local file) and keep the rest.
+:::note[Funds]
+Every resource is paid from the account's funds while it exists. On the free trial, the $25 welcome credit covers
+following this guide and cleaning up afterwards. If the account runs out of funds, creates fail with
+`Your account has no credit left. Top up to continue.`
 :::
 
 ## What you'll build
@@ -947,7 +947,7 @@ Finally delete the API token in **Access Control**, **API Tokens** if you made o
 | `Domain example.com isn't verified` with `example.com already uses Cloider's nameservers, ...` | The nameservers were switched before the domain was verified. Point them back to your previous DNS provider, add the `TXT` record there and apply, or contact [support](/account/support) |
 | `Verify example.com first: ...` on a `cloider_target` | The target was created before the verification. Take its `domain` from `cloider_domain_verification.apex.domain`, as `dns.tf` does |
 | Certificate warning on `example.com` | The nameservers haven't switched yet, or `apex_ipv4` is empty. Check with `dig` |
-| A create is refused on a trial account | The trial allows one cluster, database, bucket and registry project at a time. See the note at the top |
+| A create fails with `Your account has no credit left. Top up to continue.` | The account's funds are used up. The Owner [adds funds](/account/billing#add-funds), then run `terraform apply` again |
 
 More in the [Terraform provider overview](/terraform/overview) and [Domains troubleshooting](/domains/troubleshooting).
 

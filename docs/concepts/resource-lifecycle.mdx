@@ -176,6 +176,10 @@ The same `pause` and `resume` endpoints exist under `/api/databases/<id>` and `/
 
 Product specific details are in [Pause and resume a cluster](/kubernetes/pause-and-resume), [Pause, resume and delete a database](/databases/pause-resume-and-delete) and [Pause, resume and delete an app](/apps/pause-resume-and-delete).
 
+### Paused because the account ran out of funds
+
+When an account's funds run out, Cloider suspends it and pauses its clusters, databases and apps, which go through **Pausing** to **Paused** like any other pause. Resuming one fails with HTTP `402` until funds are added. Once the account is active again, Cloider resumes the resources the suspension paused, and leaves the ones you paused yourself paused. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out).
+
 ## Deleting
 
 Deleting removes a resource **and everything in it**, permanently. A deleted cluster takes its workloads and volumes with it; a deleted database takes its data; a deleted bucket its files. There is no undo and no recycle bin.

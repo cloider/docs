@@ -12,7 +12,7 @@ This page lists every tool the Cloider MCP server (`cloider mcp`) offers, groupe
 
 | Toolset | Tools | Read only | Changes resources | Destructive |
 | --- | --- | --- | --- | --- |
-| [`account`](#account-tools-account) | 6 | 6 | 0 | 0 |
+| [`account`](#account-tools-account) | 8 | 8 | 0 | 0 |
 | [`clusters`](#kubernetes-cluster-tools-clusters) | 9 | 4 | 3 | 2 |
 | [`databases`](#database-tools-databases) | 16 | 6 | 8 | 2 |
 | [`buckets`](#object-storage-tools-buckets) | 29 | 12 | 8 | 9 |
@@ -20,7 +20,7 @@ This page lists every tool the Cloider MCP server (`cloider mcp`) offers, groupe
 | [`apps`](#app-tools-apps) | 30 | 12 | 14 | 4 |
 | [`domains`](#domain-dns-and-target-tools-domains) | 13 | 4 | 6 | 3 |
 | [`support`](#support-tools-support) | 5 | 3 | 2 | 0 |
-| **All** | **131** | **55** | **48** | **28** |
+| **All** | **133** | **57** | **48** | **28** |
 
 - **Read only** tools change nothing. They are the only tools `cloider mcp --read-only` offers.
 - **Changes resources** tools create or update something but don't delete anything.
@@ -54,14 +54,14 @@ And a parameter table. Parameter names are the exact JSON keys of the tool's arg
 
 ## Account tools (account)
 
-The `account` toolset tells the agent who it is acting as and what things cost. Start a session with `whoami`: it says which account the token belongs to, the role, and whether the token can only read. Members and API tokens can be listed but not changed: adding members, changing roles and creating or revoking tokens are dashboard only, see [Access control](/account/access-control) and [API tokens](/account/api-tokens).
+The `account` toolset tells the agent who it is acting as, what things cost and what funds the account has. Start a session with `whoami`: it says which account the token belongs to, the role, whether the token can only read, the account's balance, and any warning that it will be suspended soon. The account Owner's agent can read the balance, credits and payments with `get_wallet` and `list_payments`, and the monthly bills with `get_billing`. Adding funds is done in the dashboard, see [Billing](/account/billing#add-funds). Members and API tokens can be listed but not changed: adding members, changing roles and creating or revoking tokens are dashboard only, see [Access control](/account/access-control) and [API tokens](/account/api-tokens).
 
-Tools: `whoami`, `get_usage`, `get_billing`, `get_pricing`, `list_members`, `list_api_tokens`.
+Tools: `whoami`, `get_usage`, `get_wallet`, `list_payments`, `get_billing`, `get_pricing`, `list_members`, `list_api_tokens`.
 
 
 ### whoami
 
-Who the tools act as: the user, the account, the role, and whether the API token can only read.
+Who the tools act as: the user, the account, the role, whether the API token can only read, the account's balance, whether it is suspended and when its resources are removed, or what will suspend it soon (a low balance, a credit expiring, no funds left).
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -86,9 +86,32 @@ Without `kind` and `name` it runs `cloider usage`. With both it runs `cloider <k
 | `kind` | string | No | App, bucket or registry, to read one resource's usage. One of `app`, `bucket`, `registry`. |
 | `name` | string | No | Name or id of that app, bucket or registry project. |
 
+### get_wallet
+
+The account's balance and credits, how long they last at the current spending, any alert (low balance, a credit expiring, suspended), this month's charges so far and forecast, and every credit with what is left of it. Only the account's owner can see it. Funds are added in the dashboard.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider wallet`](/cli/commands/account) |
+
+No parameters.
+
+### list_payments
+
+The account's top-ups and refunds, the newest first. Only the account's owner can see them.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Read only | Yes | `readOnlyHint`, `idempotentHint` | [`cloider wallet payments`](/cli/commands/account) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `year` | integer | No | Only this year's, e.g. 2026. |
+| `type` | string | No | Only top-ups or only refunds. One of `top_up`, `refund`. |
+
 ### get_billing
 
-The account's monthly bills, or one month's bill with its items. Only the account's owner can see bills.
+The account's monthly bills, what paid for each (credits, the balance) and their status: paid, due, carried over (an older bill still owed, which the latest one's amount due already includes) or waived. Or one month's bill with its items, payment sources and statement of the account balance. Only the account's owner can see bills.
 
 :::note
 With `month` it runs `cloider billing show <month>`.
@@ -1969,7 +1992,7 @@ Some CLI commands are interactive or only make sense in a terminal, so `cloider 
 - [`cloider mcp` command reference](/cli/commands/mcp)
 
 <FAQ items={[
-  {q: 'How many tools does the Cloider MCP server have?', a: '131 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 55 of them only read, 48 create or change resources, and 28 are destructive, which includes the three exec tools.'},
+  {q: 'How many tools does the Cloider MCP server have?', a: '133 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 57 of them only read, 48 create or change resources, and 28 are destructive, which includes the three exec tools.'},
   {q: 'Which Cloider MCP tools are destructive?', a: 'Every delete tool, the tools that replace a whole setting (bucket policy, lifecycle and CORS rules, retention rules), uploads (which overwrite files with the same key), unsetting app variables, untagging and running retention, disconnecting a git account, and the exec tools app_exec, cluster_exec and database_exec. They all carry destructiveHint, so clients ask before running them.'},
   {q: 'Can the MCP server show a database password?', a: 'Yes, with get_database_password, which is read only. get_database returns the connection details without the password, so a client can let the agent read connection details freely and still ask before it reads the password.'},
   {q: 'Can the agent deploy code from my computer?', a: 'Yes. deploy_app uploads a directory on the machine the MCP server runs on, given as an absolute path in dir, detects the language and port, and follows the build until the app is up.'},

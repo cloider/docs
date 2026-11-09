@@ -16,7 +16,7 @@ If you just want to run a web app from source code, [Apps](/apps/overview) is si
 
 ## Before you begin
 
-- A Cloider account. During the free trial you can have one cluster at a time. See [Create an account](/get-started/create-an-account).
+- A Cloider account with funds, such as the $25 welcome credit. See [Create an account](/get-started/create-an-account).
 - [`kubectl`](https://kubernetes.io/docs/tasks/tools/) installed on your computer.
 - For the CLI path, the `cloider` CLI logged in with **Read and write** access. See [Install the CLI](/get-started/install-the-cli).
 
@@ -337,7 +337,8 @@ How a paused cluster is billed is explained in [Billing model](/concepts/billing
 
 | Symptom | Likely cause and fix |
 | --- | --- |
-| `Free plan users can not create more than one cluster. UPGRADE NOW!` | You are on the trial and already have a cluster. Delete it or upgrade. |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` | A new account hasn't claimed its welcome credit yet. Click **Start trial** at the top of the dashboard. |
+| `Your account has no credit left. Top up to continue.` | The account's funds are used up. The Owner [adds funds](/account/billing#add-funds). |
 | **Kubeconfig** is greyed out in the row menu | The cluster isn't **Ready** yet. Wait for it, or check `cloider cluster status staging`. |
 | `kubectl` answers `Unable to connect to the server` | `kubectl` uses another kubeconfig or context. Check `echo $KUBECONFIG` and `kubectl config current-context`. A paused cluster doesn't answer either. |
 | `cluster staging has no services to route to yet` | The Service wasn't created. Run `kubectl get svc` and apply `hello.yaml` again. |
@@ -358,5 +359,5 @@ More in [Kubernetes troubleshooting](/kubernetes/troubleshooting).
   {q: 'Do I need to manage nodes?', a: 'No. Cloider clusters are serverless: you deploy workloads and pay for the CPU and memory they use. There are no node pools to size or upgrade.'},
   {q: 'Can I use Ingress resources?', a: 'Ingress objects in a Cloider cluster are not served. To reach a Service from the internet, route a domain to it with a target, or use a Service of type LoadBalancer.'},
   {q: 'Can I upgrade a cluster to a newer Kubernetes version?', a: 'A cluster keeps the version it was created with. To move to a newer version, create a new cluster and deploy your workloads to it.'},
-  {q: 'How many clusters can I have?', a: 'One at a time during the free trial. Paid accounts have no limit on the number of clusters.'}
+  {q: 'How many clusters can I have?', a: 'There is no fixed limit, during the trial or after it. Each cluster is paid from the account\'s funds while it runs.'}
 ]} />

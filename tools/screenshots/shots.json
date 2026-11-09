@@ -369,7 +369,7 @@
     {
       "file": "account/billing.webp",
       "route": "/dashboard/billing",
-      "state": "Billing page with invoices",
+      "state": "Billing page: the balance, this month so far, the daily charges chart, credits and the invoices",
       "actions": ""
     },
     {

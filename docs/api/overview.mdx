@@ -167,18 +167,14 @@ func main() {
     "last_name": "Doe",
     "email": "jane@example.com",
     "picture": "",
-    "plan": "Paid",
-    "trial_end_date": null,
-    "suspended": false
+    "suspended_at": null
   },
   "account": {
     "first_name": "Acme",
     "last_name": "Inc",
     "email": "ops@example.com",
     "picture": "",
-    "plan": "Paid",
-    "trial_end_date": null,
-    "suspended": false
+    "suspended_at": null
   },
   "role": "Admin",
   "token": {
@@ -193,11 +189,28 @@ func main() {
     },
     "last_used_at": "2026-10-19T08:41:12.311207Z",
     "created_at": "2026-10-02T14:03:55.120941Z"
+  },
+  "wallet": {
+    "balance": 87.3,
+    "credits_total": 12.5,
+    "available_balance": 99.8,
+    "out_of_funds": false,
+    "daily_spend": 3.1,
+    "runs_out_at": "2026-12-10T15:00:00Z",
+    "runs_out_credit": null,
+    "next_expiry": {"id": 418, "type": "promo", "description": "Launch promo", "remaining": 12.5, "expires_at": "2026-11-30T23:59:59Z"},
+    "credits_granted": 20,
+    "amount_due": 0,
+    "welcome_credit_claimable": false,
+    "suspended_at": null,
+    "removal_at": null,
+    "suspends_at": null,
+    "alert": null
   }
 }
 ```
 
-`user` is the member who created the token, `account` is the account the token works in, and `role` is that member's current role there (`Owner`, `Admin` or `Restricted`). A read only token always reports `Restricted`. If you get `401` instead, the token is wrong or was revoked; see [Authentication](/api/authentication).
+`user` is the member who created the token, `account` is the account the token works in, and `role` is that member's current role there (`Owner`, `Admin` or `Restricted`). A read only token always reports `Restricted`. `wallet` is the account's balance and credits, and any warning before the funds run out, see [Get who the token acts as](/api/endpoints/account#get-who-the-token-acts-as). If you get `401` instead, the token is wrong or was revoked; see [Authentication](/api/authentication).
 
 ### 4. List something
 

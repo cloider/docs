@@ -329,7 +329,8 @@ Cloider ignores a push when:
 - The app is paused or being deleted. Resume the app and click **Deploy latest commit** to catch up.
 - A build of the app is already running. The push is skipped, not queued: push again, or click **Deploy latest commit**
   once the running build finishes.
-- The account is suspended.
+- The account is suspended because it ran out of funds. Once funds are added and it is active again, click
+  **Deploy latest commit** to catch up.
 - The same delivery arrives twice. Providers retry deliveries, and each one builds at most once.
 
 If two of your apps deploy from the same repository and branch, a push builds both.

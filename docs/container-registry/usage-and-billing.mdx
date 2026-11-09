@@ -181,9 +181,9 @@ Change the limit in the project's **Settings** tab, with `cloider registry set a
 5. **Build only the platforms you run**: an amd64 plus arm64 image stores both.
 6. **Leave untagged images to the nightly cleanup**, or delete them right away if you need the space now.
 
-## Billing, invoices and the free plan
+## Billing and invoices
 
-Registry storage appears on your monthly bill with your other resources; see [Billing](/account/billing) and the [billing model](/concepts/billing-model). The free plan allows one project (the apps project isn't counted).
+Registry storage is paid from the account's funds as it accrues and is listed on your monthly invoice with your other resources; see [Billing](/account/billing) and the [billing model](/concepts/billing-model). There is no fixed number of projects per account, but creating one needs funds. When the account runs out of funds and is suspended, its projects keep working and their storage is still charged.
 
 <FAQ items={[
   {q: "How is the Cloider container registry billed?", a: "By the storage your images take, per GB per month, billed by the hour. Cloider samples each project's stored size every few minutes and charges the average. Pushes, pulls and traffic are free."},

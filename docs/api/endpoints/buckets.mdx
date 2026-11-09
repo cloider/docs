@@ -170,9 +170,8 @@ Check `GET /buckets/k5t1v/status` once: it is normally `Ready` right away.
 | --- | --- | --- |
 | `400` | `bucket_name` | `Bucket name must not be empty`, `Bucket name must be at least 3 characters`, `Bucket name must not exceed 63 characters`, `Bucket name can only have lowercase letters, numbers and "-"`, `Bucket name must start and end with a letter or a number`, `Bucket name is reserved`, `This bucket name is already taken` |
 | `400` | `region` | `Invalid region` |
-| `400` | `_` | `Free plan users can not create more than one bucket. UPGRADE NOW!` |
-| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
 | `400` | `_` | `Buckets aren't available at the moment!`, `Operation failed, Couldn't create the bucket!` |
+| `402` | `_` | `Your account has no credit left. Top up to continue.`, `Your account is suspended because its credit ran out. Top up to continue.`, `Claim your $25 welcome credit from the dashboard to start your trial.` |
 | `403` | `_` | `This API token is read only!`, or `You have read-only access to this account, you can not create buckets!` for a Restricted member |
 
 These names are reserved: names starting with `xn--`, `sthree-` or `amzn-s3-demo-`, names ending with `-s3alias`, `--ol-s3`, `--x-s3` or `--table-s3`, and the name `filemeta`.

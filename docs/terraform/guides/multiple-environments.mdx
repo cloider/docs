@@ -17,7 +17,7 @@ Most teams run the same infrastructure more than once: a staging environment to 
 | **Account per environment** | One state per folder, one token per account | Strongest: a staging token can't touch production | Production with strict access control |
 | **One root, several module calls** | One state for all | Weak: one plan covers everything | Demos and tiny projects |
 
-Two environments need room for two clusters, two databases and two buckets. The free trial allows one of each, so this needs a paid account (see [Limits and quotas](/reference/limits-and-quotas)).
+Two environments mean two clusters, two databases and two buckets, each paid from the account's funds while it exists. There is no limit on how many of each an account has, only its funds (see [Limits and quotas](/reference/limits-and-quotas#account-funds)).
 
 ## Step 1: Write the environment module
 
@@ -351,6 +351,6 @@ Pin the module with a git tag (`source = "git::https://gitlab.com/acme/infrastru
 <FAQ items={[
   {q: 'Should I use Terraform workspaces or folders for staging and production on Cloider?', a: 'Folders are the safer default: each environment has its own small configuration and state, and a plan in one folder can\'t touch the other. Workspaces work too, but the same command acts on whichever workspace is selected, which makes mistakes easier.'},
   {q: 'Can staging and production be in different Cloider accounts?', a: 'Yes. A token reaches one account, so give each environment folder its own token or CLI profile. This gives the strongest isolation: a staging token can\'t change production.'},
-  {q: 'Can I run staging and production on the Cloider free trial?', a: 'Not both at once. The trial allows one cluster, one database, one bucket and one registry project at a time, so two full environments need a paid account.'},
+  {q: 'Can I run staging and production on the Cloider free trial?', a: 'Yes, to try it out. There is no limit on how many clusters, databases or buckets an account has, and the $25 welcome credit pays for both environments while they run. To keep them running after the trial, the account Owner adds funds.'},
   {q: 'How do I save money on a staging environment?', a: 'Pause it when nobody uses it. Set paused = true on the cloider_cluster and cloider_database and apply. A paused cluster keeps its state and isn\'t billed for compute, and a paused database keeps its data.'},
 ]} />

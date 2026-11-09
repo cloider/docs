@@ -3,7 +3,7 @@
 // captured as its route loads; `null` marks one that can't be captured faithfully.
 //
 //   route    overrides the listed route (query strings, a different demo resource)
-//   session  shots_session cookie: jane (default), trial, choose, anonymous
+//   session  shots_session cookie: jane (default), trial (welcome credit not claimed yet), choose, anonymous
 //   ready    true serves every database as Ready, for a running engine the demo holds paused
 //   run      (page, h) => steps after the page settles, h is the helpers in capture.mjs
 //   viewport { height } for a page taller than the listed viewport
@@ -756,6 +756,8 @@ export const actions = {
       await h.sleep(300)
     },
   },
+  // tall enough for the credits and the invoices under the charts
+  'account/billing.webp': { viewport: { height: 1640 }, wait: 1200 },
   'account/invoice.webp': {
     async run(page, h) {
       await page.locator('tr', { hasText: 'September 2026' }).first().click()

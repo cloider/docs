@@ -2,11 +2,11 @@
 title: Account and billing on Cloider
 sidebar_label: Account and billing
 sidebar_position: 1
-description: "Manage your Cloider account: members and roles, API tokens, switching accounts, usage and costs, invoices, notifications and support."
-keywords: [cloider account, cloider billing, access control, api tokens, cloider usage, invoices, cloider support, team members]
+description: "Manage your Cloider account: members and roles, API tokens, switching accounts, usage and costs, balance and invoices, notifications and support."
+keywords: [cloider account, cloider billing, cloider balance, add funds, access control, api tokens, cloider usage, invoices, cloider support, team members]
 ---
 
-The account pages cover everything around your resources: who can reach the account, the tokens tools use, what the account costs, its invoices, the messages Cloider sends you, and how to get help.
+The account pages cover everything around your resources: who can reach the account, the tokens tools use, what the account costs, its balance and invoices, the messages Cloider sends you, and how to get help.
 
 ## At a glance
 
@@ -16,7 +16,8 @@ The account pages cover everything around your resources: who can reach the acco
 | Create and revoke API tokens | **Access Control**, **API Tokens** | `cloider token list` (read only), `cloider login`, `cloider logout` | [API tokens](/account/api-tokens) |
 | Work in another account | Account menu, **Switch account** | `cloider login --profile`, `cloider profile use` | [Switch accounts](/account/switch-accounts) |
 | See this month's costs and forecast | **Usage** | `cloider usage` | [Usage](/account/usage) |
-| Read invoices (Owner only) | **Billing** | `cloider billing` | [Billing](/account/billing) |
+| Check the balance and credits, add funds (Owner only) | **Billing** | `cloider wallet` (read only) | [Billing](/account/billing) |
+| Read invoices and payments (Owner only) | **Billing** | `cloider billing`, `cloider wallet payments` | [Billing](/account/billing) |
 | Read announcements | Bell icon, **Notifications** | | [Notifications](/account/notifications) |
 | Get help from the Cloider team | **Support** | `cloider support` | [Support](/account/support) |
 
@@ -36,7 +37,7 @@ The account pages cover everything around your resources: who can reach the acco
   <Card title="API tokens" href="/account/api-tokens" icon="key-variant">Generate Read and Read & Write tokens and revoke them.</Card>
   <Card title="Switch accounts" href="/account/switch-accounts" icon="account-group-outline">Move between your own account and the ones you belong to.</Card>
   <Card title="Usage" href="/account/usage" icon="poll">Costs to date, forecasts and per resource usage.</Card>
-  <Card title="Billing" href="/account/billing" icon="credit-card-outline">Monthly invoices and what each line means.</Card>
+  <Card title="Billing" href="/account/billing" icon="credit-card-outline">Balance, credits, adding funds, and monthly invoices.</Card>
   <Card title="Notifications" href="/account/notifications" icon="bell-outline">Announcements and the emails Cloider sends.</Card>
   <Card title="Support" href="/account/support" icon="lifebuoy">Open a support request and follow the conversation.</Card>
 </Cards>

@@ -1,12 +1,12 @@
 ---
-title: Cloider billing model, pay as you go explained
+title: Cloider billing model, prepaid usage explained
 sidebar_label: Billing model
 sidebar_position: 4
-description: "How Cloider bills: what is metered per product, compute units, prorating, the free trial, what paused and deleted resources cost, and invoices."
-keywords: [cloider billing, pay as you go, cloider pricing model, compute unit, paused cluster cost, cloider invoice, free trial credit]
+description: "How Cloider bills: prepaid funds and credits, what is metered per product, compute units, prorating, what paused and deleted resources cost, and invoices."
+keywords: [cloider billing, pay as you go, prepaid cloud, cloider pricing model, compute unit, paused cluster cost, cloider invoice, welcome credit]
 ---
 
-Cloider is **pay as you go**: there are no plans to commit to, no upfront fees and no charge for idle machines. Cloider measures what each resource uses, prices it at monthly rates prorated to the second, and sends one invoice per month for everything the account used. This page explains exactly what is measured and how.
+Cloider is **pay as you go, from prepaid funds**: there are no plans to commit to, no upfront fees and no charge for idle machines. Cloider measures what each resource uses, prices it at monthly rates prorated to the second, and pays for it from the account's credits and balance as it is used. A monthly invoice records what the month cost and what paid for it. This page explains exactly what is measured and how it is paid.
 
 Current prices are on [cloider.com/#pricing](https://cloider.com/#pricing), from `cloider pricing`, and from the public `GET https://cloider.com/api/pricing` endpoint. The [Pricing reference](/reference/pricing) lists every price and unit.
 
@@ -14,14 +14,16 @@ Current prices are on [cloider.com/#pricing](https://cloider.com/#pricing), from
 
 | | |
 | --- | --- |
-| **Model** | Pay as you go, metered continuously, invoiced monthly |
+| **Model** | Pay as you go, metered continuously and paid from the account's funds as it is used |
+| **Funds** | The account balance, which you top up, and credits. Credits are spent first, the one that expires soonest first |
 | **Price unit** | Every price is per month. A billing month is 30 days (720 hours), and usage is prorated by the second |
 | **Compute** | Apps and clusters pay for **compute units**: CPU or memory, whichever is larger at the current ratio |
 | **Storage** | Cluster volumes, buckets and registry projects pay per GiB per month |
 | **Databases** | A flat monthly price per plan, prorated; only storage while paused |
 | **Free** | Domains, DNS, bucket requests and traffic, registry pushes and pulls |
-| **Trial** | 14 days with $25 of free credit, one cluster, database, bucket and registry project at a time |
-| **Invoices** | One per month for the month before, visible to the account Owner only |
+| **Welcome credit** | $25 for a 14-day trial, which starts when you claim it in the dashboard |
+| **No funds left** | Clusters, databases and apps pause. After 14 days without a top-up, resources are removed |
+| **Invoices** | One per month for the month before, with a statement of the account balance, visible to the account Owner only |
 
 ## What is metered, product by product
 
@@ -73,15 +75,26 @@ Every price is a monthly price, and a billing month counts as 30 days (720 hours
 
 Prices have effective dates. Each day's usage is priced at the rates in effect that day, so a price change applies from its date onward and never retroactively. If prices change during a month, the invoice splits that resource's lines into one line per price period.
 
-## The free trial and credit
+## How usage is paid
 
-A new account starts on the trial: 14 days, with $25 of free credit as advertised on [cloider.com](https://cloider.com). During the trial:
+Usage is paid as it happens, continuously through the day, from the account's funds:
 
-- usage is metered exactly as it is on the paid plan, so the usage page shows real costs,
-- the account can have one Kubernetes cluster, one database, one bucket and one registry project at a time,
-- the Owner receives reminder emails before the end.
+1. **Credits** first. When the account has several, the one that expires soonest pays first.
+2. Then the **account balance**, which the Owner tops up with [Add funds](/account/billing#add-funds).
 
-If the Owner doesn't upgrade, the account is suspended the day after the trial ends and its resources are deleted. See [Create an account](/get-started/create-an-account#the-free-trial).
+The dashboard's **Balance** is the two together. There are no account plans and no limits on how many clusters, databases, buckets, registry projects or apps an account has: what it can run is limited only by its funds.
+
+### Credits
+
+A credit is an amount Cloider gives the account: the welcome credit, a promotion, a referral or a compensation. Each credit can have its own expiry date. What is left of a credit when it expires is no longer available. Credits pay for usage only, not for an amount the balance owes. See [Credits](/account/billing#credits).
+
+### The welcome credit
+
+A new account gets a 14-day trial with $25 of credit, as advertised on [cloider.com](https://cloider.com). The Owner claims it from a prompt in the dashboard, **Start trial**, and the 14 days start then. Until it is claimed, creating a resource fails with `Claim your $25 welcome credit from the dashboard to start your trial.` Usage during the trial is metered and paid exactly like any other usage, so the **Usage** page shows real costs. See [Create an account](/get-started/create-an-account#the-welcome-credit).
+
+### When funds run out
+
+Cloider emails the Owner 7 days and 1 day before the funds run out at the current usage. When they do, an account that has resources is suspended: its clusters, databases and apps are paused, while buckets and registry projects keep working. After 14 days suspended without a top-up, its resources are removed. Adding funds before that makes the account active again. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out).
 
 ## What does a paused resource cost?
 
@@ -112,12 +125,13 @@ Forecasts assume that current usage, statuses and prices stay as they are. A dat
 
 ## Invoices
 
-Cloider issues one invoice per account per month, for the month that just ended. The invoice is created early in the new month, once the last day's usage has been finalized.
+Cloider issues one invoice per account per month, for the month that just ended, and emails it to the Owner. The invoice is created early in the new month, once the last day's usage has been finalized. Since the usage was already paid from the account's funds, the invoice records it rather than asks for payment.
 
 - An invoice is only created when the month's total is above zero.
 - It has one **item per resource** (for example `Cluster: "production"`, `Database: "orders-db"`, `App: "blog"`, `Bucket: "acme-assets"`, `Registry project: "acme"`), each with lines that show the service, usage, unit, rate and cost.
 - Units on the invoice: **Compute-Hour** for compute, **GB-Hour** for volumes and storage, **Hour** for load balancers and database plans.
-- A **✓ Paid** tag appears once the payment is recorded.
+- **Payment sources** show what paid for the usage: each credit and the account balance.
+- A **Statement** shows the account balance over the month: opening balance, payments, what was charged to it, and the closing balance. When the closing balance is below zero, the invoice has an **Amount due** and its status is **Due** until a top-up pays it. Otherwise its status is **Paid**. See [Invoice status](/account/billing#invoice-status).
 
 Only the account **Owner** can see invoices, in **Billing** in the dashboard, with `cloider billing`, or through `GET /api/billing` with the Owner's Read & Write API token. See [Billing](/account/billing).
 
@@ -125,7 +139,22 @@ Only the account **Owner** can see invoices, in **Billing** in the dashboard, wi
 {
   "month": "September 2026",
   "amount": 45.63,
-  "paid": false,
+  "status": "paid",
+  "statement": {
+    "period_end": "2026-10-01T00:00:00Z",
+    "opening_balance": 20,
+    "payments": 50,
+    "balance_charged": 35.63,
+    "closing_balance": 34.37,
+    "amount_due": 0,
+    "carried_in": 0,
+    "remaining": 0,
+    "paid_at": null
+  },
+  "payment_sources": [
+    {"source": "credit", "credit_id": 418, "credit_type": "promo", "description": "Launch promo", "amount": 10},
+    {"source": "balance", "amount": 35.63}
+  ],
   "created_at": "2026-10-01T02:10:00Z",
   "items": [
     {
@@ -159,7 +188,7 @@ The amounts in this example are illustrative, not current prices.
 
 ## Who pays
 
-The account **Owner** is billed for every resource in the account, whoever created it. Members (Admins and Restricted) are never billed for resources in accounts they don't own. See [Accounts and roles](/concepts/accounts-and-roles).
+Every resource in an account is paid from that account's funds, whoever created it. The account **Owner** adds funds and sees invoices. Members (Admins and Restricted) never pay for resources in accounts they don't own, and see the account's balance in the sidebar. See [Accounts and roles](/concepts/accounts-and-roles).
 
 ## Keep costs low
 
@@ -176,12 +205,14 @@ The account **Owner** is billed for every resource in the account, whoever creat
 - [Resource lifecycle](/concepts/resource-lifecycle)
 
 <FAQ items={[
-  {q: 'How does Cloider pricing work?', a: 'Cloider is pay as you go. It measures what each resource uses (compute, storage, load balancers, database plan time), prices it at monthly rates prorated to the second, and invoices the account once a month for the month before.'},
+  {q: 'How does Cloider pricing work?', a: 'Cloider is pay as you go from prepaid funds. It measures what each resource uses (compute, storage, load balancers, database plan time), prices it at monthly rates prorated to the second, and pays for it from the account\'s credits and balance as it is used. A monthly invoice records what each month cost.'},
+  {q: 'Is Cloider prepaid or postpaid?', a: 'Prepaid. Usage is paid from the account\'s credits first, then its balance, which the account Owner tops up with Add funds on the Billing page. When the funds run out, clusters, databases and apps pause until funds are added.'},
+  {q: 'Does Cloider have a free trial?', a: 'Yes. A new account gets a 14-day trial with $25 of credit, which starts when the account Owner claims it from the dashboard.'},
   {q: 'What is a compute unit?', a: 'One vCPU, or the memory the CPU to memory ratio pairs with one vCPU, whichever a workload uses more of. Apps and Kubernetes clusters are billed per compute unit per month.'},
   {q: 'Does Cloider bill for requested or used CPU?', a: 'Both count: each running container is billed for the larger of its resource request and its actual use, for CPU and memory separately.'},
   {q: 'How much does a paused Kubernetes cluster cost?', a: 'A paused cluster is not billed for compute. Its persistent volumes stay and are still billed per GiB.'},
   {q: 'How much does a paused database cost?', a: 'A paused database is billed only for the storage its plan provisioned, at the cluster volume rate. GET /api/pricing lists this as paused_price for every plan.'},
   {q: 'Is data transfer free on Cloider?', a: 'Bucket requests and traffic are free, and so are registry pushes and pulls. Buckets and registry projects are billed only for the data they store.'},
-  {q: 'When do I get an invoice?', a: 'Early each month, for the month before, once the last day of usage is finalized. No invoice is created for a month that cost nothing.'},
+  {q: 'When do I get an invoice?', a: 'Early each month, for the month before, once the last day of usage is finalized. It is emailed to the account Owner. No invoice is created for a month that cost nothing.'},
   {q: 'Who can see invoices?', a: 'Only the account Owner, in Billing in the dashboard, with cloider billing, or with GET /api/billing and the Owner\'s Read & Write API token.'}
 ]} />

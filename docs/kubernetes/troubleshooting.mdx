@@ -35,8 +35,9 @@ No kubeconfig at hand? Run the same `kubectl` commands with `cloider cluster exe
 | `Cluster name must not be empty`, `must not have spaces`, `can not be upper case`, `can not start with numbers`, `must not have special characters except "-"`, `must not start with any special character`, `must not end with any special character`, `must be at least 2 characters` | Use lower case letters, digits and `-`, start with a letter, at least 2 characters. See [Choose a name](/kubernetes/create-a-cluster#choose-a-name) |
 | `Invalid cluster version!` | Use a version from `GET /api/options` (`cluster_versions`) |
 | `HA clusters are not supported at the moment!` | Send `is_ha: false` |
-| `Free plan users can not create more than one cluster. UPGRADE NOW!` | Delete the existing cluster (a paused one counts) or upgrade in [Billing](/account/billing) |
-| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | Upgrade in [Billing](/account/billing) |
+| `Your account has no credit left. Top up to continue.` (HTTP 402) | [Add funds](/account/billing#add-funds) |
+| `Your account is suspended because its credit ran out. Top up to continue.` (HTTP 402) | [Add funds](/account/billing#add-funds). See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out) |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` (HTTP 402) | Click **Start trial** in the dashboard |
 | `You have read-only access to this account, you can not create clusters!` | Ask an owner or admin for a role that can create resources. See [Access control](/account/access-control) |
 | `This API token is read only!` (HTTP 403, CLI exit code `5`) | Use a **Read & Write** API token. See [API tokens](/account/api-tokens) |
 | `version 1.30 isn't offered, pick one of: ...` (CLI, exit code `2`) | Pick one of the versions listed |
@@ -162,6 +163,8 @@ See [Persistent volumes](/kubernetes/persistent-volumes).
 | --- | --- |
 | **Pause** is disabled | The cluster isn't `Ready` |
 | **Resume** is disabled | The cluster is still `Pausing`; wait for `Paused` |
+| A cluster you didn't pause is `Paused` | The account ran out of funds and was suspended. [Add funds](/account/billing#add-funds): Cloider resumes it once the account is active again |
+| Resuming fails with `Your account is suspended because its credit ran out. Top up to continue.` (402) | Resuming needs funds. [Add funds](/account/billing#add-funds) |
 | **Delete** is disabled | Your role is read-only, or the cluster is already `Terminating` |
 | **Delete cluster** stays disabled in the dialog | Type the cluster's label exactly, for example `staging-1` |
 | `You have read-only access to this account, ...` (403) | Your role is read-only |

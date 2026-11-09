@@ -143,9 +143,8 @@ curl -X POST https://cloider.com/api/registry/projects \
 | --- | --- | --- |
 | `400` | `name` | `Project name must not be empty`, `Project name must be at least 3 characters`, `Project name must not exceed 63 characters`, `Project name can only have lowercase letters, numbers and "-"`, `Project name must start and end with a letter or a number, with no "--"`, `Project name must have at least one letter`, `Project name is reserved`, `This project name is already taken` |
 | `400` | `storage_limit_gi` | `Storage limit must be between 1 and 20 GB` |
-| `400` | `_` | `Free plan users can not create more than one project. UPGRADE NOW!` (the apps project doesn't count) |
-| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
 | `400` | `_` | `The container registry isn't available at the moment!`, `Operation failed, Couldn't create the project!` |
+| `402` | `_` | `Your account has no credit left. Top up to continue.`, `Your account is suspended because its credit ran out. Top up to continue.`, `Claim your $25 welcome credit from the dashboard to start your trial.` |
 | `403` | `_` | `This API token is read only!`, `You have read-only access to this account, you can not create projects!` |
 
 ## Get a project

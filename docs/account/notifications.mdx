@@ -2,18 +2,18 @@
 title: Cloider notifications and account emails
 sidebar_label: Notifications
 sidebar_position: 7
-description: "Where Cloider notifies you: the Notifications page in the dashboard and every email it sends, from trial reminders to invitations and support replies."
-keywords: [cloider notifications, cloider emails, trial reminder, account suspended email, invitation email, support reply email]
+description: "Where Cloider notifies you: the Notifications page in the dashboard and every email it sends, from low balance warnings and invoices to invitations and support replies."
+keywords: [cloider notifications, cloider emails, low balance email, account suspended email, cloider invoice email, invitation email, support reply email]
 ---
 
-Cloider tells you about your account in two places: the **Notifications** page in the dashboard, for announcements, and **email**, for things that need your attention, such as the end of your trial or a reply to a support request.
+Cloider tells you about your account in two places: the **Notifications** page in the dashboard, for announcements, and **email**, for things that need your attention, such as funds running low, a monthly invoice or a reply to a support request.
 
 ## At a glance
 
 | Channel | Where | What it's for |
 | --- | --- | --- |
 | **Notifications page** | The bell icon in the dashboard's top bar | Announcements: new features, offers, budget warnings |
-| **Email** | The email address of the account, or of the invited person | Trial reminders, suspension, invitations, support replies |
+| **Email** | The email address of the account, or of the invited person | Balance warnings, suspension, invoices, invitations, support replies |
 
 ## The Notifications page
 
@@ -32,13 +32,17 @@ When there is nothing new, the page says *You don't have any new notifications!*
 
 | Email subject | Sent to | When |
 | --- | --- | --- |
-| *Action Required: Upgrade to a Paid Plan with Cloider* | The account Owner | On days 4, 7, 10, 12, 13 and 14 of the free trial, with the trial end date |
-| *ACTION REQUIRED! Your Trial Ends Today* | The account Owner | On the trial end date. It warns that the account is suspended and its resources deleted 24 hours later unless it is upgraded |
-| *Your Cloider account has been suspended* | The account Owner | The day after the trial ends, when the account is suspended and its resources are deleted |
+| *Your Cloider account will be suspended in about 7 days* | The account Owner | 7 days before the account's funds run out at the current usage, and again 1 day before (*in about 1 day*), with the date |
+| *Your Cloider account will be suspended on &lt;date&gt;* | The account Owner | When a credit expiring on that date would leave the account without funds |
+| *Your Cloider account is suspended* | The account Owner | When the funds run out and the account is suspended. It gives the earliest date its resources can be removed |
+| *Your Cloider resources will be removed on &lt;date&gt;* | The account Owner | Twice while the account is suspended, before its resources are removed |
+| *Your Cloider resources were removed* | The account Owner | After a suspended account's resources are removed. The account and its balance are kept |
+| *Your Cloider account is active again* | The account Owner | When funds are added to a suspended account and it is active again |
+| *Your Cloider invoice for &lt;month&gt;* | The account Owner | Early each month, for the month before: what the usage came to, what paid for it, and the account balance over the month |
 | *Invitation to Access a Cloider Account* | The invited email address | When an Owner or Admin invites someone. It names the account and asks the person to sign in with that email address |
 | `Re: [#<request id>]: <subject>` | The account's email address | When the Cloider support team replies to a support request. The email links to the request in the dashboard |
 
-The trial emails stop once the account is on the paid plan. Emails from the support team can be answered from the dashboard: see [Support](/account/support).
+The balance and suspension emails are explained in [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out). Emails from the support team can be answered from the dashboard: see [Support](/account/support).
 
 :::note[Support replies go to the account's address]
 Replies from the support team are emailed to the account's own address, the Owner's, even when a member opened the request. Members can follow every request of the account on the **Support** page.
@@ -47,18 +51,19 @@ Replies from the support team are emailed to the account's own address, the Owne
 ## Make sure you receive Cloider emails
 
 - The account's email address is the one its Owner signs in with (for GitHub, the primary verified address). It can't be changed in Cloider.
-- Add Cloider to your contacts or allow list so reminders don't land in spam.
-- For a team account, sign up with a shared address the team reads (for example `ops@acme.com`), so trial reminders and support replies reach everyone who needs them.
+- Add Cloider to your contacts or allow list so balance warnings don't land in spam.
+- For a team account, sign up with a shared address the team reads (for example `ops@acme.com`), so balance warnings, invoices and support replies reach everyone who needs them.
 
 ## Next steps
 
-- [Create an account](/get-started/create-an-account#the-free-trial): the trial timeline.
+- [Billing](/account/billing): your balance, adding funds and invoices.
 - [Support](/account/support): open and follow support requests.
 - [Usage](/account/usage): watch your costs.
 
 <FAQ items={[
   {q: 'Where are notifications in the Cloider dashboard?', a: 'Click the bell icon in the top bar. It opens the Notifications page and shows a count when there is something new.'},
-  {q: 'Which emails does Cloider send?', a: 'Trial reminders and the trial end notice, the account suspension notice, member invitations, and replies from the support team.'},
+  {q: 'Which emails does Cloider send?', a: 'Warnings before the account\'s funds run out, the suspension, removal and reactivation notices, the monthly invoice, member invitations, and replies from the support team.'},
+  {q: 'When does Cloider warn me that my balance is low?', a: 'By email to the account Owner 7 days and 1 day before the funds run out at the current usage, and when a credit\'s expiry would leave the account without funds. The dashboard shows a banner too.'},
   {q: 'Who receives support reply emails?', a: 'The account\'s own email address, which is the Owner\'s, even if a member opened the request. Every member can read the conversation on the Support page.'},
   {q: 'Can I change the email address Cloider sends to?', a: 'No. The account\'s email address is the one its Owner signs in with through Google or GitHub.'}
 ]} />

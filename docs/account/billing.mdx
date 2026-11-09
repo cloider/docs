@@ -1,41 +1,253 @@
 ---
-title: Cloider billing and monthly invoices
+title: Cloider billing, balance, credits and invoices
 sidebar_label: Billing
 sidebar_position: 5
-description: "Read your Cloider invoices: who can see billing, when invoices are issued, what each line and unit means, and invoices from the CLI, API and MCP."
-keywords: [cloider billing, cloider invoice, monthly bill, invoice line items, compute-hour, gb-hour, payment, billing question]
+description: "Check your Cloider balance and credits, add funds, see what happens when funds run out, and read monthly invoices from the dashboard, CLI, API and MCP."
+keywords: [cloider billing, cloider balance, cloider credit, add funds, top up, account suspended, cloider invoice, monthly invoice, payment history]
 ---
 
-**Billing** shows the account's monthly invoices: one per month, with a line for every resource and what it cost. Only the account **Owner** can see it. To follow costs during the month, use [Usage](/account/usage) instead.
+Cloider is prepaid: your usage is paid from the account's funds as it happens, from its credits first and then its account balance. **Billing** shows those funds, how long they last at your current usage, this month's charges, your credits, and the monthly invoices and payments. Only the account **Owner** can open it.
 
 ## At a glance
 
 | | |
 | --- | --- |
-| **Where** | Dashboard, **Billing** (in the sidebar for the Owner only) |
-| **Who** | The account Owner. Admins and Restricted members can't see invoices |
-| **When** | One invoice per month, issued early in the next month, once the last day's usage is finalized |
-| **Contents** | One item per resource, with lines for compute, storage, load balancers and database plans |
-| **Tools** | Dashboard, `cloider billing`, `GET /api/billing`, the `get_billing` MCP tool |
+| **Where** | Dashboard, **Billing** (in the sidebar for the Owner only). Every member sees the balance in the sidebar |
+| **Who** | The account Owner. Admins and Restricted members see the balance and any warning, not the Billing page |
+| **Funds** | The account balance plus active credits. Credits are spent first, the one that expires soonest first |
+| **Adding funds** | **Add funds** on the Billing page. Support adds them for you until card payments are available |
+| **When funds run out** | Clusters, databases and apps pause. After 14 days without a top-up, resources are removed |
+| **Invoices** | One per month for the month before, with what paid for it and a statement of the account balance |
+| **Tools** | Dashboard, `cloider wallet`, `cloider billing`, `GET /api/wallet`, `GET /api/billing`, the `get_wallet` and `get_billing` MCP tools |
 | **How it's priced** | See [Billing model](/concepts/billing-model) |
 
-## View your invoices
+## The Billing page
 
-<Tabs groupId="interface" queryString>
-<TabItem value="dashboard" label="Dashboard" default>
+Open **Billing** in the sidebar. From top to bottom, the page shows:
 
-1. Open **Billing** in the sidebar. The **Invoices** list shows each invoice's **Month**, **Amount** and **Status**.
-2. Click an invoice to open it. The **Invoice** dialog lists every resource with its lines.
-3. Click the printer icon (**Print**) next to the title to print the invoice or save it as a PDF from your browser's print dialog.
+- **Add funds**, at the top right, and a notice when something needs doing, such as funds running out soon.
+- **Balance**: the funds available, split into **Account balance** and **Credits**, and how long they last at your current daily spend.
+- **November so far**, named after the current month: this month's charges, the balance's opening amount and payments, the forecast for the month, last month's total, and the date of the next invoice. The bar under it shows how much credits and the balance paid.
+- **Charges**: what was charged each day, by resource type, for the **Last 30 days** or **This month**.
+- **If your balance runs out**: the three steps described in [What happens when your funds run out?](#what-happens-when-your-funds-run-out).
+- **Credits**: every credit the account has had, with what is left of it and when it expires.
+- **Payment methods**: card payments, coming soon.
+- **Invoices** and **Payments** tabs, with a year filter and **Export CSV**.
 
 <Screenshot
   src="/img/screenshots/account/billing.webp"
   url="/dashboard/billing"
-  alt="The Billing page listing monthly invoices with their month, amount and a Paid tag"
-  caption="Invoices, newest first. Click one to see its lines."
+  alt="The Billing page with the Balance card, this month's charges and forecast, the daily Charges chart, the Credits card and the Invoices tab"
+  caption="The Billing page: funds, this month, daily charges, credits and invoices."
 />
 
-Before the first invoice, the page says *Your monthly bill is not due yet!*.
+The sidebar of every page also shows the account's **Balance**, to every member: the funds, what is left of the credits, and one line such as *Spending $3.10 a day*, *Lasts about 32 days* or *Suspends in about 6 days*. For the Owner it links to **View billing**, or shows **Add funds** when funds are low or gone.
+
+## Check your balance
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Billing** in the sidebar.
+2. The **Balance** card shows the funds available, the **Account balance** and the **Credits**, and below them how long the funds last: *At $3.10 a day it lasts about 32 days*.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider wallet
+```
+
+```text title="Output"
+Available:        $99.80, balance and credits
+Account balance:  $87.30
+Credits:          $12.50, $12.50 expires in 22 days
+Lasts:            about 32 days at $3.10 a day
+
+November so far
+Charged so far:  $23.40, $7.50 to credits, $15.90 to the balance
+Forecast:        ~$93.15
+October:         $61.80, this month 51% more
+Next invoice:    2026-12-01
+
+CREDIT           TYPE             STATUS   LEFT     OF       EXPIRES
+Launch promo     Promo            Active   $12.50   $20.00   expires in 22 days
+Welcome credit   Welcome credit   Used     $0.00    $25.00   used up
+```
+
+When something needs doing, a notice comes first, such as *At the current usage, the account is suspended in about 6 days, around 2026-11-14, with compute paused, unless you add funds.* Members who aren't the Owner see the balance and any warning with [`cloider whoami`](/cli/commands/account#cloider-whoami).
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider doesn't read the balance. Use the **Dashboard**, **CLI** or **API** tab. When an account has no funds left, creating a resource fails with the API's message, see [Errors when funds run out](#errors-when-funds-run-out).
+
+</TabItem>
+<TabItem value="api" label="API">
+
+`GET /api/wallet` returns the funds, how long they last, this month's charges and every credit:
+
+```bash
+curl -H "Authorization: Bearer $CLOIDER_TOKEN" https://cloider.com/api/wallet
+```
+
+```json title="Response (trimmed)"
+{
+  "balance": 87.3,
+  "credits_total": 12.5,
+  "available_balance": 99.8,
+  "daily_spend": 3.1,
+  "runs_out_at": "2026-12-10T15:00:00Z",
+  "amount_due": 0,
+  "suspended_at": null,
+  "alert": null,
+  "this_month": {
+    "usage": 23.4,
+    "from_credits": 7.5,
+    "from_balance": 15.9,
+    "forecast": 93.15,
+    "invoiced_on": "2026-12-01T00:00:00Z"
+  },
+  "credits": [
+    {
+      "id": 418,
+      "type": "promo",
+      "status": "active",
+      "original_amount": 20,
+      "remaining_amount": 12.5,
+      "expires_at": "2026-11-30T23:59:59Z",
+      "description": "Launch promo",
+      "created_at": "2026-11-03T09:00:00Z"
+    }
+  ]
+}
+```
+
+The token must belong to the Owner. A **Read** token is enough. Every field is in the [account endpoints reference](/api/endpoints/account#get-the-wallet).
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+How long will my Cloider balance last at the current usage?
+```
+
+```json title="Tool call: get_wallet"
+{}
+```
+
+The CLI behind the MCP server must be logged in as the Owner.
+
+</TabItem>
+</Tabs>
+
+## Add funds
+
+Only the Owner adds funds, from the dashboard.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Billing** and click **Add funds**, or click **Add funds** in the sidebar's balance card.
+2. Pick an amount, or type one in **Amount**.
+3. Click **Email support**. Your email app opens a message to support with the account and the amount.
+4. Support replies with how to pay. Once the payment arrives, it is added to the account balance and listed under **Payments**.
+
+Card payments, and topping up automatically before the balance runs out, are coming soon.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+The CLI doesn't add funds. `cloider wallet` prints a link to **Add funds** in the dashboard when funds are low. Use the **Dashboard** tab.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider doesn't add funds. Use the **Dashboard** tab.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+The API doesn't add funds. Use the **Dashboard** tab.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+The MCP server doesn't add funds. Use the **Dashboard** tab.
+
+</TabItem>
+</Tabs>
+
+A top-up pays what the account owes first, starting with the oldest invoice, and the rest is added to the balance. If the account was suspended, it is active again as soon as its funds are back above $1.
+
+## Credits
+
+A credit is an amount Cloider gives the account: the welcome credit of a new account, a promotion, a referral or a compensation. Credits pay for usage before the account balance does, the one that expires soonest first.
+
+| Type | What it is |
+| --- | --- |
+| **Welcome credit** | $25 for a new account's 14-day trial, claimed from the dashboard. See [Create an account](/get-started/create-an-account#the-welcome-credit) |
+| **Promo** | A promotion |
+| **Referral** | A referral reward |
+| **Compensation** | Compensation, for example after an incident |
+| **Credit** | Any other credit |
+
+Each credit has its own expiry date, or none. The **Credits** card shows each one's status:
+
+- **Active**: it pays for usage until it is used up or expires.
+- **Used**: it has been spent.
+- **Expired**: it expired, and what was left of it is no longer available.
+
+Credits pay for usage only. They don't pay off an amount the account balance owes, a top-up does.
+
+## What happens when your funds run out?
+
+When the account balance and the credits are used up, an account that has resources is **suspended**, and Cloider warns you before that happens:
+
+1. **Warnings.** Cloider emails the Owner 7 days and 1 day before the funds run out at the current usage, and when a credit's expiry would leave the account without funds. A banner across the top of the dashboard and the sidebar's balance card say when, to every member.
+2. **Suspension.** At zero, clusters, databases and apps are paused. Buckets and container registry projects keep working. The Owner gets an email with the earliest date the resources can be removed.
+3. **Removal.** After 14 days suspended without a top-up, Cloider deletes the account's clusters, databases, apps, buckets and registry projects, with their data. Two warning emails come before that. Deleted resources can't be recovered.
+
+While the account is suspended, storage is still charged: buckets, registry projects, and the volumes of paused databases and clusters, and a paused cluster's load balancers. That can take the balance below zero. A negative balance is an amount the account owes. It shows as **Payment due** and is paid first by the next top-up.
+
+Removal keeps the account itself, its balance, credits, payments and invoices, its domains and DNS records, its members and its API tokens. [Targets](/domains/targets) that pointed at removed apps or buckets are deleted with them.
+
+### Getting the account active again
+
+[Add funds](#add-funds). As soon as the funds are back above $1, after anything the account owes, the account is active again and Cloider resumes the clusters, databases and apps the suspension paused. Resources you had paused yourself stay paused. The Owner gets an email, *Your Cloider account is active again*.
+
+### What a suspended account can do
+
+A suspended account, or one with no funds left, can't create or start anything that is charged for compute. These fail:
+
+- creating a cluster, database, bucket, registry project or app,
+- deploying an app, including redeploys, retries and a new image, and saving an app's settings, environment variables, build environment or build arguments,
+- resuming a cluster, database or app, restoring a database backup and changing a database's plan.
+
+A git push doesn't deploy an app while the account is suspended. Everything else keeps working: reading, pausing and deleting resources, buckets and the registry, domains, DNS records, targets, bucket keys, registry tokens, members, API tokens and support.
+
+### Errors when funds run out
+
+Requests that need funds fail with HTTP `402` and one of these messages:
+
+| Message | Cause |
+| --- | --- |
+| `Your account is suspended because its credit ran out. Top up to continue.` | The account is suspended. [Add funds](#add-funds) |
+| `Your account has no credit left. Top up to continue.` | The account has no funds left, and isn't suspended yet. [Add funds](#add-funds) |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` | A new account that hasn't claimed its welcome credit. Click **Start trial** in the dashboard |
+
+## View your invoices
+
+Cloider issues an invoice for each month the account had usage, early in the next month, and emails it to the Owner. Since usage is paid as it happens, an invoice is mostly a record: it lists what the month cost, what paid for it, and how the account balance changed.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Billing** in the sidebar and choose the **Invoices** tab. Each invoice shows its **Month**, **Amount**, what it was **Paid by** and its **Status**. Pick a year to see only that year's.
+2. Click an invoice to open it. The dialog lists every resource with its lines, the **Payment sources** and the **Statement** of the account balance.
+3. Click **PDF** on an invoice's row, or the printer icon (**Print**) in the dialog, to print it or save it as a PDF from your browser's print dialog.
+
+**Export CSV** downloads the invoices shown, with their amount, what paid for them, their status, the amount due and what is left to pay.
 
 </TabItem>
 <TabItem value="cli" label="CLI">
@@ -45,18 +257,33 @@ cloider billing
 ```
 
 ```text title="Output"
-MONTH            AMOUNT   STATUS
-September 2026   $45.63   Unpaid
-August 2026      $38.10   Paid
+MONTH          AMOUNT   PAID BY                      STATUS
+October 2026   $61.80   1 credit + account balance   Paid
 ```
 
-Show one invoice's items by its month:
+Show one invoice by its month:
 
 ```bash
-cloider billing show "September 2026"
+cloider billing show "October 2026"
 ```
 
-The table lists each item with its service, quantity and unit, price and amount, followed by the total. Add `-o json` for the full invoice.
+The output lists each item with its service, quantity and unit, price and amount, then the total and status, what paid for it and the statement:
+
+```text title="Output (end)"
+Total: $61.80, Paid
+
+Paid by
+Welcome credit:   $25.00
+Account balance:  $36.80
+
+Statement of the account balance
+Opening balance:     $0.00
+Payments:            +$40.00
+Charged to balance:  -$36.80
+Closing balance:     $3.20
+```
+
+Add `-o json` for the full invoice.
 
 </TabItem>
 <TabItem value="terraform" label="Terraform">
@@ -75,10 +302,25 @@ curl -H "Authorization: Bearer $CLOIDER_TOKEN" https://cloider.com/api/billing
 ```json title="Response (trimmed)"
 [
   {
-    "month": "September 2026",
-    "amount": 45.63,
-    "paid": false,
-    "created_at": "2026-10-01T02:10:00Z",
+    "month": "October 2026",
+    "amount": 61.8,
+    "status": "paid",
+    "statement": {
+      "period_end": "2026-11-01T00:00:00Z",
+      "opening_balance": 0,
+      "payments": 40,
+      "balance_charged": 36.8,
+      "closing_balance": 3.2,
+      "amount_due": 0,
+      "carried_in": 0,
+      "remaining": 0,
+      "paid_at": null
+    },
+    "payment_sources": [
+      {"source": "credit", "credit_id": 391, "credit_type": "welcome", "amount": 25},
+      {"source": "balance", "amount": 36.8}
+    ],
+    "created_at": "2026-11-01T02:10:00Z",
     "items": [
       {
         "service_type": "PostgreSQL",
@@ -110,7 +352,7 @@ Show me last month's Cloider invoice with every item.
 ```
 
 ```json title="Tool call: get_billing"
-{"month": "September 2026"}
+{"month": "October 2026"}
 ```
 
 Without `month`, the tool lists every invoice. The CLI behind the MCP server must be logged in as the Owner with **Read and write** access.
@@ -133,8 +375,8 @@ An invoice has one **item** per resource that cost something that month. Each it
 <Screenshot
   src="/img/screenshots/account/invoice.webp"
   url="/dashboard/billing"
-  alt="An invoice dialog with items for a cluster, a database and an app, each with Service, Description, Usage, Unit, Rate and Cost columns, subtotals and the Total Amount"
-  caption="An invoice: one item per resource, with its lines."
+  alt="An invoice dialog with items for a cluster, a database and an app, each with Service, Description, Usage, Unit, Rate and Cost columns, the Total Amount, the payment sources and the statement of the account balance"
+  caption="An invoice: one item per resource with its lines, then what paid for it and the statement."
 />
 
 The invoice dialog's columns are:
@@ -154,33 +396,107 @@ Items with several lines end with a **Subtotal**, and the invoice ends with **To
 - A **GB-Hour** is one GB stored or provisioned for one hour. 20 GB for a whole 720 hour month is 14,400 GB-Hours.
 - If a database changed plan during the month, it has one line per plan, each with the dates it covers.
 
-## When is an invoice issued?
+Under the items, the invoice shows:
 
-Cloider issues invoices once a month for the month that just ended, early on the first days of the new month, after the last day's usage has been finalized. A month with nothing to bill doesn't get an invoice. Deleted resources appear on the invoice for the part of the month they existed.
+- **Payment sources**: what paid for the month's usage, each credit by name and the **Account balance**. **Left owed** is usage the balance couldn't pay, and **Paid later** is the part of it that top-ups paid since. Invoices from before prepaid billing can show **Paid directly** or **Waived**.
+- **Statement** (account balance): the **Opening balance** on the first of the month, the **Payments** during it (top-ups less refunds), the usage **Charged to balance**, and the **Closing balance**. When the closing balance is below zero, **Amount due** is what the account owed at the end of the month.
 
-## Paying an invoice
+## Invoice status
 
-An invoice shows a **✓ Paid** tag in the dashboard (`Paid` in `cloider billing`, `"paid": true` in the API) once its payment has been recorded. For questions about payment, an invoice or pricing, open a [support request](/account/support) with the type **Billing/Payment/Pricing Question or Issue**.
+| Status | Meaning |
+| --- | --- |
+| **Paid** | Nothing is owed on it. When it was paid by a later top-up, the date follows: *Paid on Dec 3, 2026* |
+| **Due** | The account still owes part of it, shown as *$12.40 left to pay*. [Add funds](#add-funds) to pay it |
+| **Carried over** | An older invoice still owed. What it owes is included in the amount due of a later invoice, named as *to the December 2026 statement* |
+| **Waived** | Nothing to pay |
+
+The amount due of an invoice includes earlier months still owed, shown as *Includes $8.20 carried from earlier months*. Don't add amounts due across invoices: the latest **Due** invoice shows everything the account owes.
+
+## Payments
+
+The **Payments** tab lists the account's top-ups and refunds, the newest first, with their date, amount, description and how they were made (**Recorded by support** for now). Filter by **All**, **Top-ups** or **Refunds**, pick a year, and click **Export CSV** to download them.
+
+<Tabs groupId="interface" queryString>
+<TabItem value="dashboard" label="Dashboard" default>
+
+1. Open **Billing** and choose the **Payments** tab. The tab shows how many payments the year has.
+2. Pick a year, and **Top-ups** or **Refunds** to see only those.
+
+</TabItem>
+<TabItem value="cli" label="CLI">
+
+```bash
+cloider wallet payments --year 2026
+```
+
+```text title="Output"
+DATE               TYPE     AMOUNT     DESCRIPTION                        CHANNEL
+2026-11-02 10:14   Top-up   +$100.00   Bank transfer of Nov 1, ref 4471   Recorded by support
+2026-10-20 16:40   Top-up   +$40.00    -                                  Recorded by support
+```
+
+`--type top_up` or `--type refund` lists only those.
+
+</TabItem>
+<TabItem value="terraform" label="Terraform">
+
+The Terraform provider doesn't read payments. Use the **Dashboard**, **CLI** or **API** tab.
+
+</TabItem>
+<TabItem value="api" label="API">
+
+```bash
+curl -H "Authorization: Bearer $CLOIDER_TOKEN" "https://cloider.com/api/wallet/payments?year=2026"
+```
+
+```json title="Response"
+[
+  {"id": 77, "type": "top_up", "channel": "manual", "auto": false, "amount": 100, "description": "Bank transfer of Nov 1, ref 4471", "created_at": "2026-11-02T10:14:00Z"},
+  {"id": 61, "type": "top_up", "channel": "manual", "auto": false, "amount": 40, "description": "", "created_at": "2026-10-20T16:40:00Z"}
+]
+```
+
+See [List payments](/api/endpoints/account#list-payments) for the query parameters.
+
+</TabItem>
+<TabItem value="mcp" label="MCP">
+
+```text title="Prompt"
+List my Cloider top-ups this year.
+```
+
+```json title="Tool call: list_payments"
+{"year": 2026, "type": "top_up"}
+```
+
+</TabItem>
+</Tabs>
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 | --- | --- |
-| No **Billing** in the sidebar | You aren't the account Owner. Only the Owner sees invoices. |
-| `You don't have access to this account billing page!` | The request came from an Admin, a Restricted member, or a **Read** token. Use the Owner's dashboard session or a **Read & Write** token the Owner generated. |
-| *Your monthly bill is not due yet!* | No invoice has been issued yet. The first one arrives early in the month after you start using resources. |
-| An amount looks wrong | Compare it with the resource's daily figures on [Usage](/account/usage), then open a Billing support request. |
+| No **Billing** in the sidebar | You aren't the account Owner. Only the Owner sees the Billing page. The sidebar's balance card shows the funds to everyone. |
+| `You don't have access to this account billing page!` or `You don't have access to this account's wallet!` | The request came from an Admin, a Restricted member, or a token that isn't the Owner's. Invoices also need a **Read & Write** token. |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` | A new account hasn't claimed its welcome credit. Click **Start trial** in the prompt at the top of the dashboard. |
+| `Your account has no credit left. Top up to continue.` | The funds are used up. [Add funds](#add-funds). |
+| `Your account is suspended because its credit ran out. Top up to continue.` | The account is suspended. [Add funds](#add-funds), and it is active again once its funds are back above $1. |
+| The balance is below zero | Storage kept being charged while the account was suspended. The next top-up pays it first. |
+| An amount looks wrong | Compare it with the resource's daily figures on [Usage](/account/usage), then open a support request with the type **Billing/Payment/Pricing Question or Issue**. |
 
 ## Next steps
 
-- [Usage](/account/usage): costs to date and forecasts.
-- [Billing model](/concepts/billing-model): how every line is metered.
+- [Usage](/account/usage): costs to date and forecasts, per resource.
+- [Billing model](/concepts/billing-model): how every line is metered and paid.
+- [Notifications](/account/notifications): the billing emails Cloider sends.
 - [Pricing](/reference/pricing): current prices and units.
 
 <FAQ items={[
-  {q: 'Where do I find my Cloider invoices?', a: 'In the dashboard under Billing, which only the account Owner sees. You can also run cloider billing or call GET /api/billing with the Owner\'s Read & Write token.'},
-  {q: 'When does Cloider send the monthly invoice?', a: 'Early in each month, for the month before, once the last day of usage has been finalized. No invoice is created for a month that cost nothing.'},
-  {q: 'Why can an Admin not see invoices?', a: 'Billing is restricted to the account Owner, who is billed for every resource in the account. Admins can see costs on the Usage page.'},
-  {q: 'What is a Compute-Hour on my invoice?', a: 'One compute unit used for one hour. A compute unit is one vCPU, or the memory paired with one vCPU at the current ratio, whichever a workload uses more of.'},
-  {q: 'How do I print or save an invoice as PDF?', a: 'Open the invoice in Billing and click the printer icon next to its title. Choose Save as PDF in your browser\'s print dialog.'}
+  {q: 'How do I add funds to my Cloider account?', a: 'Open Billing in the dashboard, click Add funds, pick an amount and click Email support. Support replies with how to pay, and the top-up is added to the account balance once the payment arrives. Card payments are coming soon.'},
+  {q: 'What happens when my Cloider balance runs out?', a: 'Cloider emails the account Owner 7 days and 1 day before. When the balance and credits are used up, the account is suspended: clusters, databases and apps are paused, while buckets and registries keep working.\n\nAfter 14 days suspended without a top-up, the account\'s clusters, databases, apps, buckets and registry projects are deleted. Adding funds before that makes the account active again and resumes what the suspension paused.'},
+  {q: 'Why is my balance negative?', a: 'Storage keeps being charged while an account is suspended: buckets, registry projects and the volumes of paused resources. That can take the balance below zero. The next top-up pays it first.'},
+  {q: 'Are credits or the balance used first?', a: 'Credits. Usage is paid from active credits first, the one that expires soonest first, then from the account balance.'},
+  {q: 'Do I need to pay my Cloider invoice?', a: 'Usually not. Usage is paid from the account\'s funds as it happens, so an invoice records what the month cost and what paid for it, and shows Paid. Only an invoice whose month ended with the balance below zero is Due, and the next top-up pays it.'},
+  {q: 'Where do I find my Cloider invoices?', a: 'In the dashboard under Billing, on the Invoices tab, which only the account Owner sees. You can also run cloider billing or call GET /api/billing with the Owner\'s Read & Write token.'},
+  {q: 'How do I print or save an invoice as PDF?', a: 'Click PDF on the invoice\'s row in Billing, or open the invoice and click the printer icon. Choose Save as PDF in your browser\'s print dialog.'}
 ]} />

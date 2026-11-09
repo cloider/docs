@@ -147,7 +147,7 @@ The terminal and `cloider db exec` report the same states as `This database is p
 | `Failed to fetch database password`, `Failed to fetch database CA certificate`, `Failed to fetch database backups` (API, `502`) | The same, through the API. Retry |
 | `database ... has SSL off, so it has no certificate` | Turn SSL on first: `cloider db ssl <database> on` |
 | `You have read-only access to this account, ...` | Your role or API token is read-only. Ask an owner for write access |
-| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | See [billing](/account/billing) |
+| `Your account is suspended because its credit ran out. Top up to continue.` or `Your account has no credit left. Top up to continue.` (`402`) | Creating, restoring, resizing and resuming need funds. [Add funds](/account/billing#add-funds) |
 | `The terminal could not be started, try again in a moment!` | The terminal is starting. Retry in a few seconds |
 
 Errors when creating, resizing and restoring are listed on [create a database](/databases/create-a-database#troubleshooting), [resize](/databases/resize#troubleshooting) and [backups and restore](/databases/backups-and-restore#troubleshooting).

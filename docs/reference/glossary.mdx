@@ -15,7 +15,10 @@ This glossary defines the terms used across the Cloider docs, in alphabetical or
 A pair of credentials (an access key id starting with `CLDR` and a secret key) that lets S3 tools and SDKs reach your buckets. Access keys are managed in **Access Control**, **S3 Credentials**, and the secret is shown once. See [Access keys](/object-storage/access-keys).
 
 ### Account
-The container for resources, usage and invoices. Every user has their own account, and can be a member of other accounts. See [Accounts and roles](/concepts/accounts-and-roles).
+The container for resources, usage, funds and invoices. Every user has their own account, and can be a member of other accounts. See [Accounts and roles](/concepts/accounts-and-roles).
+
+### Account balance
+The money in an account, added with **Add funds**, that pays for usage once the credits are used up. It can go below zero while an account is suspended, as storage keeps being charged, and the next top-up pays that first. See [Billing](/account/billing).
 
 ### Admin
 A member role with full access to every resource and to members, but not to billing. See [Accounts and roles](/concepts/accounts-and-roles).
@@ -30,7 +33,7 @@ A secret starting with `cldr_` that lets tools call the API as the member who ge
 Your source code, built into a container image and run by Cloider on a free HTTPS subdomain, with no servers to manage. See [Apps overview](/apps/overview).
 
 ### Apps project
-The container registry project Cloider creates in your account with your first app, where your apps' images are stored. It can't be deleted and doesn't count toward the trial's project limit. See [Container Registry overview](/container-registry/overview).
+The container registry project Cloider creates in your account with your first app, where your apps' images are stored. It can't be deleted. See [Container Registry overview](/container-registry/overview).
 
 ### Autoscaling
 Cloider adding replicas to an app as they get busy and removing them when traffic drops, between a minimum and a maximum you set. See [Scaling and compute](/apps/scaling).
@@ -42,6 +45,9 @@ The option that makes an app imported from Git deploy a new version on every pus
 
 ### Backup
 A copy of a database that Cloider takes every 14 days and that you can restore into a new database. Every change in between is recorded too, so a database can be restored to any second of the last 14 days. See [Backups and restore](/databases/backups-and-restore).
+
+### Balance
+In the dashboard, an account's funds: its account balance and its active credits together, shown in the sidebar and on the **Billing** page. See [Billing](/account/billing).
 
 ### Bucket
 A container for files (objects) in Cloider Object Storage, reached through the S3 API. Bucket names are unique across all of Cloider. See [Create a bucket](/object-storage/create-a-bucket).
@@ -83,6 +89,9 @@ A named entry in a kubeconfig file that tells `kubectl` which cluster and creden
 
 ### Control plane
 The Kubernetes components that run a cluster: the API server, the cluster state and the controllers. Cloider runs it for you, and its usage is part of the cluster's compute. See [How Cloider works](/concepts/how-cloider-works).
+
+### Credit
+An amount Cloider gives an account, such as the welcome credit, a promotion, a referral or a compensation. Credits pay for usage before the account balance, the one that expires soonest first, and what is left of one when it expires is no longer available. See [Credits](/account/billing#credits).
 
 ### Custom domain
 A domain you own, such as `example.com`, added to Cloider, verified with a TXT record and pointed at Cloider's nameservers. See [Add a custom domain](/domains/add-a-custom-domain).
@@ -175,7 +184,7 @@ A Kubernetes object that routes HTTP traffic. Ingress objects in a Cloider clust
 Charts of a resource's CPU, memory and other metrics over time, on an app's or database's **Insights** tab. See [App insights](/apps/insights) and [Database insights](/databases/insights).
 
 ### Invoice
-The monthly bill of an account, with one item per resource. Only the Owner sees invoices. See [Billing](/account/billing).
+The monthly record of an account's usage, with one item per resource, what paid for it and a statement of the account balance. Only the Owner sees invoices. See [Billing](/account/billing).
 
 ## K
 
@@ -218,7 +227,7 @@ A DNS server that answers for a domain. Custom domains on Cloider are pointed at
 A file stored in a bucket, identified by its key (its path, such as `images/logo.png`). See [Manage files](/object-storage/manage-files).
 
 ### Owner
-The user whose account it is: full access, including billing, and billed for every resource in it. See [Accounts and roles](/concepts/accounts-and-roles).
+The user whose account it is: full access, including billing and adding funds, which pay for every resource in it. See [Accounts and roles](/concepts/accounts-and-roles).
 
 ## P
 
@@ -229,7 +238,7 @@ Stopping a cluster's, database's or app's compute while keeping its data, to sto
 Storage that outlives the pod using it, claimed in a cluster with a PersistentVolumeClaim and billed per GiB. See [Persistent volumes](/kubernetes/persistent-volumes).
 
 ### Plan
-For an account, **Free** (the trial) or **Paid**. For a database, its size from **Hobby** to **Pro**. See [Billing model](/concepts/billing-model) and [Create a database](/databases/create-a-database).
+A database's size, from **Hobby** to **Pro**. Accounts have no plans: they pay for what they use from their funds. See [Create a database](/databases/create-a-database) and [Billing model](/concepts/billing-model).
 
 ### Pod
 The smallest Kubernetes unit: one or more containers running together. See [Deploy a workload](/kubernetes/deploy-a-workload).
@@ -299,7 +308,7 @@ The state of a resource, such as **Creating**, **Ready** or **Paused**. See [Sta
 A name under another domain, such as `blog.cloider.app` under `cloider.app`. Cloider gives apps free subdomains of `cloider.app`. See [Free subdomains](/domains/free-subdomains).
 
 ### Suspended
-The state of an account whose trial ended without an upgrade. It can't create resources. See [Create an account](/get-started/create-an-account).
+The state of an account whose funds ran out. Its clusters, databases and apps are paused, it can't create or resume them, and its resources are removed after 14 days without a top-up. Adding funds makes it active again. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out).
 
 ## T
 
@@ -318,8 +327,11 @@ The `cloider/cloider` provider that manages Cloider resources with Terraform or 
 ### Toolset
 A group of MCP tools, such as `apps` or `databases`, that `cloider mcp --toolsets` can limit the server to. See [MCP tools](/mcp/tools).
 
+### Top-up
+Money added to an account's balance with **Add funds**. Top-ups are listed on the **Payments** tab of **Billing**. See [Add funds](/account/billing#add-funds).
+
 ### Trial
-The first 14 days of a new account, with $25 of free credit and one cluster, database, bucket and registry project at a time. See [Create an account](/get-started/create-an-account).
+A new account's 14 days with the $25 welcome credit, which start when the Owner claims the credit in the dashboard. See [Create an account](/get-started/create-an-account#the-welcome-credit).
 
 ### Trusted source
 An address or Cloider resource allowed to connect to a database. See [Trusted sources](/databases/trusted-sources).
@@ -345,3 +357,8 @@ A bucket setting that keeps previous versions of files when they are overwritten
 
 ### Volume
 Short for persistent volume. See [Persistent volumes](/kubernetes/persistent-volumes).
+
+## W
+
+### Welcome credit
+The $25 credit a new account gets for its 14-day trial, claimed once with **Start trial** in the dashboard. See [Create an account](/get-started/create-an-account#the-welcome-credit).

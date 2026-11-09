@@ -55,8 +55,8 @@ browser's devtools to log in as Jane Doe.
 | `mock/terminal.mjs` | the canned cluster, app and database terminal sessions, drawn with xterm.js like ttyd does |
 
 Server side rendering calls the same mock through `NUXT_INTERNAL_API_URL=http://host.docker.internal:3210/api`.
-The session comes from a `shots_session` cookie: `jane` (default, Owner of her account, paid plan), `trial` (the
-same account on the free trial), `choose` (logged in, no account picked yet) or none (logged out).
+The session comes from a `shots_session` cookie: `jane` (default, Owner of her account, with a prepaid balance),
+`trial` (the same account before its welcome credit is claimed), `choose` (logged in, no account picked yet) or none (logged out).
 
 Dates in the fixtures are relative to `NOW` in `mock/fixtures.mjs` (October 20, 2026), and the browser's clock starts
 at the same moment, so "3 days ago", the backups calendar and the usage charts come out the same on every run.

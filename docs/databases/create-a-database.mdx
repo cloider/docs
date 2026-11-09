@@ -15,7 +15,7 @@ This page shows how to create a managed database on Cloider with each of the fiv
 - For the CLI, [install the CLI](/cli/install) and run `cloider login`.
 - For Terraform, the REST API and the CLI in CI, create an [API token](/account/api-tokens) with Read & Write access.
 - For MCP, [set up the MCP server](/mcp/setup) in your AI client.
-- On the free plan, an account can have one database at a time. See [billing](/account/billing).
+- Funds in the account: its balance or credits. A new account claims its welcome credit first, see [create an account](/get-started/create-an-account#the-welcome-credit).
 
 ## What you choose when you create a database
 
@@ -382,17 +382,13 @@ The request has no `service`. In the dashboard, choose an option in **Database E
 
 The engine can't be created right now. `cloider pricing` lists the engines that can.
 
-### Free plan users can not create more than one database. UPGRADE NOW!
-
-Accounts on the free plan can have one database at a time. Delete the existing one or upgrade, see [billing](/account/billing).
-
 ### You have read-only access to this account, you can not create databases!
 
 Your role in the account, or your API token, is read-only. Ask an account owner for a role that can make changes, or use a Read & Write token.
 
-### Your account is suspended. Upgrade to a paid plan to continue using our services.
+### Your account has no credit left. Top up to continue.
 
-The account is suspended, for example after the trial ended. See [billing](/account/billing).
+The account's funds are used up (HTTP `402`). [Add funds](/account/billing#add-funds). A suspended account gets `Your account is suspended because its credit ran out. Top up to continue.` instead, and a new account that hasn't claimed its welcome credit gets `Claim your $25 welcome credit from the dashboard to start your trial.`. See [errors when funds run out](/account/billing#errors-when-funds-run-out).
 
 ### The database stays in Creating
 

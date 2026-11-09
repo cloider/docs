@@ -374,6 +374,22 @@ Show me last month's bill with its items.
 
 **Tools:** `get_billing` (twice: the list, then one month). Only the account's Owner can read bills.
 
+```text title="Prompt"
+How long will my balance last at the current usage, and when does my promo credit expire?
+```
+
+**Tools:** `get_wallet`. Only the account's Owner can read the wallet; for any other member, `whoami` shows the balance and any warning that the account will be suspended soon.
+
+```text title="Prompt"
+List my top-ups this year.
+```
+
+**Tools:** `list_payments`
+
+```json title="Tool call: list_payments"
+{"year": 2026, "type": "top_up"}
+```
+
 ## Support
 
 ```text title="Prompt"

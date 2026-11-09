@@ -336,6 +336,8 @@ A build waiting in the queue when the app is deleted is `Canceled`. Billing for 
 | **Only a running app can be restarted!** | The app isn't `Ready`, for example it is `Paused`, `Failed` or still deploying |
 | **This app is building, wait for that build to finish before restarting it!** | Wait for the build, then restart. The build replaces the container anyway |
 | **A cron job app starts fresh on every run, there is nothing running to restart!** | Cron jobs have no container between runs. Use **Run now** to start a run |
+| **Your account has no credit left. Top up to continue.** or **Your account is suspended because its credit ran out. Top up to continue.** | Resuming needs funds in the account (HTTP 402). [Add funds](/account/billing#add-funds) |
+| The app is `Paused`, but nobody paused it | The account ran out of funds and was suspended. Once funds are added and it is active again, Cloider resumes the apps the suspension paused. Apps you paused yourself stay paused |
 | **This app is already being deleted!** | The app is `Terminating` |
 | **You have read-only access to this account, you can not pause apps!** | Ask an account admin for write access |
 | The address shows an error after resuming | The app is still starting. Wait for `Ready`, then check its [logs](/apps/logs) |

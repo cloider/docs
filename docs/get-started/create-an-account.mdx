@@ -2,20 +2,20 @@
 title: Create a Cloider account
 sidebar_label: Create an account
 sidebar_position: 2
-description: Sign up for Cloider with Google or GitHub, start the 14-day free trial with $25 credit, learn the trial limits and what happens when the trial ends.
-keywords: [cloider sign up, create cloider account, cloider free trial, sign in with google, sign in with github, cloider login, trial limits]
+description: Sign up for Cloider with Google or GitHub, claim the $25 welcome credit for a 14-day trial, and learn what happens when your credit runs out.
+keywords: [cloider sign up, create cloider account, cloider free trial, welcome credit, sign in with google, sign in with github, cloider login]
 ---
 
-You create a Cloider account by signing in with your Google or GitHub account on [cloider.com](https://cloider.com). There is no separate Cloider password and no sign up form: the first sign in creates your account and starts a 14-day free trial.
+You create a Cloider account by signing in with your Google or GitHub account on [cloider.com](https://cloider.com). There is no separate Cloider password and no sign up form: the first sign in creates your account. Then you claim a $25 welcome credit for a 14-day trial from the dashboard.
 
 ## At a glance
 
 | | |
 | --- | --- |
 | **Sign in with** | Google or GitHub (OAuth). Your email address from the provider becomes your Cloider identity |
-| **Trial** | 14 days, with $25 of free credit, as advertised on [cloider.com](https://cloider.com) |
-| **Trial limits** | One Kubernetes cluster, one database, one bucket and one container registry project at a time |
-| **After the trial** | The account owner upgrades to the paid plan, or the account is suspended and its resources are deleted |
+| **Trial** | $25 of credit for 14 days, as advertised on [cloider.com](https://cloider.com). The 14 days start when you claim it in the dashboard |
+| **Limits** | None per product: the credit is the only limit. Use it for any mix of clusters, databases, apps, buckets and registries |
+| **After the trial** | Add funds to keep going. When the account has no funds left, compute pauses, and after 14 days resources are removed |
 | **Session length** | A dashboard session lasts 24 hours, then you sign in again |
 
 ## Before you begin
@@ -46,12 +46,12 @@ By signing in you agree to the Terms and Conditions, the Privacy Policy and the 
 
 ## Verify that your account works
 
-You are signed in when the dashboard opens and your name and picture appear in the top right corner. A banner at the top of the dashboard says that you are *currently on the limited trial period* and, within a day of signing up, on which date it ends.
+You are signed in when the dashboard opens and your name and picture appear in the top right corner. A prompt at the top of the dashboard offers your welcome credit: *Start your 14-day trial.*
 
 <Screenshot
   src="/img/screenshots/get-started/dashboard.webp"
   url="/dashboard/apps"
-  alt="The Cloider dashboard after signing in, with the trial banner at the top, the sidebar on the left and the Apps page open"
+  alt="The Cloider dashboard after signing in, with the welcome credit prompt at the top, the sidebar with the balance on the left and the Apps page open"
   caption="The dashboard right after signing in. New accounts land on the Apps page."
 />
 
@@ -67,6 +67,7 @@ Account:     jane@example.com
 Role:        Owner
 Access:      Read & Write
 Token:       Cloider CLI on janes-macbook
+Balance:     $0.00, balance and credits
 Profile:     default
 API:         https://cloider.com/api
 Token from:  /Users/jane/.cloider/token
@@ -77,64 +78,47 @@ Token from:  /Users/jane/.cloider/token
 Signing up creates two things that share your email address:
 
 - **Your user** is you, the person who signs in.
-- **Your account** is where resources live and where usage is billed. You are its **Owner**.
+- **Your account** is where resources live and where usage is paid from. You are its **Owner**.
 
 You can later be invited to other people's accounts as a member, and you can invite others into yours. Each resource belongs to exactly one account. Read [Accounts and roles](/concepts/accounts-and-roles) for how users, accounts, members and roles fit together, and [Switch accounts](/account/switch-accounts) for moving between them.
 
-## The free trial
+## The welcome credit
 
-A new account is on the **Free** plan, which is the trial. The trial is 14 days long. Its end date appears in the banner within a day of signing up, 14 days from that day.
+A new account gets a 14-day trial with **$25 of credit**. You claim it from the prompt at the top of the dashboard, and the 14 days start when you do, so you can sign up first and try Cloider later.
+
+1. Open the dashboard on your own account. The prompt says *Start your 14-day trial. Get $25 of credit to try clusters, databases, apps, buckets and registries.*
+2. Click **Start trial**. The dashboard confirms *Your trial has started* and the sidebar shows the $25 in your balance.
 
 <Screenshot
   src="/img/screenshots/get-started/trial-banner.webp"
   url="/dashboard/apps"
-  alt="The dashboard with the trial banner at the top saying the account is on the limited trial period and the date it ends, with an UPGRADE NOW! link"
-  caption="The trial banner shows the date your trial ends."
+  alt="The dashboard with the welcome credit prompt at the top, saying Start your 14-day trial, with the Later and Start trial buttons"
+  caption="The welcome credit prompt. The 14 days start when you click Start trial."
 />
+
+**Later** hides the prompt until you open the dashboard again. The prompt only appears on your own account, so being invited to someone else's account doesn't start your trial. Each account can claim the welcome credit once, and only in the dashboard.
+
+Until the credit is claimed, creating a resource fails with:
+
+```text
+Claim your $25 welcome credit from the dashboard to start your trial.
+```
 
 ### What the trial includes
 
-During the trial you can use every product, with one limit: you can have **at most one of each** of these at a time.
-
-| Resource | Trial limit | Error when you try to create a second one |
-| --- | --- | --- |
-| Kubernetes cluster | 1 | `Free plan users can not create more than one cluster. UPGRADE NOW!` |
-| Database | 1 | `Free plan users can not create more than one database. UPGRADE NOW!` |
-| Bucket | 1 | `Free plan users can not create more than one bucket. UPGRADE NOW!` |
-| Container registry project | 1 | `Free plan users can not create more than one project. UPGRADE NOW!` |
-
-Deleted resources don't count toward the limit, so you can delete a cluster and create another. The registry project Cloider creates for your apps' images doesn't count either. Apps, domains and DNS records have no trial specific limit. The account wide limits that apply on every plan are listed in [Limits and quotas](/reference/limits-and-quotas).
-
-### Trial reminders
-
-Cloider emails the account owner reminders during the trial, on days 4, 7, 10, 12, 13 and 14, with the subject *Action Required: Upgrade to a Paid Plan with Cloider*. On the trial end date you get *ACTION REQUIRED! Your Trial Ends Today*, which warns that the account is suspended 24 hours later.
+During the trial you can use every product, in any mix: there is no limit on how many clusters, databases, apps, buckets or registry projects you create. Usage is paid from the $25 credit as it happens, at the normal prices, so the [Usage](/account/usage) page shows what each resource costs. The sidebar shows what is left of the credit, and the account wide limits are listed in [Limits and quotas](/reference/limits-and-quotas).
 
 ### What happens when the trial ends
 
-If the account is still on the Free plan the day after the trial ends:
+The trial ends when the 14 days are over or the $25 is spent, whichever comes first. What is left of the credit after 14 days is no longer available. To keep your resources running, the account Owner [adds funds](/account/billing#add-funds) before then.
 
-1. The account is **suspended**. The banner turns red and says *Your trial has expired and your account is suspended*.
-2. The account's Kubernetes clusters are deleted, and its other resources can be permanently deleted as well.
-3. The owner receives the email *Your Cloider account has been suspended*.
+If the account has no funds left:
 
-A suspended account can't create clusters, databases, buckets, registry projects, apps, domains, DNS records, targets, access keys or registry tokens. Those requests fail with:
+1. Cloider emails the Owner before it happens: 7 days and 1 day before the funds run out at the current usage, or when the credit's expiry would leave the account without funds.
+2. The account is **suspended**. Its clusters, databases and apps are paused. Buckets and registry projects keep working.
+3. After 14 days suspended without a top-up, the account's resources are removed, after two warning emails.
 
-```text
-Your account is suspended. Upgrade to a paid plan to continue using our services.
-```
-
-:::warning[Upgrade before the trial ends to keep your resources]
-To keep what you built, the account owner clicks **UPGRADE NOW** in the trial banner before the trial ends. Members of the account see a message that the owner needs to upgrade. If your account was suspended by mistake, contact support@cloider.com.
-:::
-
-## Upgrade to the paid plan
-
-On the paid plan the one-of-each trial limit is gone and you pay monthly for what you use. Only the account owner can upgrade:
-
-1. In the dashboard banner, click **UPGRADE NOW**.
-2. Complete the upgrade request that opens in a new tab.
-
-How usage is metered and invoiced is explained in [Billing model](/concepts/billing-model).
+Adding funds makes the account active again and resumes what the suspension paused. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out) for the details, and [Billing model](/concepts/billing-model) for how usage is metered and paid.
 
 ## Troubleshooting
 
@@ -157,11 +141,11 @@ Your session expired (sessions last 24 hours) or you signed out in another tab. 
 - [Invite your team](/account/access-control) to your account.
 
 <FAQ items={[
-  {q: 'How do I sign up for Cloider?', a: 'Go to cloider.com, click Login / Register and choose Sign in with Google or Sign in with Github. The first sign in creates your Cloider account and starts the 14-day free trial.'},
+  {q: 'How do I sign up for Cloider?', a: 'Go to cloider.com, click Login / Register and choose Sign in with Google or Sign in with Github. The first sign in creates your Cloider account. Then click Start trial in the dashboard to claim the $25 welcome credit.'},
   {q: 'Can I sign up with an email and password?', a: 'No. Cloider only supports signing in with Google or GitHub. Your email address from that provider identifies you in Cloider.'},
-  {q: 'How long is the Cloider free trial?', a: 'The trial is 14 days. The dashboard banner shows the date it ends, and the account owner gets email reminders before it ends.'},
-  {q: 'What are the limits of the free trial?', a: 'During the trial an account can have at most one Kubernetes cluster, one database, one bucket and one container registry project at a time. Deleted resources do not count.'},
-  {q: 'What happens to my resources when the trial ends?', a: 'If the owner has not upgraded, the account is suspended the day after the trial ends and its resources are deleted, starting with its Kubernetes clusters. A suspended account cannot create new resources.'},
-  {q: 'Who can upgrade an account to the paid plan?', a: 'Only the account owner. Members see a message in the dashboard that the owner needs to upgrade.'},
+  {q: 'How long is the Cloider free trial?', a: 'The trial is 14 days with $25 of credit. The 14 days start when you claim the credit in the dashboard, and the trial ends when they are over or the credit is spent, whichever comes first.'},
+  {q: 'What are the limits of the free trial?', a: 'Only the $25 of credit. There is no limit on how many clusters, databases, apps, buckets or registry projects you create during the trial.'},
+  {q: 'What happens to my resources when the trial ends?', a: 'They keep running while the account has funds. When it has none left, the account is suspended: clusters, databases and apps are paused, while buckets and registries keep working. After 14 days suspended without a top-up, the resources are removed. Adding funds before then makes the account active again.'},
+  {q: 'Who can add funds to an account?', a: 'Only the account Owner, with Add funds on the Billing page. Members see the balance and any warning in the dashboard.'},
   {q: 'Can I use the same Cloider account with Google and GitHub?', a: 'Yes, if both providers give the same email address. Cloider matches users by email address, so both sign ins open the same user and account.'}
 ]} />

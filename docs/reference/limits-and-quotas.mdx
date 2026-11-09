@@ -2,8 +2,8 @@
 title: Cloider limits and quotas reference
 sidebar_label: Limits and quotas
 sidebar_position: 3
-description: "Every Cloider limit in one place: trial limits, per account maximums, name rules, app, bucket, registry, DNS, exec and support limits, rate limits."
-keywords: [cloider limits, cloider quotas, rate limit, name length, max api tokens, upload size limit, trial limits, dns ttl]
+description: "Every Cloider limit in one place: account funds, per account maximums, name rules, app, bucket, registry, DNS, exec and support limits, rate limits."
+keywords: [cloider limits, cloider quotas, rate limit, name length, max api tokens, upload size limit, account funds, dns ttl]
 ---
 
 This page lists the limits Cloider enforces, grouped by area, with the error you get when you reach one. Limits that apply to one product only are also explained on that product's pages.
@@ -13,7 +13,7 @@ This page lists the limits Cloider enforces, grouped by area, with the error you
 | Limit | Value |
 | --- | --- |
 | API rate limit | 10 requests a second and 100 a minute, per client |
-| Trial | 1 cluster, 1 database, 1 bucket, 1 registry project at a time |
+| Clusters, databases, apps, buckets, registry projects | No fixed number. Creating one needs funds in the account |
 | API tokens per account | 50 |
 | S3 access keys per account | 50 |
 | Registry tokens per account | 50 |
@@ -30,18 +30,17 @@ The API allows **10 requests a second and 100 requests a minute per client**. Re
 
 See [Rate limits](/api/rate-limits).
 
-## Trial limits
+## Account funds
 
-While an account is on the free trial (the **Free** plan), it can have at most one of each of these at a time. Deleted resources don't count.
+There is no fixed number of clusters, databases, apps, buckets or registry projects an account can have, during the trial or after it. The limit is the account's funds: its balance and credits. Creating or starting anything charged for compute needs funds, and fails with HTTP `402` when there are none:
 
-| Resource | Limit | Error |
-| --- | --- | --- |
-| Kubernetes clusters | 1 | `Free plan users can not create more than one cluster. UPGRADE NOW!` |
-| Databases | 1 | `Free plan users can not create more than one database. UPGRADE NOW!` |
-| Buckets | 1 | `Free plan users can not create more than one bucket. UPGRADE NOW!` |
-| Registry projects | 1, not counting the apps project Cloider creates | `Free plan users can not create more than one project. UPGRADE NOW!` |
+| Error | When |
+| --- | --- |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` | A new account that hasn't claimed its welcome credit |
+| `Your account has no credit left. Top up to continue.` | The funds are used up |
+| `Your account is suspended because its credit ran out. Top up to continue.` | The account is suspended |
 
-The trial lasts 14 days. A suspended account can't create resources: `Your account is suspended. Upgrade to a paid plan to continue using our services.`
+A suspended account's clusters, databases and apps are paused, and its resources are removed after 14 days without a top-up. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out).
 
 ## Account limits
 
@@ -177,7 +176,7 @@ Exec isn't available to Restricted members (`You have read-only access to this a
 
 <FAQ items={[
   {q: 'What is the Cloider API rate limit?', a: '10 requests a second and 100 requests a minute per client. Requests over the limit get HTTP 429. The CLI retries them automatically, respecting the Retry-After header.'},
-  {q: 'How many resources can I create on the Cloider free trial?', a: 'One Kubernetes cluster, one database, one bucket and one registry project at a time. Apps, domains and DNS records have no trial limit.'},
+  {q: 'How many resources can I create on the Cloider free trial?', a: 'As many as the $25 welcome credit pays for. There is no limit on the number of clusters, databases, apps, buckets or registry projects, during the trial or after it.'},
   {q: 'How many API tokens can a Cloider account have?', a: '50. The same limit applies to S3 access keys and to registry tokens.'},
   {q: 'How big can an app upload be?', a: 'Up to 2000 files and 100 MB. Leave out dependencies and build output.'},
   {q: 'What is the largest file I can upload to a bucket?', a: 'From the dashboard, 5 GB per file. S3 clients such as the AWS CLI or rclone have no dashboard limit and use multipart uploads for large files.'},

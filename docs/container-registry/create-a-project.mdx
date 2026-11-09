@@ -395,8 +395,9 @@ The storage limit caps future pushes. If a project already stores more than a ne
 | `Project name is reserved` | The name is `library` or starts with `cloider` |
 | `Project name must have at least one letter` | Names of digits alone are refused. Add a letter |
 | `Storage limit must be between 1 and 20 GB` | Choose a limit in that range |
-| `Free plan users can not create more than one project. UPGRADE NOW!` | The free plan allows one project (the apps project isn't counted). Upgrade on [Billing](/account/billing) or delete the project you have |
-| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | See [Billing](/account/billing) |
+| `Your account has no credit left. Top up to continue.` (HTTP 402) | The account's funds are used up. [Add funds](/account/billing#add-funds) |
+| `Your account is suspended because its credit ran out. Top up to continue.` (HTTP 402) | The account is suspended. [Add funds](/account/billing#add-funds) |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` (HTTP 402) | A new account that hasn't claimed its welcome credit. Click **Start trial** in the dashboard |
 | `You have read-only access to this account, you can not create projects!` | Your role is **Restricted**, or your API token is read-only. Ask an Owner or Admin |
 | `The container registry isn't available at the moment!` | The registry is temporarily unavailable. Try again later or contact [support](/account/support) |
 | `Operation failed, Couldn't create the project!` | Creating the project failed. Try again in a moment |

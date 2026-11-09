@@ -14,7 +14,7 @@ This quick start takes you from no account to a live app with its own HTTPS addr
 | --- | --- |
 | **You will** | Sign up, deploy a small web app, open it at `https://<name>.cloider.app`, optionally create a Kubernetes cluster and run `kubectl get nodes` |
 | **Time** | About 5 minutes, plus a few minutes while the cluster is created |
-| **Cost** | New accounts start on a 14-day free trial with $25 of free credit (see [the billing model](/concepts/billing-model)) |
+| **Cost** | New accounts get a 14-day trial with $25 of credit, claimed in the dashboard (see [the billing model](/concepts/billing-model)) |
 | **You need** | A Google or GitHub account, and a web browser. For the CLI path, a terminal on macOS, Linux or Windows |
 
 ## Before you begin
@@ -34,6 +34,7 @@ You create a Cloider account by signing in with Google or GitHub on [cloider.com
 1. Go to [cloider.com](https://cloider.com) and click **Login / Register** in the top right corner.
 2. In the **Login Or Register** dialog, click **Sign in with Google** or **Sign in with Github**.
 3. Approve the request on the Google or GitHub page. You land on the Cloider dashboard.
+4. In the prompt at the top of the dashboard, *Start your 14-day trial*, click **Start trial**. Your account gets $25 of credit for the next 14 days.
 
 <Screenshot
   src="/img/screenshots/get-started/sign-in.webp"
@@ -42,7 +43,7 @@ You create a Cloider account by signing in with Google or GitHub on [cloider.com
   caption="The Login Or Register dialog. The same buttons create a new account and sign in to an existing one."
 />
 
-A new account is on the free trial. A banner at the top of the dashboard shows the date the trial ends. During the trial you can have one Kubernetes cluster, one database, one bucket and one registry project at a time. Read [Create an account](/get-started/create-an-account) for the details.
+Until the welcome credit is claimed, creating an app or a cluster fails with `Claim your $25 welcome credit from the dashboard to start your trial.` The credit pays for any mix of apps, clusters, databases, buckets and registry projects, and the sidebar shows how much is left. Read [Create an account](/get-started/create-an-account#the-welcome-credit) for the details.
 
 ## Step 2: Install the CLI (CLI path only)
 
@@ -399,8 +400,8 @@ You can also **pause** a cluster or an app instead of deleting it. A paused clus
 - [Dashboard tour](/get-started/dashboard-tour) and [Choose a tool](/get-started/choose-a-tool): find your way around.
 
 <FAQ items={[
-  {q: 'Is Cloider free to try?', a: 'Yes. A new account starts on a 14-day free trial with $25 of free credit. During the trial an account can have one Kubernetes cluster, one database, one bucket and one container registry project at a time.'},
-  {q: 'Do I need a credit card to sign up?', a: 'No card is asked for when you sign up. You sign in with Google or GitHub and the trial starts. To keep using Cloider after the trial, the account owner upgrades to the paid plan from the link in the dashboard banner.'},
+  {q: 'Is Cloider free to try?', a: 'Yes. A new account gets a 14-day trial with $25 of credit, which starts when you click Start trial in the dashboard. The credit pays for any mix of apps, clusters, databases, buckets and registry projects.'},
+  {q: 'Do I need a credit card to sign up?', a: 'No card is asked for when you sign up. You sign in with Google or GitHub and claim the welcome credit in the dashboard. To keep using Cloider after the trial, the account owner adds funds on the Billing page.'},
   {q: 'Do I need a Dockerfile to deploy an app?', a: 'No. Cloider detects the language and framework and builds your code with buildpacks. If your project has its own Dockerfile, Cloider builds that instead.'},
   {q: 'What URL does my app get?', a: 'An app gets a free subdomain of cloider.app with HTTPS, for example https://hello-7kq2.cloider.app. You can pick the name when you create the app, and add your own domain later.'},
   {q: 'How long does it take to create a Kubernetes cluster?', a: 'A few minutes. The cluster goes through Creating and Starting before it is Ready. Use --wait with the CLI, or wait for the Ready status in the dashboard, before you download the kubeconfig.'},

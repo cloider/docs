@@ -82,7 +82,6 @@ Create one on [Create a project](/container-registry/create-a-project).
 
 When you deploy your first [app](/apps/overview), Cloider creates an extra project in your account where every app's images are built into. It shows an **Apps** badge in the project list, and its name ends in `-apps`. This project is managed by Cloider:
 
-- It doesn't count toward the one project allowed on the free plan.
 - You can browse its repositories, but you can't delete it, its images or its policies. Cloider prunes old app images itself, always keeping what your apps run, and deleting an app deletes its images.
 - It has no **Policy** tab and no **Immutable tags** setting: Cloider manages its tags and cleanup.
 - Your apps get access to it automatically. You don't need a registry token for them, and nothing is added to your token list.
@@ -120,7 +119,7 @@ The registry is billed by the storage your images take, per GB per month, charge
 | Limit | Value |
 | --- | --- |
 | Project name length | 3 to 63 characters |
-| Projects on the free plan | 1 (the apps project isn't counted) |
+| Projects per account | No fixed limit. Creating a project needs funds in the account |
 | Storage limit per project | 1 to 20 GB, default 5 GB |
 | Registry tokens per account | 50 |
 | Token expiry | 1 to 3650 days, or never |
@@ -188,6 +187,6 @@ The same steps in the dashboard and every other tool are on [Create a project](/
   {q: "How much does the container registry cost?", a: "You pay only for the storage your images take, per GB per month, billed by the hour. Pushes, pulls and traffic are free, and the storage limit itself costs nothing. Current prices are on the pricing page."},
   {q: "Why is my project name already taken?", a: "Project names are shared by every Cloider account, because they are part of the image address on the shared host registry.cloider.com. Choose a more specific name, such as your organization name with a suffix."},
   {q: "Can I rename a project?", a: "No. A project name can't be changed once the project is created, because it is part of every image's address. Create a new project, push your images to it, and delete the old one."},
-  {q: "What is the project with the Apps badge?", a: "It is the apps project, created when you deploy your first app. Every app's images are built into it. Cloider manages it: you can browse it, but you can't delete it, its images or its policies, and it doesn't count toward the free plan's project limit."},
+  {q: "What is the project with the Apps badge?", a: "It is the apps project, created when you deploy your first app. Every app's images are built into it. Cloider manages it: you can browse it, but you can't delete it, its images or its policies."},
   {q: "Can I store Helm charts or other OCI artifacts?", a: "The registry is OCI compatible, so OCI artifacts such as Helm charts pushed with helm push oci:// can be stored next to images. The dashboard lists them in the Repositories tab with their type."}
 ]} />

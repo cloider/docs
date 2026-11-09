@@ -2,11 +2,11 @@
 title: Account API endpoints
 sidebar_label: Account
 sidebar_position: 1
-description: Cloider API reference for the account, whoami, options, public pricing, usage, billing, members and API tokens, with requests, responses and errors.
-keywords: [cloider api whoami, cloider api usage, cloider api billing, cloider pricing api, cloider members api, api tokens endpoint, cloider options]
+description: Cloider API reference for the account, whoami, options, pricing, usage, the wallet, payments, bills, members and API tokens, with requests, responses and errors.
+keywords: [cloider api whoami, cloider api usage, cloider api billing, cloider wallet api, cloider balance api, cloider payments api, cloider pricing api, cloider members api, api tokens endpoint]
 ---
 
-These endpoints describe the account a token works in: who the token acts as, which options the create forms offer, prices, usage and bills, the members of the account and its API tokens. Changing who has access is done in the dashboard only; see [Manage members and tokens in the dashboard](#manage-members-and-tokens-in-the-dashboard).
+These endpoints describe the account a token works in: who the token acts as, which options the create forms offer, prices, usage, the balance and credits, payments and bills, the members of the account and its API tokens. Changing who has access is done in the dashboard only; see [Manage members and tokens in the dashboard](#manage-members-and-tokens-in-the-dashboard).
 
 All paths are relative to `https://cloider.com/api`, and every example sends the token as described in [Authentication](/api/authentication).
 
@@ -19,7 +19,11 @@ All paths are relative to `https://cloider.com/api`, and every example sends the
 | GET | [`/pricing`](#get-current-prices) | Public |
 | GET | [`/dashboard`](#count-the-accounts-clusters) | Read |
 | GET | [`/usage`](#get-month-to-date-usage) | Read |
-| GET | [`/billing`](#list-bills) | Read, Owner only |
+| GET | [`/wallet`](#get-the-wallet) | Read, Owner only |
+| GET | [`/wallet/summary`](#get-the-wallet-summary) | Read |
+| GET | [`/wallet/payments`](#list-payments) | Read, Owner only |
+| GET | [`/wallet/charges`](#get-daily-charges) | Read, Owner only |
+| GET | [`/billing`](#list-bills) | Read & Write, Owner only |
 | GET | [`/members`](#list-members) | Read |
 | GET | [`/api-tokens`](#list-api-tokens) | Read |
 | DELETE | [`/api-tokens/current`](#revoke-the-current-token) | Read |
@@ -36,9 +40,7 @@ Several responses contain users. A full user, as in `/whoami`, has these fields:
 | `last_name` | string | Last name |
 | `email` | string | Email address, in lower case |
 | `picture` | string | Profile picture URL, or empty |
-| `plan` | string | `Free` or `Paid` |
-| `trial_end_date` | string or null | When the free trial ends, as a timestamp, or `null` |
-| `suspended` | boolean | `true` when the account is suspended and can't create resources |
+| `suspended_at` | string or null | When this user's own account was suspended because its funds ran out, as a timestamp, or `null` when it isn't suspended. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out) |
 
 A **public user**, as in a member's `authorizer` or a token's `creator`, has only `first_name`, `last_name`, `email` and `picture`.
 
@@ -50,7 +52,7 @@ An account is itself a user: the user who owns it. The account's `email` is the 
 GET /whoami
 ```
 
-Returns the member the token acts as (`user`), the account it works in (`account`), the role it has there (`role`), and the token itself (`token`). Scripts call it to check they have the right token before doing anything.
+Returns the member the token acts as (`user`), the account it works in (`account`), the role it has there (`role`), the token itself (`token`), and the account's balance (`wallet`). Scripts call it to check they have the right token before doing anything.
 
 **Access:** any token.
 
@@ -66,18 +68,14 @@ curl https://cloider.com/api/whoami \
     "last_name": "Doe",
     "email": "jane@example.com",
     "picture": "",
-    "plan": "Free",
-    "trial_end_date": null,
-    "suspended": false
+    "suspended_at": null
   },
   "account": {
     "first_name": "Acme",
     "last_name": "Inc",
     "email": "ops@example.com",
     "picture": "",
-    "plan": "Paid",
-    "trial_end_date": null,
-    "suspended": false
+    "suspended_at": null
   },
   "role": "Admin",
   "token": {
@@ -92,6 +90,23 @@ curl https://cloider.com/api/whoami \
     },
     "last_used_at": "2026-10-19T08:41:12.311207Z",
     "created_at": "2026-10-02T14:03:55.120941Z"
+  },
+  "wallet": {
+    "balance": 87.3,
+    "credits_total": 12.5,
+    "available_balance": 99.8,
+    "out_of_funds": false,
+    "daily_spend": 3.1,
+    "runs_out_at": "2026-12-10T15:00:00Z",
+    "runs_out_credit": null,
+    "next_expiry": {"id": 418, "type": "promo", "description": "Launch promo", "remaining": 12.5, "expires_at": "2026-11-30T23:59:59Z"},
+    "credits_granted": 20,
+    "amount_due": 0,
+    "welcome_credit_claimable": false,
+    "suspended_at": null,
+    "removal_at": null,
+    "suspends_at": null,
+    "alert": null
   }
 }
 ```
@@ -102,8 +117,9 @@ curl https://cloider.com/api/whoami \
 | `account` | The account the token works in. For a token created in your own account, the same as `user` |
 | `role` | `Owner` (the token is in the creator's own account), `Admin` or `Restricted`. A read only token is always `Restricted` |
 | `token` | The token's details, without the secret. `null` when the request comes from a dashboard session |
+| `wallet` | The account's [wallet summary](#the-wallet-summary): its funds and any warning before they run out. Every member gets it, whatever their role, or `null` if it couldn't be read for the moment |
 
-The `plan` and `suspended` fields that matter for limits are the account's, not the user's.
+Whether the account the token works in is suspended is `account.suspended_at`, not `user.suspended_at`.
 
 ## List the options for new resources
 
@@ -293,15 +309,263 @@ The response has one list per product: `clusters`, `databases`, `apps`, `buckets
 
 Deleted clusters stay in the list for 60 days after their last day of usage, with the status `Terminated`, so this month's cost of a deleted resource is still accounted for. The single resource versions of this data are `GET /apps/:hashed_id/usage`, `GET /buckets/:hashed_id/usage` and `GET /registry/projects/:hashed_id/usage`. See [Usage](/account/usage) for what each figure means.
 
+## Get the wallet
+
+```http
+GET /wallet
+```
+
+Returns the account's funds: its balance and credits, how long they last at the current usage, any warning before they run out, this month's charges so far, every credit the account has had, and how many payments it had each year. This is the data behind the dashboard's **Billing** page. Usage is paid from these funds as it happens, credits first, see [Billing model](/concepts/billing-model#how-usage-is-paid).
+
+**Access:** the account **owner** only: a dashboard session, or any token the owner created in their own account, a **Read** token included. Admin and Restricted members, and their tokens, get `403`:
+
+```json title="Response (403)"
+{"errors": {"_": ["You don't have access to this account's wallet!"]}, "data": null}
+```
+
+```bash
+curl https://cloider.com/api/wallet \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "balance": 87.3,
+  "credits_total": 12.5,
+  "available_balance": 99.8,
+  "out_of_funds": false,
+  "daily_spend": 3.1,
+  "runs_out_at": "2026-12-10T15:00:00Z",
+  "runs_out_credit": null,
+  "next_expiry": {"id": 418, "type": "promo", "description": "Launch promo", "remaining": 12.5, "expires_at": "2026-11-30T23:59:59Z"},
+  "credits_granted": 20,
+  "amount_due": 0,
+  "welcome_credit_claimable": false,
+  "suspended_at": null,
+  "removal_at": null,
+  "suspends_at": null,
+  "alert": null,
+  "this_month": {
+    "usage": 23.4,
+    "from_credits": 7.5,
+    "from_balance": 15.9,
+    "opening_balance": 3.2,
+    "payments": 100,
+    "owed": 0,
+    "forecast": 93.15,
+    "to_come": 69.75,
+    "last_month": 61.8,
+    "vs_last_month": 51,
+    "invoiced_on": "2026-12-01T00:00:00Z"
+  },
+  "credits": [
+    {
+      "id": 418,
+      "type": "promo",
+      "original_amount": 20,
+      "remaining_amount": 12.5,
+      "expires_at": "2026-11-30T23:59:59Z",
+      "description": "Launch promo",
+      "created_at": "2026-11-03T09:00:00Z",
+      "status": "active"
+    },
+    {
+      "id": 391,
+      "type": "welcome",
+      "original_amount": 25,
+      "remaining_amount": 0,
+      "expires_at": "2026-10-19T08:30:00Z",
+      "description": "",
+      "created_at": "2026-10-05T08:30:00Z",
+      "status": "used"
+    }
+  ],
+  "payments_by_year": [{"year": 2026, "count": 2}]
+}
+```
+
+The response is the [wallet summary](#the-wallet-summary) with three more fields:
+
+| Field | Description |
+| --- | --- |
+| `this_month` | This month so far, as its invoice will read. See below |
+| `credits` | Every credit the account has had, active ones first, then the newest first |
+| `payments_by_year` | How many payments (top-ups and refunds) the account had each year, the latest year first |
+
+`this_month` has these fields:
+
+| Field | Description |
+| --- | --- |
+| `usage` | What this month's usage was charged so far, by credits and the balance together |
+| `from_credits`, `from_balance` | The part of `usage` that credits paid, and the part the account balance paid |
+| `opening_balance` | The account balance on the first of the month |
+| `payments` | Top-ups less refunds since the first of the month. `opening_balance` plus `payments` less `from_balance` is the balance now |
+| `owed` | The part of `from_balance` charged while the balance was below zero, which the account owes |
+| `forecast` | What the month comes to: charged so far plus the rest of the month at `daily_spend` |
+| `to_come` | The rest of the month at `daily_spend` alone |
+| `last_month` | What last month's usage was charged, or `null` for an account that didn't exist then |
+| `vs_last_month` | `forecast` compared with `last_month`, in percent, or `null` when last month had nothing |
+| `invoiced_on` | The first day of next month, when this month's invoice is issued |
+
+A credit has these fields:
+
+| Field | Description |
+| --- | --- |
+| `id` | The credit's id |
+| `type` | `welcome`, `promo`, `compensation`, `referral` or `other` |
+| `status` | `active` (it pays for usage), `used` (spent) or `expired` |
+| `original_amount` | What the credit was worth when it was given |
+| `remaining_amount` | What is left of it. For an expired credit, what was left when it expired, which is no longer available |
+| `expires_at` | When it expires, or `null` for no expiry |
+| `description` | Its name, such as `Launch promo`, or empty. The dashboard shows the type's name instead of an empty one |
+| `created_at` | When the account got it |
+
+### The wallet summary
+
+The summary is the part of the wallet every member may see. [`GET /whoami`](#get-who-the-token-acts-as) carries it as `wallet`, and [`GET /wallet/summary`](#get-the-wallet-summary) returns it alone. Amounts are in US dollars.
+
+| Field | Description |
+| --- | --- |
+| `balance` | The account balance, which top-ups add to. Below zero when the account owes money, for example after storage kept being charged while it was suspended |
+| `credits_total` | What is left of the active credits |
+| `available_balance` | `balance` plus `credits_total`: what the dashboard shows as the **Balance** |
+| `out_of_funds` | `true` when the account has no funds left: it is suspended, or will be as soon as it is charged again |
+| `daily_spend` | What the account spends a day at its current usage |
+| `runs_out_at` | When the funds run out at `daily_spend`, credits paying first. `null` when the account spends nothing, has no funds left, or it can't be estimated |
+| `runs_out_credit` | The credit whose expiry ends the funds, when that comes before the money runs out, or `null`. It has the `id`, `type`, `description`, `remaining` amount and `expires_at` of the credit |
+| `next_expiry` | The active credit that expires first, with the same fields, or `null` |
+| `credits_granted` | What the active credits were worth when given, to show what is left of them |
+| `amount_due` | What is left to pay on the latest invoice, or `0` |
+| `welcome_credit_claimable` | `true` until a new account claims its welcome credit in the dashboard |
+| `suspended_at` | When the account was suspended, or `null` |
+| `removal_at` | While the account is suspended, when its resources are removed unless funds are added, or `null` |
+| `suspends_at` | When the `alert`'s suspension happens: the expiring credit's expiry date, or the estimate at the current usage. `null` without an alert |
+| `alert` | What the dashboard's banner warns about: `low_balance` (the funds run out within 7 days at the current usage), `credit_expiring` (a credit's expiry would leave the account without funds), `suspended`, or `null` |
+
+## Get the wallet summary
+
+```http
+GET /wallet/summary
+```
+
+Returns the [wallet summary](#the-wallet-summary) alone, the same object `GET /whoami` carries as `wallet`. A script can poll it to warn before the account's funds run out.
+
+**Access:** any token, any role.
+
+```bash
+curl https://cloider.com/api/wallet/summary \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response (suspends in about 6 days)"
+{
+  "balance": 14.2,
+  "credits_total": 0,
+  "available_balance": 14.2,
+  "out_of_funds": false,
+  "daily_spend": 2.4,
+  "runs_out_at": "2026-11-14T06:00:00Z",
+  "runs_out_credit": null,
+  "next_expiry": null,
+  "credits_granted": 0,
+  "amount_due": 0,
+  "welcome_credit_claimable": false,
+  "suspended_at": null,
+  "removal_at": null,
+  "suspends_at": "2026-11-14T06:00:00Z",
+  "alert": "low_balance"
+}
+```
+
+## List payments
+
+```http
+GET /wallet/payments
+```
+
+Returns the account's payments, the newest first: the top-ups that added funds and any refunds.
+
+**Access:** the account **owner** only, as for [`GET /wallet`](#get-the-wallet). Other members get `403` with `You don't have access to this account's wallet!`.
+
+| Query parameter | Description |
+| --- | --- |
+| `year` | Only this year's payments, for example `2026` |
+| `type` | `top_up` or `refund` |
+| `channel` | `manual` (recorded by support) or `card` |
+| `page` | The page, from `1` (default `1`) |
+| `page_size` | Payments per page, up to `100` (default `25`) |
+
+```bash
+curl "https://cloider.com/api/wallet/payments?year=2026" \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+[
+  {"id": 77, "type": "top_up", "channel": "manual", "auto": false, "amount": 100, "description": "Bank transfer of Nov 1, ref 4471", "created_at": "2026-11-02T10:14:00Z"},
+  {"id": 61, "type": "top_up", "channel": "manual", "auto": false, "amount": 40, "description": "", "created_at": "2026-10-20T16:40:00Z"}
+]
+```
+
+| Field | Description |
+| --- | --- |
+| `id` | The payment's id |
+| `type` | `top_up` or `refund` |
+| `channel` | `manual` for a payment support recorded, `card` for a card payment |
+| `auto` | `true` for an automatic top-up |
+| `amount` | The amount in US dollars, below zero for a refund |
+| `description` | A note about the payment, or empty |
+| `created_at` | When the payment was recorded |
+
+A page shorter than `page_size` is the last one. A wrong `year`, `type` or `channel` gets `400` with the field's message, such as `Type is top_up or refund`.
+
+## Get daily charges
+
+```http
+GET /wallet/charges
+```
+
+Returns what the account's usage was charged each day of a range, by resource type. This is the data behind the **Charges** chart on the dashboard's **Billing** page. Only what credits and the balance paid counts; the [Usage](#get-month-to-date-usage) endpoint has the metered cost of each resource instead.
+
+**Access:** the account **owner** only, as for [`GET /wallet`](#get-the-wallet).
+
+| Query parameter | Description |
+| --- | --- |
+| `range` | `30` for the last 30 days, today included (default), or `month` for every day of this month |
+
+```bash
+curl "https://cloider.com/api/wallet/charges?range=30" \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response (trimmed)"
+{
+  "today": "2026-11-08T00:00:00Z",
+  "days": [
+    {"date": "2026-11-07T00:00:00Z", "clusters": 1.62, "databases": 0.5, "apps": 0.74, "buckets": 0.12, "registries": 0.04, "total": 3.02, "to_come": 0},
+    {"date": "2026-11-08T00:00:00Z", "clusters": 0.98, "databases": 0.31, "apps": 0.45, "buckets": 0.07, "registries": 0.02, "total": 1.83, "to_come": 1.27}
+  ],
+  "totals": {"clusters": 41.3, "databases": 15.5, "apps": 18.9, "buckets": 3.4, "registries": 1.1, "total": 80.2}
+}
+```
+
+| Field | Description |
+| --- | --- |
+| `today` | Today's date, so you can tell the days still to come in a `month` range |
+| `days` | Every day of the range, oldest first, a day with nothing at `0`: what `clusters`, `databases`, `apps`, `buckets` and `registries` were charged, the `total`, and `to_come`, what is still expected that day at the current spending (the rest of today, all of a day to come) |
+| `totals` | The range's totals by resource type, without what is to come |
+
+A `range` other than `30` or `month` gets `400` with `Range is 30 or month`.
+
 ## List bills
 
 ```http
 GET /billing
 ```
 
-Returns the account's monthly bills, newest first, each with its items per resource and the line items that make them up.
+Returns the account's monthly bills (invoices), newest first, each with its items per resource and the line items that make them up, what paid for it, its status, and a statement of the account balance over the month. Usage is paid from the account's funds as it happens, so a bill records the month rather than asking for payment, unless the month ended with the balance below zero.
 
-**Access:** any token, but only the account **owner**. Admin and Restricted members, and their tokens, get `403`:
+**Access:** the account **owner**, with a dashboard session or a **Read & Write** token the owner created. Admin and Restricted members, read only tokens and their requests get `403`:
 
 ```json title="Response (403)"
 {"errors": {"_": ["You don't have access to this account billing page!"]}, "data": null}
@@ -315,7 +579,7 @@ curl https://cloider.com/api/billing \
 ```json title="Response"
 [
   {
-    "month": "September 2026",
+    "month": "October 2026",
     "items": [
       {
         "service_type": "Kubernetes",
@@ -341,22 +605,67 @@ curl https://cloider.com/api/billing \
         "amount": 8.17
       }
     ],
-    "amount": 8.17,
-    "paid": true,
-    "created_at": "2026-10-01T02:00:13.204511Z"
+    "amount": 61.8,
+    "created_at": "2026-11-01T02:10:00Z",
+    "status": "paid",
+    "statement": {
+      "period_end": "2026-11-01T00:00:00Z",
+      "opening_balance": 0,
+      "payments": 40,
+      "balance_charged": 36.8,
+      "closing_balance": 3.2,
+      "amount_due": 0,
+      "carried_in": 0,
+      "remaining": 0,
+      "paid_at": null
+    },
+    "payment_sources": [
+      {"source": "credit", "credit_id": 391, "credit_type": "welcome", "amount": 25},
+      {"source": "balance", "amount": 36.8}
+    ]
   }
 ]
 ```
 
+The response is trimmed to one item; a real bill has one item per resource that cost something, adding up to `amount`.
+
 | Field | Description |
 | --- | --- |
-| `month` | The month billed, for example `September 2026` |
+| `month` | The month billed, for example `October 2026` |
 | `items` | One item per resource: `service_type` (`Kubernetes`, `App`, `Bucket`, `Registry` or a database engine), a `description` naming the resource, its `subitems` and its `amount` |
 | `subitems` | The line items: `service`, a `description` of the usage, the quantity `qty` in `unit` (`Compute-Hour`, `GB-Hour`, `Hour`), the unit `price` and the `amount` |
 | `amount` | The bill's total |
-| `paid` | Whether the bill has been paid |
+| `created_at` | When the bill was issued |
+| `status` | `paid` (nothing is owed on it), `due` (the account still owes part of it), `carried_over` (an older bill still owed, whose debt the latest bill's amount due includes) or `waived` (nothing to pay) |
+| `statement` | The account balance over the month, see below |
+| `payment_sources` | What paid for the month's usage, in order, see below |
 
-See [Billing](/account/billing) for how bills are produced and paid.
+`statement` has these fields:
+
+| Field | Description |
+| --- | --- |
+| `period_end` | The first day after the month |
+| `opening_balance` | The account balance on the first of the month |
+| `payments` | Top-ups less refunds during the month |
+| `balance_charged` | The usage the account balance paid. Credits paid the rest |
+| `closing_balance` | `opening_balance` plus `payments` less `balance_charged` |
+| `amount_due` | What the account owed at the end of the month, when `closing_balance` is below zero, otherwise `0`. It includes earlier months still owed, so never add it up across bills |
+| `carried_in` | The part of `amount_due` from earlier months still owed |
+| `remaining` | What is left of `amount_due` after the top-ups since the month ended. Top-ups pay the oldest bill first |
+| `paid_at` | When the top-ups since the month ended covered `amount_due`, or `null` while they haven't, or when nothing was due |
+
+Each payment source has a `source` and an `amount`:
+
+| `source` | What paid |
+| --- | --- |
+| `credit` | A credit, with its `credit_id`, `credit_type` and, when it has one, its `description` |
+| `balance` | The account balance |
+| `due` | Usage the balance couldn't pay, left owed |
+| `paid_later` | The part of what was left owed that top-ups have paid since |
+| `paid_directly` | A bill from before prepaid billing, paid at the time |
+| `waived` | Usage that was waived |
+
+See [Billing](/account/billing#view-your-invoices) for invoices in the dashboard and what each status means.
 
 ## List members
 

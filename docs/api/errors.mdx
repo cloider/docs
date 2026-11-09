@@ -39,16 +39,16 @@ An error the API produces itself looks like this:
 ```
 
 - **`errors`** is an object. Each key is the name of the request field that failed validation, with the same spelling as in the request body (`database_name`, `record_value`, `storage_limit_gi`). Each value is a list of messages, because one field can break several rules at once.
-- **The `_` key** holds general errors that aren't about one field: a plan limit, a resource in the wrong state, a permission problem, an upstream failure.
+- **The `_` key** holds general errors that aren't about one field: an account without funds, a resource in the wrong state, a permission problem, an upstream failure.
 - **`data`** is `null` in nearly every error. In a few cases it carries what a partly finished request already did, so you can pick up from there, for example the id of an app that was created even though a later step failed. The endpoint pages say when.
 - There is always at least one message. If an error has no specific message, the API adds a general one such as `404 Not Found`.
 
 A general error looks like this:
 
-```json title="Response (400)"
+```json title="Response (402)"
 {
   "errors": {
-    "_": ["Free plan users can not create more than one cluster. UPGRADE NOW!"]
+    "_": ["Your account has no credit left. Top up to continue."]
   },
   "data": null
 }
@@ -87,6 +87,7 @@ Long running operations (create, pause, resume, restore, delete) answer `200` as
 | --- | --- | --- |
 | `400 Bad Request` | Validation failed, a business rule refused the request, or the resource is in a state that doesn't allow it. This is the default error status | Read the messages, fix the request. Don't retry unchanged |
 | `401 Unauthorized` | No token, an invalid token or a revoked token | Check the `Authorization` header. See [Authentication](/api/authentication#authentication-errors) |
+| `402 Payment Required` | The account has no funds left, is suspended, or hasn't claimed its welcome credit, so it can't create or start anything charged for compute | Add funds in the dashboard, see [Billing](/account/billing#add-funds). Don't retry unchanged |
 | `403 Forbidden` | The token is valid but not allowed to do this: a read only token writing, a dashboard only action, a Restricted member, or a resource managed by Cloider | Use a token with the right access, or do it in the dashboard |
 | `404 Not Found` | The resource doesn't exist, was deleted, or belongs to another account. Also used when a nested item (a variable, a build, a version) is gone | Refresh your list of ids. After a delete, `404` means the resource is gone |
 | `409 Conflict` | The resource is busy or not in a state where this can run now, for example a terminal or `exec` on something that is paused or starting, or a bucket that isn't ready | Wait until the resource is `Ready`, then retry |
@@ -126,12 +127,22 @@ Resource names follow DNS rules, and every rule that is broken is reported:
 
 Each endpoint page lists the fields and rules of its own request body.
 
-### Plan limits and account state (`400`, general)
+### Account funds (`402`, general)
+
+Creating a cluster, database, bucket, registry project or app, deploying an app, resuming a cluster, database or app, restoring a database backup and changing a database's plan need funds in the account. Without them, the request fails with `402`:
 
 | Message | Cause |
 | --- | --- |
-| `Free plan users can not create more than one cluster. UPGRADE NOW!` | The Free plan allows one cluster. The same limit applies to databases, buckets and registry projects |
-| `Your account is suspended. Upgrade to a paid plan to continue using our services.` | The account is suspended, for example when a trial ended without a payment method |
+| `Your account has no credit left. Top up to continue.` | The account's balance and credits are used up |
+| `Your account is suspended because its credit ran out. Top up to continue.` | The account is suspended: its clusters, databases and apps are paused |
+| `Claim your $25 welcome credit from the dashboard to start your trial.` | A new account that hasn't claimed its welcome credit |
+
+Reading, pausing and deleting resources, and domains, DNS records, targets, bucket keys and registry tokens, keep working without funds. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out).
+
+### Account limits (`400`, general)
+
+| Message | Cause |
+| --- | --- |
 | `An account can have up to 50 access keys, delete one you no longer use!` | Bucket key limit reached. Registry tokens have a limit of their own |
 
 See [Limits and quotas](/reference/limits-and-quotas) for every limit.
@@ -334,9 +345,10 @@ func (e *Error) Error() string {
 ## Frequently asked questions
 
 <FAQ items={[
-  {q: 'What does the _ key mean in a Cloider API error?', a: 'The _ key holds general error messages that are not about one request field, for example a plan limit, a permission problem or a resource in the wrong state. Field specific messages are under the field name, such as cluster_name.'},
+  {q: 'What does the _ key mean in a Cloider API error?', a: 'The _ key holds general error messages that are not about one request field, for example an account without funds, a permission problem or a resource in the wrong state. Field specific messages are under the field name, such as cluster_name.'},
   {q: 'Why does the Cloider API answer 404 for a resource I can see in the dashboard?', a: 'The token belongs to a different account than the one the dashboard shows. API tokens work in the account they were created in, and resources of other accounts answer 404. Call GET /whoami to see which account a token is for.'},
   {q: 'Why is a 404 body plain text instead of JSON?', a: 'Some endpoints answer an unknown or foreign resource id with the plain text body Not Found. Check the Content-Type header and fall back to the status code when the body is not JSON.'},
   {q: 'Is it safe to retry a failed POST request?', a: 'Only after a 429, which means the request was turned away before reaching the API, or after you have confirmed the first attempt did not take effect. The API has no idempotency keys, so a repeated create makes a second resource.'},
+  {q: 'What does 402 Payment Required mean in the Cloider API?', a: 'The account has no funds left, is suspended, or has not claimed its welcome credit yet, so it cannot create or start anything charged for compute. The account Owner adds funds on the Billing page in the dashboard.'},
   {q: 'What does 409 Conflict mean in the Cloider API?', a: 'The resource is busy or not in a state where the action can run, for example opening a terminal on a paused database, or browsing files in a bucket that is still being created. Wait until it is Ready and try again.'},
 ]} />

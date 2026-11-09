@@ -106,13 +106,12 @@ Every cluster has a few components that Cloider installs and relies on, in `kube
 
 ## Limits
 
-### Account and plan limits
+### Account limits
 
 | Limit | Value |
 | --- | --- |
-| Clusters on the Free plan | 1 (paused clusters count, deleted ones don't) |
-| Clusters on a paid plan | No fixed limit in the API |
-| Creating clusters on a suspended account | Refused until the account is upgraded |
+| Clusters per account | No fixed limit. Creating or resuming a cluster needs funds in the account |
+| Creating or resuming clusters on a suspended account | Refused until funds are added. A suspended account's clusters are paused, see [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out) |
 | Read-only members and Read API tokens | Can list clusters, check status and download kubeconfigs, but not create, pause, resume or delete clusters, or run `exec` |
 
 ### Names

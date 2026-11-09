@@ -148,9 +148,8 @@ If the account already has a cluster labelled `staging`, the new one is created 
 | `400` | `cluster_name` | `Cluster name must not be empty`, `Cluster name must not have spaces`, `Cluster name can not be upper case`, `Cluster name can not start with numbers`, `Cluster name must not have special characters except "-"`, `Cluster name must not start with any special character`, `Cluster name must not end with any special character`, `Cluster name must be at least 2 characters` |
 | `400` | `cluster_version` | `Invalid cluster version!` |
 | `400` | `is_ha` | `HA clusters are not supported at the moment!` |
-| `400` | `_` | `Free plan users can not create more than one cluster. UPGRADE NOW!` |
-| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
 | `400` | `_` | `You have read-only access to this account, you can not create clusters!` (a Restricted member) |
+| `402` | `_` | `Your account has no credit left. Top up to continue.`, `Your account is suspended because its credit ran out. Top up to continue.`, `Claim your $25 welcome credit from the dashboard to start your trial.` |
 | `403` | `_` | `This API token is read only!` |
 
 ### Wait until a cluster is ready
@@ -363,7 +362,7 @@ curl -X POST https://cloider.com/api/clusters/k3x9p/resume \
   -H "Authorization: Bearer $CLOIDER_TOKEN"
 ```
 
-The response is the cluster list, with this cluster `Starting`. Poll the status until it is `Ready`. Resume only a `Paused` cluster. Errors are the same as for pausing.
+The response is the cluster list, with this cluster `Starting`. Poll the status until it is `Ready`. Resume only a `Paused` cluster. Errors are the same as for pausing, plus `402` with one of the [account funds](/api/errors#account-funds-402-general) messages when the account has no funds.
 
 ## Delete a cluster
 

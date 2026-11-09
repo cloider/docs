@@ -267,8 +267,10 @@ Usage, bills, prices, members, API tokens and the current identity. Aliases: `me
 | Command | Description |
 | --- | --- |
 | [`cloider usage`](/cli/commands/account#cloider-usage) | Show this month's cost so far, and the forecast, per resource |
+| [`cloider wallet`](/cli/commands/account#cloider-wallet) | Show the account's balance, credits and this month's charges |
+| [`cloider wallet payments`](/cli/commands/account#cloider-wallet-payments) | List the account's top-ups and refunds |
 | [`cloider billing`](/cli/commands/account#cloider-billing) | List the account's monthly bills |
-| [`cloider billing show`](/cli/commands/account#cloider-billing-show) | Show a bill's items |
+| [`cloider billing show`](/cli/commands/account#cloider-billing-show) | Show a bill's items, what paid for it and its statement |
 | [`cloider pricing`](/cli/commands/account#cloider-pricing) | Show current prices |
 | [`cloider member`](/cli/commands/account#cloider-member-list) | See who has access to the account |
 | [`cloider member add`](/cli/commands/account#cloider-member-add-role-and-remove) | Add a member (in the dashboard) |
@@ -340,7 +342,7 @@ Most command groups also answer to a plural or a short form, and `list` and `del
 - [MCP tools](/mcp/tools) for the same commands as AI agent tools.
 
 <FAQ items={[
-  {q: 'How many commands does the Cloider CLI have?', a: 'The cloider CLI has 196 commands and subcommands, grouped into cluster, db, bucket, registry, app, deploy, git, domain, dns, target, support, the account commands (usage, billing, pricing, member, token, whoami), login, logout, profile, version, update, completion and mcp.'},
+  {q: 'How many commands does the Cloider CLI have?', a: 'The cloider CLI has 198 commands and subcommands, grouped into cluster, db, bucket, registry, app, deploy, git, domain, dns, target, support, the account commands (usage, wallet, billing, pricing, member, token, whoami), login, logout, profile, version, update, completion and mcp.'},
   {q: 'How do I see the help for a command in the terminal?', a: 'Add --help to any command, for example cloider db create --help, or run cloider help db create. Both show the arguments, flags and examples.'},
   {q: 'Which global flags does every command take?', a: '--profile, --api-url, --token-file, -o/--output, -q/--quiet, --no-headers, --no-color, -y/--yes, --debug and -h/--help.'}
 ]} />

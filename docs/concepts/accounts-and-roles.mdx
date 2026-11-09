@@ -13,7 +13,7 @@ On Cloider, **resources belong to accounts** and **people reach accounts through
 | Term | What it is |
 | --- | --- |
 | **User** | A person, identified by the email address of their Google or GitHub sign in |
-| **Account** | The container for resources, usage and invoices. Every user has one, named after them |
+| **Account** | The container for resources, usage, funds and invoices. Every user has one, named after them |
 | **Owner** | The user whose account it is. Full access, including billing. Every account has exactly one |
 | **Member** | Another user invited into the account by email, with the role **Admin** or **Restricted** |
 | **Admin** | Full access to every resource and to members, but not to billing |
@@ -24,7 +24,7 @@ On Cloider, **resources belong to accounts** and **people reach accounts through
 
 When you sign in for the first time, Cloider creates your **user** and your **account** together. They share your email address and your name, which is why the account menu shows your own name while you work in your own account.
 
-- Your account is where your resources live and where their usage is billed.
+- Your account is where your resources live and where their usage is paid from.
 - You are its **Owner**. Ownership can't be given away or shared: an account has exactly one Owner.
 - You can be a **member** of any number of other accounts. In each one you have the role its Owner or an Admin gave you.
 
@@ -61,7 +61,7 @@ The invitation is tied to the **email address**, not to a provider. The invited 
 
 ### Owner
 
-The Owner has full access to the account. They are the only one who can see **Billing** and its invoices, and the only one who can upgrade the account from the trial to the paid plan. The Owner is billed for every resource in the account, whoever created it.
+The Owner has full access to the account. They are the only one who can see **Billing**, with its credits, payments and invoices, the only one who can add funds, and the only one who can claim the account's welcome credit. Every resource in the account is paid from the account's funds, whoever created it.
 
 ### Admin
 
@@ -108,8 +108,10 @@ The matrix below shows who can do what. **Read token** and **Read & Write token*
 | --- | --- | --- | --- | --- | --- |
 | See every resource, its status and settings | Yes | Yes | Yes | Yes | Yes |
 | See the **Usage** page and per resource usage | Yes | Yes | Yes | Yes | Yes |
-| See **Billing** and invoices | Yes | No | No | No | Owner's token only |
-| Upgrade from the trial to the paid plan | Yes | No | No | No | No |
+| See the account's balance and any warning (sidebar, `whoami`) | Yes | Yes | Yes | Yes | Yes |
+| See **Billing**: credits and payments | Yes | No | No | Owner's token only | Owner's token only |
+| See invoices | Yes | No | No | No | Owner's token only |
+| Add funds, claim the welcome credit | Yes (dashboard) | No | No | No | No |
 | Create, pause, resume and delete clusters | Yes | Yes | No | No | Yes |
 | Download a cluster's kubeconfig | Yes | Yes | Yes | Yes | Yes |
 | Create, resize, rename, pause, resume, restore and delete databases | Yes | Yes | No | No | Yes |
@@ -153,7 +155,8 @@ The matrix below shows who can do what. **Read token** and **Read & Write token*
 
 <FAQ items={[
   {q: 'What roles does Cloider have?', a: 'Three: Owner, Admin and Restricted. The Owner is the user whose account it is and has full access including billing. Admins have full access except billing. Restricted members have read-only access to resources.'},
-  {q: 'Can an Admin see invoices?', a: 'No. Billing and invoices are visible to the account Owner only. Admins and Restricted members do not see the Billing page, and the billing API refuses them.'},
+  {q: 'Can an Admin see invoices?', a: 'No. Billing and invoices are visible to the account Owner only. Admins and Restricted members do not see the Billing page, and the billing API refuses them. Every member sees the account\'s balance and any warning in the dashboard sidebar.'},
+  {q: 'Who adds funds to a Cloider account?', a: 'Only the account Owner, with Add funds on the Billing page. Every resource in the account is paid from its funds, whoever created it.'},
   {q: 'Can I transfer ownership of a Cloider account?', a: 'No. An account belongs to the user it was created for. To hand over infrastructure, create the account with a shared company email address and invite people as members.'},
   {q: 'What can a Restricted member do?', a: 'See every resource, its usage and logs, open browser terminals, download kubeconfigs, read connection details and secret variables, open support requests and create Read API tokens. They cannot create, change or delete resources or run exec commands.'},
   {q: 'What happens to API tokens when I remove a member?', a: 'Removing a member deletes the API tokens they created in the account. Deactivating a member stops their tokens from working until the member is activated again.'},

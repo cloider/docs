@@ -127,9 +127,8 @@ Each deploy of an app creates a build, numbered `1`, `2`, `3`...
 
 | Status | Meaning |
 | --- | --- |
-| **Trial** | The account is on the free trial |
-| **Active** | The account is on the paid plan |
-| **Suspended** | The trial ended without an upgrade; the account can't create resources |
+| **Active** | The account isn't suspended |
+| **Suspended** | The account's funds ran out: its clusters, databases and apps are paused, and it can't create or resume them until funds are added. See [What happens when your funds run out?](/account/billing#what-happens-when-your-funds-run-out) |
 
 ### Members
 
@@ -161,8 +160,12 @@ API tokens have no status: they either exist or are deleted. Their access is **R
 
 | Status | Meaning |
 | --- | --- |
-| **Paid** (`"paid": true`) | The payment is recorded |
-| **Unpaid** (`"paid": false`) | Not paid yet. The dashboard shows no tag |
+| **Paid** (`paid`) | Nothing is owed on it, or a later top-up paid it |
+| **Due** (`due`) | The account still owes part of it. The next top-up pays it |
+| **Carried over** (`carried_over`) | An older invoice still owed, included in a later invoice's amount due |
+| **Waived** (`waived`) | Nothing to pay |
+
+See [Invoice status](/account/billing#invoice-status).
 
 ## Read a status from each tool
 

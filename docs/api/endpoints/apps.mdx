@@ -270,7 +270,7 @@ curl -s -X POST https://cloider.com/api/apps/source \
 }
 ```
 
-Errors on `source`: `Please select your app folder, a zip file or an HTML file!` (size 0), `The app source exceeded the allowed size of 100MB!`, `Invalid app source!` (not `application/zip`). A staged upload expires after two hours.
+Errors on `source`: `Please select your app folder, a zip file or an HTML file!` (size 0), `The app source exceeded the allowed size of 100MB!`, `Invalid app source!` (not `application/zip`). An account without funds gets `402` with one of the [account funds](/api/errors#account-funds-402-general) messages. A staged upload expires after two hours.
 
 ### Step 2: upload the archive
 
@@ -396,8 +396,9 @@ The app is created even when a later part of the request fails. Those failures c
 | `400` | `source` | `Your app source is no longer available, upload it again!`, `Your repository is still being fetched, give it a moment and try again!`, or the import's own message |
 | `400` | `subdomain` | `This subdomain is already taken. Please try another one.`, `You already own this subdomain. Connect it to the app from Domains instead.`, and the subdomain naming rules |
 | `400` | `env_vars.<KEY>` | Per variable messages, see [Variables](#environment-variables-build-variables-and-build-arguments) |
-| `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.`, `Couldn't prepare your app's registry, try again in a moment!`, `Operation failed, Couldn't create the app!` |
+| `400` | `_` | `Couldn't prepare your app's registry, try again in a moment!`, `Operation failed, Couldn't create the app!` |
 | `400` | `_` | `App created but its first build could not be started!`, with `data` set to `{"hashed_id": "..."}` of the app that was created |
+| `402` | `_` | `Your account has no credit left. Top up to continue.`, `Your account is suspended because its credit ran out. Top up to continue.`, `Claim your $25 welcome credit from the dashboard to start your trial.` |
 | `403` | `_` | `This API token is read only!` |
 
 Check a subdomain before you create the app with [`GET /domains/availability`](/api/endpoints/domains#check-whether-a-free-subdomain-is-available).
@@ -438,6 +439,7 @@ The import starts with the status `Fetching`. When the repository can't be read,
 | --- | --- | --- |
 | `400` | `source` | `That repository name is not one we can read.`, `Pick a project to import.`, `Pick a branch to deploy from.` |
 | `400` | `_` | `This GitHub installation is suspended. Re-enable it there to import from it.` (and the same for the other providers) |
+| `402` | `_` | `Your account has no credit left. Top up to continue.` and the other [account funds](/api/errors#account-funds-402-general) messages |
 | `404` | `_` | `This GitHub connection is no longer available, reconnect it!` |
 
 ## Create an app from an image
@@ -493,6 +495,7 @@ image at `digest`.
 | `400` | `tag` | `ghcr.io/acme/api has no tag v1.` |
 | `400` | `username` | `Enter the username this token belongs to.` |
 | `400` | `password` | `Enter the token or password for this login.`, `The registry refused this login, check the username and the token, and that it can pull ghcr.io/acme/api.` |
+| `402` | `_` | `Your account has no credit left. Top up to continue.` and the other [account funds](/api/errors#account-funds-402-general) messages |
 
 ## Change an image app's image or login
 
@@ -606,6 +609,7 @@ curl -X PUT https://cloider.com/api/apps/a8q2w/settings \
 | `400` | `This app is paused. Resume it before deploying a new version!`, `This app is being deleted!` |
 | `400` | `This app is building, wait for that build to finish before changing its settings!` |
 | `400` | `The settings were saved but the app could not be redeployed!` |
+| `402` | `Your account has no credit left. Top up to continue.` and the other [account funds](/api/errors#account-funds-402-general) messages |
 
 Field errors come back under the field's name:
 
@@ -783,7 +787,7 @@ curl -X PUT https://cloider.com/api/apps/a8q2w/build-args \
 {"applied": "build"}
 ```
 
-`applied` is `build` when a build started, or `none` when the app has never deployed (its first build reads them). Errors besides validation: `This app is paused. Resume it before deploying a new version!`, `This app is building, wait for that build to finish before changing its build arguments!`, and `The build arguments were saved, and apply from the next build on!`.
+`applied` is `build` when a build started, or `none` when the app has never deployed (its first build reads them). Errors besides validation: `This app is paused. Resume it before deploying a new version!`, `This app is building, wait for that build to finish before changing its build arguments!`, and `The build arguments were saved, and apply from the next build on!`. Saving variables, build variables or build arguments needs funds in the account, like a deploy: without them it fails with `402` and one of the [account funds](/api/errors#account-funds-402-general) messages.
 
 ## Stream an app's logs
 
@@ -984,6 +988,7 @@ curl -X POST https://cloider.com/api/apps/k3v9q/runs -H "Authorization: Bearer $
 | `409` | `A run is still going, wait for it to finish!` |
 | `409` | `This app is paused. Resume it to run it!`, `This app has not been deployed yet!`, `This app is not a cron job, it has no runs!` |
 | `400` | `Couldn't start the run, try again!` |
+| `402` | `Your account has no credit left. Top up to continue.` and the other [account funds](/api/errors#account-funds-402-general) messages |
 
 ## Run a command with exec
 
@@ -1064,7 +1069,7 @@ curl -X POST https://cloider.com/api/apps/a8q2w/resume \
   -H "Authorization: Bearer $CLOIDER_TOKEN"
 ```
 
-The response is the app list. A non paused app answers `400 Only a paused app can be resumed!`.
+The response is the app list. A non paused app answers `400 Only a paused app can be resumed!`, and an account without funds `402` with one of the [account funds](/api/errors#account-funds-402-general) messages.
 
 ## Restart an app
 
