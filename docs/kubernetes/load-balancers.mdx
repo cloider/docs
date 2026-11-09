@@ -234,8 +234,8 @@ nc -vz 203.0.113.25 1883
 
 ## Point a domain at the load balancer
 
-The simplest way is a [LoadBalancer target](/domains/targets#point-a-domain-at-a-loadbalancer) on a custom domain of
-its own, such as `mqtt.example.com`. It gives the domain an `A` record to the load balancer's IP and keeps the record
+The simplest way is a [LoadBalancer target](/domains/targets#point-a-domain-at-a-loadbalancer) on a verified custom
+domain of its own, such as `mqtt.example.com`. It gives the domain an `A` record to the load balancer's IP and keeps the record
 on the IP if the Service is recreated:
 
 ```bash

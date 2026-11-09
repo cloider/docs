@@ -2,11 +2,11 @@
 title: cloider domain command reference
 sidebar_label: domain
 sidebar_position: 9
-description: Reference for cloider domain, to claim free cloider.app subdomains, add custom domains, check availability, see a domain's routes and delete domains.
-keywords: [cloider domain, cloider domain create, free subdomain, cloider.app, custom domain cli, nameservers, domain availability]
+description: Reference for cloider domain, to claim free cloider.app subdomains, add and verify custom domains, check availability, see a domain's routes and delete domains.
+keywords: [cloider domain, cloider domain create, cloider domain verify, verify custom domain, free subdomain, cloider.app, custom domain cli, nameservers, domain availability]
 ---
 
-`cloider domain` manages the [domains](/domains/overview) of your account: free subdomains under `cloider.app`, and custom domains you own and point at Cloider's nameservers. Once you have a domain, [`cloider dns`](/cli/commands/dns) manages a custom domain's DNS records and [`cloider target`](/cli/commands/target) routes its paths to apps and cluster services.
+`cloider domain` manages the [domains](/domains/overview) of your account: free subdomains under `cloider.app`, and custom domains you own, verify with a TXT record and point at Cloider's nameservers. Once you have a domain, [`cloider dns`](/cli/commands/dns) manages a custom domain's DNS records and [`cloider target`](/cli/commands/target) routes its paths to apps and cluster services.
 
 ```text
 cloider domain <command> [flags]
@@ -22,6 +22,7 @@ cloider domain <command> [flags]
 | [`cloider domain get`](#cloider-domain-get) | Show a domain and its targets |
 | [`cloider domain check`](#cloider-domain-check) | Check whether a free subdomain can be claimed |
 | [`cloider domain create`](#cloider-domain-create) | Claim a free subdomain, or add a domain you own |
+| [`cloider domain verify`](#cloider-domain-verify) | Verify a custom domain with its TXT record |
 | [`cloider domain delete`](#cloider-domain-delete) | Delete a domain, with its DNS records and targets |
 
 All subcommands also take the [global flags](/cli/configuration#global-flags).
@@ -41,13 +42,13 @@ cloider domain list
 ```
 
 ```text title="Output"
-DOMAIN             TYPE           STATUS    CREATED
-example.com        CustomDomain   Active    2026-09-01 10:00
-blog.cloider.app   Subdomain      Active    2026-09-14 10:02
-acme-shop.com      CustomDomain   Pending   2026-10-20 08:30
+DOMAIN             TYPE           STATUS    VERIFIED   CREATED
+example.com        CustomDomain   Active    yes        2026-09-01 10:00
+blog.cloider.app   Subdomain      Active    yes        2026-09-14 10:02
+acme-shop.com      CustomDomain   Pending   no         2026-10-20 08:30
 ```
 
-**TYPE** is `Subdomain` for a free subdomain and `CustomDomain` for a domain you own. **STATUS** is `Pending`, `Active`, `Failed` or `Suspended`; a new custom domain stays `Pending` until its nameservers point at Cloider. `-q` prints the domain names. MCP tool: `list_domains`.
+**TYPE** is `Subdomain` for a free subdomain and `CustomDomain` for a domain you own. **STATUS** is `Pending`, `Active`, `Failed` or `Suspended`; a new domain stays `Pending` until a target routes it. **VERIFIED** is `no` for a custom domain you haven't verified yet, see [`cloider domain verify`](#cloider-domain-verify): it takes no targets and is deleted 7 days after it was added. `-q` prints the domain names. MCP tool: `list_domains`.
 
 ## cloider domain get
 
@@ -62,17 +63,35 @@ cloider domain get example.com
 ```
 
 ```text title="Output"
-Domain:   example.com
-Type:     CustomDomain
-Status:   Active
-Created:  2026-09-01 10:00
+Domain:    example.com
+Type:      CustomDomain
+Status:    Active
+Verified:  yes
+Created:   2026-09-01 10:00
 
 ROUTE             TARGET                     TARGET PATH   PROTOCOL
 example.com/      app web                    /             -
 example.com/api   production/shop/api:8080   /             TCP
 ```
 
-See [`cloider target`](/cli/commands/target) for the targets table. `-o json` prints the domain with its `targets`. MCP tool: `get_domain`.
+An unverified custom domain also shows the TXT record that verifies it:
+
+```bash
+cloider domain get acme-shop.com
+```
+
+```text title="Output"
+Domain:     acme-shop.com
+Type:       CustomDomain
+Status:     Pending
+Verified:   no
+TXT name:   _cloider-verify.acme-shop.com
+TXT value:  cloider-verify=8d41e6b09a2f7c35e10b4d98a6c3f257
+Created:    2026-10-20 08:30
+Add this TXT record where the domain's DNS is hosted today, then run `cloider domain verify acme-shop.com`.
+```
+
+See [`cloider target`](/cli/commands/target) for the targets table. `-o json` prints the domain with its `verified` flag, its `targets`, and while it's unverified its `verification` record. MCP tool: `get_domain`.
 
 ## cloider domain check
 
@@ -102,7 +121,7 @@ Error: api.cloider.app is not available: ...
 
 ## cloider domain create
 
-Claim a free subdomain, or add a domain you own. A name under `cloider.app` (for example `blog.cloider.app`) is claimed as a free subdomain; anything else is added as a custom domain, which you then point at Cloider's nameservers at your registrar.
+Claim a free subdomain, or add a domain you own. A name under `cloider.app` (for example `blog.cloider.app`) is claimed as a free subdomain; anything else is added as a custom domain, which you verify with a TXT record and then point at Cloider's nameservers at your registrar.
 
 ```text
 cloider domain create <domain> [flags]
@@ -127,6 +146,54 @@ cloider domain create example.com
 
 ```text title="Output"
 ✓ Added example.com
+To verify you own it, add this TXT record where its DNS is hosted today, before pointing it at Cloider:
+  Name:   _cloider-verify.example.com
+  Value:  cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46
+Then run `cloider domain verify example.com --wait`.
+```
+
+A custom domain starts unverified. Add the TXT record at the DNS provider that answers for the domain today, usually your registrar, then run [`cloider domain verify`](#cloider-domain-verify), which prints the nameservers to set next. Until it's verified, the domain takes no targets, Cloider's nameservers serve none of its records, and it is deleted 7 days after it was added.
+
+A domain whose TXT record is already in place, or one under a domain you verified, is verified at once, and the command prints the nameservers straight away:
+
+```bash
+cloider domain create shop.example.com
+```
+
+```text title="Output"
+✓ Added and verified shop.example.com
+Point it at these nameservers at your registrar:
+  ns1.cloider.com
+  ns2.cloider.com
+  ns3.cloider.com
+  ns4.cloider.com
+Then add records with `cloider dns create shop.example.com ...` and routes with `cloider target create shop.example.com ...`.
+```
+
+A name under a domain you already use with Cloider, such as `shop.example.com` under `example.com`, is answered by that domain's nameservers, so there's nothing to change at the registrar for it. See [Free subdomains](/domains/free-subdomains), [Add a custom domain](/domains/add-a-custom-domain) and [Nameservers](/domains/nameservers). `-o json` prints the API's answer, with `verified` and, while unverified, `verification`; the steps still go to stderr. MCP tool: `create_domain`.
+
+## cloider domain verify
+
+Verify a custom domain with the TXT record that `cloider domain create` and `cloider domain get` show. Once it's verified, the command prints the nameservers to set at your registrar.
+
+```text
+cloider domain verify <domain> [flags]
+```
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `-w, --wait` | bool | `false` | Keep checking every 15 seconds, for up to 10 minutes |
+
+Add the record where the domain's DNS is hosted today, before you point the domain at Cloider's nameservers: they only answer for it once it's verified. Cloider asks the domain's own nameservers for the record, so a record added a moment ago is usually found at once.
+
+```bash
+cloider domain verify example.com --wait
+```
+
+```text title="Output"
+No TXT record named _cloider-verify.example.com with the value cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46 was found yet. A record added a moment ago can take a few minutes to appear.
+Checking again every 15 seconds…
+✓ example.com is verified
 Point it at these nameservers at your registrar:
   ns1.cloider.com
   ns2.cloider.com
@@ -135,7 +202,17 @@ Point it at these nameservers at your registrar:
 Then add records with `cloider dns create example.com ...` and routes with `cloider target create example.com ...`.
 ```
 
-The domain is `Pending` until the nameserver change has reached the internet, which can take from minutes to a day or two depending on your registrar. See [Free subdomains](/domains/free-subdomains), [Add a custom domain](/domains/add-a-custom-domain) and [Nameservers](/domains/nameservers). `-o json` prints the API's answer. MCP tool: `create_domain`.
+Without `--wait`, the command checks once and fails with the reason when the record isn't found. With `--wait`, it prints each new reason once and keeps checking; after 10 minutes it fails with `example.com isn't verified after 10 minutes: ...`. Press Ctrl-C to stop it sooner. A domain that is already verified, a free subdomain included, succeeds at once.
+
+| Message | What to do |
+| --- | --- |
+| `No TXT record named ... was found yet. ...` | Check the record's provider, name and value, see [No TXT record was found yet](/domains/troubleshooting#no-txt-record-was-found-yet) |
+| `... already uses Cloider's nameservers, which answer for it only once it's verified. ...` | Point the nameservers back to your previous DNS provider and add the record there, see [The domain already uses Cloider's nameservers](/domains/troubleshooting#the-domain-already-uses-cloiders-nameservers) |
+| `Could not look up example.com's DNS, try again in a minute.` | Try again a minute later |
+| `This domain is under ..., which belongs to another Cloider account. ...`, `A domain under this one belongs to another Cloider account. ...` | Another account verified a domain above or below it first. Contact [support](/account/support) |
+| `You have read-only access to this account, you can not verify domains!`, `This API token is read only!` | Exit code `5`. Use a member or token with write access |
+
+`-o json` prints the verified domain as `cloider domain get -o json` does. See [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain). MCP tool: `verify_domain`.
 
 ## cloider domain delete
 
@@ -167,6 +244,7 @@ See [Delete a domain](/domains/delete-a-domain). MCP tool: `delete_domain`.
 
 <FAQ items={[
   {q: 'How do I get a free subdomain with the Cloider CLI?', a: 'Check it with cloider domain check blog.cloider.app, claim it with cloider domain create blog.cloider.app, and route it to an app with cloider target create blog.cloider.app --app blog. cloider deploy also claims one automatically for a new app.'},
-  {q: 'How do I add my own domain?', a: 'Run cloider domain create example.com, then set the four nameservers it prints (ns1.cloider.com to ns4.cloider.com) at your registrar. The domain stays Pending until the change has propagated.'},
+  {q: 'How do I add my own domain?', a: 'Run cloider domain create example.com and add the TXT record it prints where the domain\'s DNS is hosted today. Then run cloider domain verify example.com --wait, and set the four nameservers it prints (ns1.cloider.com to ns4.cloider.com) at your registrar.'},
+  {q: 'Why does cloider domain verify say no TXT record was found?', a: 'The record is usually at a DNS provider that doesn\'t answer for the domain, or its name has the domain twice because the provider added it. Check with dig example.com NS +short and ask one of those nameservers for _cloider-verify.example.com TXT. Some providers also take a few minutes to publish a record, which --wait covers.'},
   {q: 'What does deleting a domain delete?', a: 'The domain itself, its DNS records and its targets (routes). Apps and clusters it routed to keep running.'}
 ]} />

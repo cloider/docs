@@ -9,7 +9,7 @@ CLI_PAGE = {'cluster': 'cluster', 'db': 'db', 'bucket': 'bucket', 'registry': 'r
 
 # What the docs add to a tool, where its own description doesn't tell the whole story
 NOTES = {
-    'get_domain': 'The answer holds the domain\'s name, type, status and creation date, and its targets, each with the `hashed_id` that `update_domain_target` and `delete_domain_target` take.',
+    'get_domain': 'The answer holds the domain\'s name, type, status, `verified` flag and creation date, its targets, each with the `hashed_id` that `update_domain_target` and `delete_domain_target` take, and while the domain is unverified, its `verification` record.',
     'get_usage': 'Without `kind` and `name` it runs `cloider usage`. With both it runs `cloider <kind> usage <name>`. Giving only one of them fails with `kind and name go together`.',
     'get_billing': 'With `month` it runs `cloider billing show <month>`.',
     'database_exec': 'Give either `query` or `script`, not both (`give either query or script`).',

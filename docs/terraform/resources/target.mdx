@@ -1,12 +1,14 @@
 ---
 title: cloider_target resource (Terraform)
 sidebar_label: cloider_target
-sidebar_position: 9
+sidebar_position: 10
 description: Route a domain path to a Kubernetes Service, an app or a bucket website over HTTPS with the cloider_target Terraform resource, with path rewrites and import.
 keywords: [cloider_target, terraform ingress, route domain to kubernetes service, terraform https route, expose kubernetes service terraform, bucket website terraform, path routing terraform, cloider target import]
 ---
 
 The `cloider_target` resource routes a path of a [`cloider_domain`](/terraform/resources/domain) to a Service in a [`cloider_cluster`](/terraform/resources/cluster), to an [app](/apps/overview), or to the [static website](/object-storage/static-websites) of a [`cloider_bucket`](/terraform/resources/bucket), over HTTPS. It is how a cluster's Services are reached from the internet on your own host names: Ingress objects inside a Cloider cluster aren't served, so a target takes their place. Cloider issues and renews the HTTPS certificate for you.
+
+A custom domain takes targets once it's verified. Take the target's `domain` from the domain's [`cloider_domain_verification`](/terraform/resources/domain-verification), as the custom domain examples below do, so the target is created after it. Free subdomains are verified from the start.
 
 ## At a glance
 
@@ -102,8 +104,13 @@ resource "cloider_domain" "games" {
   name = "play.example.com"
 }
 
+# Waits for the domain's TXT record
+resource "cloider_domain_verification" "games" {
+  domain = cloider_domain.games.name
+}
+
 resource "cloider_target" "games" {
-  domain       = cloider_domain.games.name
+  domain       = cloider_domain_verification.games.domain
   cluster_id   = cloider_cluster.production.id
   loadbalancer = "games/server"
 }
@@ -165,9 +172,15 @@ resource "cloider_domain" "example" {
   name = "example.com"
 }
 
-# shop.example.com must be a domain of its own to have a target
+# Waits for example.com's TXT record
+resource "cloider_domain_verification" "example" {
+  domain = cloider_domain.example.name
+}
+
+# shop.example.com must be a domain of its own to have a target. Added once
+# example.com is verified, it is verified at once
 resource "cloider_domain" "shop_example" {
-  name = "shop.example.com"
+  name = "shop.${cloider_domain_verification.example.domain}"
 }
 
 # The DNS record lives on example.com, whose nameservers answer for shop
@@ -188,7 +201,7 @@ resource "cloider_target" "shop_example" {
 }
 ```
 
-The apex (`example.com` itself) needs no record of its own: it comes with an `ALIAS` record that points at Cloider (at the app's free subdomain once a target routes the domain to an app), so a target with `domain = cloider_domain.example.name` is enough. See [Add a custom domain](/domains/add-a-custom-domain).
+The apex (`example.com` itself) needs no record of its own: it comes with an `ALIAS` record that points at Cloider (at the app's free subdomain once a target routes the domain to an app), so a target with `domain = cloider_domain_verification.example.domain` is enough. Add `example.com`'s TXT record, from its `verification_record_name` and `verification_record_value`, at the DNS provider that hosts it today before the apply that creates the verification. See [Add a custom domain](/domains/add-a-custom-domain).
 
 ### Deploy a Service and route to it in one configuration
 
@@ -222,7 +235,7 @@ Referring to the Service's attributes makes Terraform create the Service before 
 
 | Argument | Type | Required | Default | Changing it | Description |
 | --- | --- | --- | --- | --- | --- |
-| `domain` | String | Yes | | **Replaces** the target | The domain to route, a free subdomain or a custom domain |
+| `domain` | String | Yes | | **Replaces** the target | The domain to route, a free subdomain or a verified custom domain. For a custom domain, set it from the domain's `cloider_domain_verification`, as `cloider_domain_verification.<name>.domain`, so the target is created once the domain is verified |
 | `path` | String | No | `/` | In place | The path on the domain to route, and everything under it. Starts with `/`, then letters, digits and `/ _ . -` |
 | `target_path` | String | No | The value of `path` | In place | The path the request reaches the target with, in place of `path`. Same characters as `path` |
 | `cluster_id` | String | One of `cluster_id`, `app_id` or `bucket_id` | | In place | The id of the `cloider_cluster` whose Service to route to. Requires `namespace`, `service` and `port`, or `loadbalancer` |
@@ -241,7 +254,7 @@ Validation at plan time:
 - `loadbalancer` must be `<namespace>/<service>`, and can't be combined with `namespace`, `service` or `port`.
 - `protocol` can't be combined with `app_id`, `bucket_id` or `loadbalancer`.
 - `path` and `target_path` must match `must start with / and hold only letters, digits and / _ . -`.
-- At apply time, the cluster must be one of yours: `there is no cluster <id>`. A bucket target is refused with `A bucket website is served at the root of its domain, the path must be /` for another path, and with `Turn on the bucket's website first, from its Settings.` when the bucket's website is off. A LoadBalancer target is refused with `A LoadBalancer target needs a custom domain.` on a free subdomain, and with `This LoadBalancer has no IP yet. Wait until it gets one, then add the target.` before the Service has an IP.
+- At apply time, a custom domain must be verified: `Verify example.com first: add the TXT record shown on its domain page, then verify it.` The cluster must be one of yours: `there is no cluster <id>`. A bucket target is refused with `A bucket website is served at the root of its domain, the path must be /` for another path, and with `Turn on the bucket's website first, from its Settings.` when the bucket's website is off. A LoadBalancer target is refused with `A LoadBalancer target needs a custom domain.` on a free subdomain, and with `This LoadBalancer has no IP yet. Wait until it gets one, then add the target.` before the Service has an IP.
 
 ## Attribute reference
 
@@ -302,6 +315,7 @@ An ID without the domain fails with `Invalid target import id: Import a target a
   {q: 'How do I expose a Kubernetes Service on Cloider with Terraform?', a: 'Add a cloider_domain and a cloider_target with domain, cluster_id, namespace, service and port. Cloider routes https://<domain> to the Service over HTTPS. Ingress objects in a Cloider cluster aren\'t served, so targets take their place.'},
   {q: 'Can a cloider_target route to a Cloider app?', a: 'Yes. Set app_id to the app\'s id, from cloider app list -o wide, instead of cluster_id. The app must have been deployed.'},
   {q: 'Can a cloider_target serve a bucket\'s static website?', a: 'Yes. Set bucket_id to the cloider_bucket\'s id, and give the bucket public = true and website = true. A bucket target takes the whole domain, at the path /.'},
+  {q: 'Why is my target refused with "Verify example.com first"?', a: 'The custom domain isn\'t verified yet. Add the TXT record from the cloider_domain\'s verification_record_name and verification_record_value where the domain\'s DNS is hosted today, add a cloider_domain_verification, and take the target\'s domain from it so the target waits for the verification.'},
   {q: 'Why does my custom domain target not work?', a: 'A target doesn\'t create DNS records. The custom domain itself comes with an ALIAS record that points at Cloider; for a subdomain, add a cloider_dns_record CNAME to a free subdomain you hold. A subdomain such as shop.example.com also has to be a cloider_domain of its own.'},
   {q: 'What is the import ID of a cloider_target?', a: 'The domain and the target id joined by a slash, such as example.com/t4k9vq. cloider target list <domain> -o wide shows the ids.'},
 ]} />

@@ -15,12 +15,12 @@ This page lists every tool the Cloider MCP server (`cloider mcp`) offers, groupe
 | [`account`](#account-tools-account) | 6 | 6 | 0 | 0 |
 | [`clusters`](#kubernetes-cluster-tools-clusters) | 9 | 4 | 3 | 2 |
 | [`databases`](#database-tools-databases) | 16 | 6 | 8 | 2 |
-| [`buckets`](#object-storage-tools-buckets) | 29 | 13 | 8 | 9 |
+| [`buckets`](#object-storage-tools-buckets) | 29 | 12 | 8 | 9 |
 | [`registry`](#container-registry-tools-registry) | 23 | 8 | 7 | 8 |
 | [`apps`](#app-tools-apps) | 30 | 12 | 14 | 4 |
-| [`domains`](#domain-dns-and-target-tools-domains) | 12 | 4 | 5 | 3 |
+| [`domains`](#domain-dns-and-target-tools-domains) | 13 | 4 | 6 | 3 |
 | [`support`](#support-tools-support) | 5 | 3 | 2 | 0 |
-| **All** | **130** | **56** | **47** | **28** |
+| **All** | **131** | **55** | **48** | **28** |
 
 - **Read only** tools change nothing. They are the only tools `cloider mcp --read-only` offers.
 - **Changes resources** tools create or update something but don't delete anything.
@@ -1691,16 +1691,16 @@ Disconnect a git account; apps deploying from it stop deploying on push.
 
 ## Domain, DNS and target tools (domains)
 
-The `domains` toolset claims free `cloider.app` subdomains, adds custom domains, manages a custom domain's [DNS records](/domains/dns-records), and routes paths of a domain to an app or a cluster Service with [targets](/domains/targets). A custom domain comes with an ALIAS record for the domain itself that points at Cloider, but a target doesn't add records, so routing a subdomain such as www usually takes a `create_dns_record` too, see [Add a custom domain](/domains/add-a-custom-domain).
+The `domains` toolset claims free `cloider.app` subdomains, adds custom domains, manages a custom domain's [DNS records](/domains/dns-records), and routes paths of a domain to an app or a cluster Service with [targets](/domains/targets). A custom domain comes with an ALIAS record for the domain itself that points at Cloider, but a target doesn't add records, so routing a subdomain such as www usually takes a `create_dns_record` too, see [Add a custom domain](/domains/add-a-custom-domain). A custom domain starts unverified: you add the TXT record from `create_domain`'s answer where its DNS is hosted today, then `verify_domain` checks it and lists the nameservers. Until then the domain takes no targets.
 
 There is no tool that lists a domain's targets. Keep the id from `create_domain_target`'s answer, or list them with `cloider target list <domain> -o wide`.
 
-Tools: `list_domains`, `get_domain`, `check_domain_availability`, `create_domain`, `delete_domain`, `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, `create_domain_target`, `update_domain_target`, `delete_domain_target`.
+Tools: `list_domains`, `get_domain`, `check_domain_availability`, `create_domain`, `verify_domain`, `delete_domain`, `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, `create_domain_target`, `update_domain_target`, `delete_domain_target`.
 
 
 ### list_domains
 
-List the account's free subdomains and custom domains with their status.
+List the account's free subdomains and custom domains with their status and whether they're verified.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1710,10 +1710,10 @@ No parameters.
 
 ### get_domain
 
-Show a domain and its targets, the routes from its paths to apps, bucket websites and cluster services, or from the whole domain to a LoadBalancer.
+Show a domain and its targets, the routes from its paths to apps, bucket websites and cluster services, or from the whole domain to a LoadBalancer. An unverified custom domain carries the TXT record that verifies it, see verify_domain.
 
 :::note
-The answer holds the domain's name, type, status and creation date, and its targets, each with the `hashed_id` that `update_domain_target` and `delete_domain_target` take.
+The answer holds the domain's name, type, status, `verified` flag and creation date, its targets, each with the `hashed_id` that `update_domain_target` and `delete_domain_target` take, and while the domain is unverified, its `verification` record.
 :::
 
 | Effect | Idempotent | Annotations | Runs |
@@ -1738,7 +1738,7 @@ Whether a free subdomain can be claimed, and why not.
 
 ### create_domain
 
-Claim a free subdomain (a name under one of Cloider's roots, e.g. my-app.cloider.app), or add a domain you own, to point at the nameservers the answer lists. Route it with create_domain_target.
+Claim a free subdomain (a name under one of Cloider's roots, e.g. my-app.cloider.app), or add a domain you own. A custom domain starts unverified unless its TXT record is already in place: add the record in the answer's verification where its DNS is hosted today, then verify_domain, which lists the nameservers to point it at. Route it with create_domain_target.
 
 | Effect | Idempotent | Annotations | Runs |
 | --- | --- | --- | --- |
@@ -1747,6 +1747,19 @@ Claim a free subdomain (a name under one of Cloider's roots, e.g. my-app.cloider
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+
+### verify_domain
+
+Verify a custom domain by its TXT record (see get_domain), and list the nameservers to point it at next. The record goes where the domain's DNS is hosted today, Cloider's nameservers only answer for it once it's verified. Until then it takes no targets, its DNS records aren't served, and it is deleted 7 days after it was added. Fails with what is missing.
+
+| Effect | Idempotent | Annotations | Runs |
+| --- | --- | --- | --- |
+| Changes resources | Yes | `idempotentHint` | [`cloider domain verify`](/cli/commands/domain) |
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `domain` | string | Yes | The domain name, e.g. example.com or my-app.cloider.app. |
+| `wait` | boolean | No | Keep checking every 15 seconds for up to 10 minutes, for a record added a moment ago. |
 
 ### delete_domain
 
@@ -1956,7 +1969,7 @@ Some CLI commands are interactive or only make sense in a terminal, so `cloider 
 - [`cloider mcp` command reference](/cli/commands/mcp)
 
 <FAQ items={[
-  {q: 'How many tools does the Cloider MCP server have?', a: '130 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 56 of them only read, 47 create or change resources, and 28 are destructive, which includes the three exec tools.'},
+  {q: 'How many tools does the Cloider MCP server have?', a: '131 tools in 8 toolsets: account, clusters, databases, buckets, registry, apps, domains and support. 55 of them only read, 48 create or change resources, and 28 are destructive, which includes the three exec tools.'},
   {q: 'Which Cloider MCP tools are destructive?', a: 'Every delete tool, the tools that replace a whole setting (bucket policy, lifecycle and CORS rules, retention rules), uploads (which overwrite files with the same key), unsetting app variables, untagging and running retention, disconnecting a git account, and the exec tools app_exec, cluster_exec and database_exec. They all carry destructiveHint, so clients ask before running them.'},
   {q: 'Can the MCP server show a database password?', a: 'Yes, with get_database_password, which is read only. get_database returns the connection details without the password, so a client can let the agent read connection details freely and still ask before it reads the password.'},
   {q: 'Can the agent deploy code from my computer?', a: 'Yes. deploy_app uploads a directory on the machine the MCP server runs on, given as an absolute path in dir, detects the language and port, and follows the build until the app is up.'},

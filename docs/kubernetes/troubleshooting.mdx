@@ -122,6 +122,7 @@ A `Pending` pod hasn't been scheduled or is waiting for something. `kubectl desc
 | --- | --- |
 | `404` on the domain | No target matches the path, or the target is on another domain. Check `cloider target list <domain>` |
 | `502` or `503` on the domain | The target matches but nothing answers: the Service has no ready endpoints (`kubectl get endpoints <service> -n <namespace>`), the port is wrong, the app speaks HTTPS instead of HTTP, or the cluster is paused |
+| `Verify example.com first: add the TXT record shown on its domain page, then verify it.` | The custom domain isn't verified, so it takes no targets. Verify it, see [Add a custom domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain) |
 | Certificate error on a custom domain | The domain doesn't resolve to Cloider yet. Check its [nameservers](/domains/nameservers), that the host name has an `A` or `CNAME` record ([Add a custom domain](/domains/add-a-custom-domain)), and wait for DNS |
 | Ingress has no effect | Ingress objects aren't served on Cloider. Create a [target](/kubernetes/expose-services) instead |
 | `This path is already in use on this domain. Please choose a different path.` | Each path of a domain routes to one target. Update the existing target or use another path |

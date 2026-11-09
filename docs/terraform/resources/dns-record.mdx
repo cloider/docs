@@ -1,12 +1,12 @@
 ---
 title: cloider_dns_record resource (Terraform)
 sidebar_label: cloider_dns_record
-sidebar_position: 8
+sidebar_position: 9
 description: Manage DNS records on a Cloider custom domain with the cloider_dns_record Terraform resource, A, AAAA, CNAME, ALIAS, MX, TXT, SRV, CAA and more, with examples and import.
 keywords: [cloider_dns_record, terraform dns record, terraform mx record, terraform txt record, terraform cname, spf dkim dmarc terraform, cloider dns terraform, dns record import terraform]
 ---
 
-The `cloider_dns_record` resource manages a DNS record set on a custom [`cloider_domain`](/terraform/resources/domain): **every value of one type at one name**, such as both MX servers of `example.com`, or every TXT value at `example.com`. Cloider's nameservers answer with exactly these records, so this is how a custom domain's website, mail and verification records are served.
+The `cloider_dns_record` resource manages a DNS record set on a custom [`cloider_domain`](/terraform/resources/domain): **every value of one type at one name**, such as both MX servers of `example.com`, or every TXT value at `example.com`. Cloider's nameservers answer with exactly these records, so this is how a custom domain's website, mail and verification records are served. Records on a domain that isn't verified yet are saved and served within seconds of its [verification](/terraform/resources/domain-verification), so they can be created before it.
 
 ## At a glance
 

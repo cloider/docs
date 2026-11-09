@@ -7,8 +7,8 @@ keywords: [cloider domains, cloider dns, free subdomain, cloider.app, custom dom
 ---
 
 Cloider gives every account two kinds of domains: **free subdomains** such as `blog.cloider.app`, and **custom domains**
-you already own, such as `example.com`. A custom domain can use Cloider's nameservers, which then answer for it with
-the DNS records you add. Either kind is connected to your workloads with **targets**: routes from a path of the domain
+you already own, such as `example.com`. You prove you own a custom domain with a TXT record, and it can then use
+Cloider's nameservers, which answer for it with the DNS records you add. Either kind is connected to your workloads with **targets**: routes from a path of the domain
 to a [Cloider app](/apps/overview), to a Service in a [Kubernetes cluster](/kubernetes/overview), or to a bucket's
 [static website](/object-storage/static-websites), served over HTTPS with a certificate Cloider manages.
 
@@ -18,9 +18,10 @@ to a [Cloider app](/apps/overview), to a Service in a [Kubernetes cluster](/kube
 | --- | --- | --- |
 | **Example** | `blog.cloider.app` | `example.com`, `shop.example.com` |
 | **How you get it** | Claim a free name under `cloider.app` | Buy it from any registrar, then add it to Cloider |
+| **Ownership** | Yours as soon as you claim it | Verified with a TXT record before Cloider serves it. Unverified domains are deleted after 7 days |
 | **Cost** | No charge | No charge from Cloider. Your registrar bills the registration |
-| **DNS records** | Not editable. Cloider answers for it | A, AAAA, CNAME, ALIAS, MX, TXT, NS, CAA, HTTPS, SPF, SRV and PTR records, once the domain uses Cloider's nameservers |
-| **Targets** | Yes: route paths to apps and cluster Services, or the whole domain to a bucket's website | Yes: route paths to apps and cluster Services, or the whole domain to a bucket's website |
+| **DNS records** | Not editable. Cloider answers for it | A, AAAA, CNAME, ALIAS, MX, TXT, NS, CAA, HTTPS, SPF, SRV and PTR records, once the domain is verified and uses Cloider's nameservers |
+| **Targets** | Yes: route paths to apps and cluster Services, or the whole domain to a bucket's website | Yes, once verified: route paths to apps and cluster Services, or the whole domain to a bucket's website |
 | **HTTPS** | Works immediately, with Cloider's certificate for `*.cloider.app` | A certificate is issued for the host name automatically, once it resolves to Cloider |
 | **Nameservers** | Nothing to change | `ns1.cloider.com`, `ns2.cloider.com`, `ns3.cloider.com`, `ns4.cloider.com` |
 | **Managed with** | Dashboard, CLI, Terraform, API, MCP | Dashboard, CLI, Terraform, API, MCP |
@@ -30,23 +31,34 @@ to a [Cloider app](/apps/overview), to a Service in a [Kubernetes cluster](/kube
   it stores. See [Billing model](/concepts/billing-model).
 - Cloider doesn't register or sell domains. To use your own name, buy it from a registrar such as Namecheap, GoDaddy,
   Cloudflare, Squarespace Domains or Amazon Route 53, then [add it to Cloider](/domains/add-a-custom-domain).
-- A domain belongs to one Cloider account. Once an account has added a name, no other account can add it.
+- A domain belongs to one Cloider account. Once an account has verified a custom domain, no other account can add it.
+  A custom domain another account added but never verified goes to whoever puts their TXT record in place, see
+  [If another account added your domain](/domains/add-a-custom-domain#if-another-account-added-your-domain).
 
 <Screenshot
   src="/img/screenshots/domains/list.webp"
   url="/dashboard/domains"
-  alt="The Domains page listing six domains, all Active: example.com of type Domain, and blog.cloider.app, blog-x7k2.cloider.app, api-m2p9.cloider.app, web-q4m8.cloider.app and acme-site.cloider.app of type Subdomain, with the Learn more about domains link and the Add Domain button"
+  alt="The Domains page listing eight domains: example.com and play.example.com of type Domain, blog.cloider.app, blog-x7k2.cloider.app, api-m2p9.cloider.app, web-q4m8.cloider.app and acme-site.cloider.app of type Subdomain, all Active, and example.net of type Domain, Pending with an Unverified tag, with the Learn more about domains link and the Add Domain button"
   caption="The Domains page lists your free subdomains and custom domains with their status."
 />
 
 Open **Domains** in the sidebar to see every domain of the account with its **Domain name**, **Type** (**Domain** for a
-custom domain, **Subdomain** for a free one) and **Status**. Click a name to open the domain's page, or the icon next to
+custom domain, **Subdomain** for a free one) and **Status**. An unverified custom domain has an **Unverified** tag next
+to its status, which opens its page. Click a name to open the domain's page, or the icon next to
 it to open the address in a new tab. **Add Domain** opens a menu with **Subdomain** and **Custom Domain**, and each
 row's actions menu has **Delete**. An account without domains sees an **Add Domain** button in the middle of the page
 instead of the list.
 
 A domain's page has a **Targets** section. A custom domain's page also has **DNS records**, **Name servers** and
-**Delete domain** sections. Every section has a **Learn more** link to the matching page of these docs.
+**Delete domain** sections, and while it's unverified, a **Verify ownership** card at the top with its TXT record and a
+**Verify** button. Every section has a **Learn more** link to the matching page of these docs.
+
+<Screenshot
+  src="/img/screenshots/domains/verify-ownership.webp"
+  url="/dashboard/domains/example.net"
+  alt="The page of the unverified domain example.net: the Verify ownership card with the TXT record _cloider-verify.example.net and its value, the Verify button and the date the domain is deleted, and under it the Targets section saying to verify the domain first"
+  caption="Until a custom domain is verified, its page starts with the TXT record that verifies it."
+/>
 
 ## The three building blocks
 
@@ -91,11 +103,14 @@ See [Free subdomains](/domains/free-subdomains) for every rule and the availabil
 ## Custom domains
 
 A custom domain is a domain you own, or a subdomain of one, such as `example.com` or `shop.example.com`. You add it to
-Cloider, then choose how its DNS is hosted:
+Cloider and prove you own it with a TXT record named `_cloider-verify.example.com`, added where its DNS is hosted today.
+Until it's verified, it takes no targets and Cloider's nameservers serve none of its records. A domain under one you
+verified, such as `www.example.com` once `example.com` is verified, is verified as soon as it's added. Then choose how
+its DNS is hosted:
 
-- **Use Cloider's nameservers** (most common): change the nameservers at your registrar to `ns1.cloider.com` through
-  `ns4.cloider.com`. Cloider then answers DNS for the domain with the records you add in the dashboard, CLI, Terraform
-  or API. See [Nameservers](/domains/nameservers).
+- **Use Cloider's nameservers** (most common): once the domain is verified, change the nameservers at your registrar
+  to `ns1.cloider.com` through `ns4.cloider.com`. Cloider then answers DNS for the domain with the records you add in
+  the dashboard, CLI, Terraform or API. See [Nameservers](/domains/nameservers).
 - **Keep your current DNS provider**: leave the nameservers alone and point the host names you route with targets at
   Cloider from your provider's dashboard. Records you add in Cloider aren't used in that case.
 
@@ -112,7 +127,9 @@ Every domain has a status. It describes routing, not DNS: it changes when you ad
 | `Active` | At least one target routes a path of the domain to an app, a cluster Service or a bucket's website |
 | `Suspended` | The domain had targets, and the last one was deleted. Add a target to make it `Active` again |
 
-The status only follows the domain's targets, so `Active` doesn't mean the domain resolves yet. Use [the checks in Troubleshooting](/domains/troubleshooting) to see what the internet sees.
+The status only follows the domain's targets, so `Active` doesn't mean the domain resolves yet. Verification is
+separate: an unverified custom domain stays `Pending`, since it can't take targets, and the API shows it as
+`verified: false`. Use [the checks in Troubleshooting](/domains/troubleshooting) to see what the internet sees.
 
 ## HTTPS for every domain
 
@@ -129,7 +146,7 @@ straight from the bucket. See
 ## Who can manage domains?
 
 Every member of an account can see its domains, DNS records and targets. Members with the **Restricted** role, who
-have read-only access, can't add, change or delete them: the dashboard hides **Add Domain**, **Add target** and **Add
+have read-only access, can't add, verify, change or delete them: the dashboard hides **Add Domain**, **Add target** and **Add
 DNS record** for them and disables the delete and edit actions, and the API answers, for example, `You have read-only
 access to this account, you can not create domains!`. API tokens with read access are limited the same way. See
 [Accounts and roles](/concepts/accounts-and-roles) and [API tokens](/account/api-tokens).
@@ -146,12 +163,14 @@ Everything on these pages can be done from five tools. The pages show each task 
 | Show a domain and its targets | Click the domain | `cloider domain get` | | `GET /api/domains/<domain>` | `get_domain` |
 | Check a free subdomain | Live check on **Create App** | `cloider domain check` | | `GET /api/domains/availability` | `check_domain_availability` |
 | Add a domain | **Add Domain** | `cloider domain create` | `cloider_domain` | `POST /api/domains` | `create_domain` |
+| Verify a custom domain | **Verify** on the domain's page | `cloider domain verify` | `cloider_domain_verification` | `POST /api/domains/<domain>/verify` | `verify_domain` |
 | Delete a domain | **Delete domain** | `cloider domain delete` | `cloider_domain` | `DELETE /api/domains/<domain>` | `delete_domain` |
 | Manage DNS records | **DNS records** | `cloider dns` | `cloider_dns_record` | `/api/domains/<domain>/dns-records`, `/api/dns-records/<id>` | `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record` |
 | Manage targets | **Targets** | `cloider target` | `cloider_target` | `/api/targets` | `create_domain_target`, `update_domain_target`, `delete_domain_target` |
 
 Command references: [`cloider domain`](/cli/commands/domain), [`cloider dns`](/cli/commands/dns) and
 [`cloider target`](/cli/commands/target). Terraform: [`cloider_domain`](/terraform/resources/domain),
+[`cloider_domain_verification`](/terraform/resources/domain-verification),
 [`cloider_dns_record`](/terraform/resources/dns-record) and [`cloider_target`](/terraform/resources/target). API:
 [Domains](/api/endpoints/domains), [DNS records](/api/endpoints/dns-records) and [Targets](/api/endpoints/targets).
 
@@ -175,7 +194,8 @@ Command references: [`cloider domain`](/cli/commands/domain), [`cloider dns`](/c
 <FAQ items={[
   {q: 'Does Cloider charge for domains or DNS?', a: 'No. Free subdomains, custom domains, DNS records and targets have no charge of their own. You pay for the apps and clusters that serve the traffic, a bucket that serves a website is billed only for its stored data, and your registrar bills the registration of a custom domain.'},
   {q: 'Can I buy a domain from Cloider?', a: 'No. Cloider doesn\'t register domains. Buy one from a registrar such as Namecheap, GoDaddy, Cloudflare, Squarespace Domains or Amazon Route 53, then add it to Cloider as a custom domain.'},
-  {q: 'What are Cloider\'s nameservers?', a: 'ns1.cloider.com, ns2.cloider.com, ns3.cloider.com and ns4.cloider.com. Set all four at your registrar to have Cloider answer DNS for a custom domain.'},
+  {q: 'Do I have to prove I own a custom domain?', a: 'Yes. Add a TXT record named _cloider-verify.<domain> with the value Cloider shows, where the domain\'s DNS is hosted today, then click Verify or run cloider domain verify. Do it before you switch the nameservers to Cloider, which don\'t answer for an unverified domain. Unverified domains are deleted 7 days after they were added.'},
+  {q: 'What are Cloider\'s nameservers?', a: 'ns1.cloider.com, ns2.cloider.com, ns3.cloider.com and ns4.cloider.com. Set all four at your registrar, once the domain is verified, to have Cloider answer DNS for a custom domain.'},
   {q: 'What is the difference between a free subdomain and a custom domain?', a: 'A free subdomain is a name under cloider.app, such as blog.cloider.app, that works immediately and has no editable DNS records. A custom domain is a domain you own, such as example.com, that you point at Cloider and whose DNS records you manage.'},
   {q: 'Do I need a load balancer to put a cluster service on a domain?', a: 'No. A target routes a path of a domain to a Service in your cluster over HTTPS, with no load balancer and no Ingress object. Use a LoadBalancer Service only for traffic that isn\'t HTTP.'},
   {q: 'Why does my domain show Active but not load?', a: 'The status only says that a target routes to the domain. The domain also has to resolve to Cloider through DNS, and a custom domain needs its certificate issued. See the troubleshooting page for dig checks.'},

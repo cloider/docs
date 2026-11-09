@@ -16,7 +16,7 @@ Cloider, then gives the exact format, rules and examples for every record type.
 | | |
 | --- | --- |
 | **Which domains** | Custom domains. Free `cloider.app` subdomains don't take records |
-| **When they are used** | Once the domain uses [Cloider's nameservers](/domains/nameservers) |
+| **When they are used** | Once the domain is [verified](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain) and uses [Cloider's nameservers](/domains/nameservers). Records added before verification are served within seconds of it |
 | **Record types** | `A`, `AAAA`, `CNAME`, `ALIAS`, `MX`, `TXT`, `NS`, `CAA`, `HTTPS`, `SPF`, `SRV`, `PTR` |
 | **Name** | Relative to the domain: `www`, `_dmarc`, `*`. Blank for the domain itself (`@`) |
 | **Several values** | One record per type and name, with one value per line |
@@ -676,10 +676,13 @@ Wildcard records don't route traffic by themselves: a [target](/domains/targets)
 
 ## How fast do changes take effect?
 
-Cloider's nameservers answer with a new or changed record right after you save it. Resolvers that cached the old
-answer keep it until its TTL runs out, so the change reaches everyone within the old record's TTL. A name that didn't
-exist before can be cached as "doesn't exist" by resolvers that looked for it, for at most 300 seconds: the time set
-by the `SOA` record that Cloider's negative answers carry.
+Cloider's nameservers answer with a new or changed record right after you save it, once the domain is verified. On a
+custom domain that isn't verified yet, they serve none of its records: you can add and edit records in advance, and
+they're served within seconds of verification.
+
+Resolvers that cached the old answer keep it until its TTL runs out, so the change reaches everyone within the old
+record's TTL. A name that didn't exist before can be cached as "doesn't exist" by resolvers that looked for it, for at
+most 300 seconds: the time set by the `SOA` record that Cloider's negative answers carry.
 
 Check what Cloider answers right now, bypassing caches:
 
@@ -712,6 +715,7 @@ See [Import existing resources](/terraform/guides/import-existing-resources).
 | `... record already exists for '...'` | Edit the existing record and add the value on a new line |
 | `CNAME records cannot be used for the root domain ...` | Use an `ALIAS` or `A` record for the apex, and `CNAME` for subdomains |
 | `Private IP address detected: ...` | Public DNS can't point at private addresses. Use the public address |
+| `dig @ns1.cloider.com` answers `status: REFUSED` | The domain isn't verified yet, so Cloider serves none of its records. Verify it, see [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain) |
 | The record exists but `dig` doesn't show it | Check the name (`www`, not `www.example.com`), ask `@ns1.cloider.com` directly, and check that the domain uses Cloider's nameservers |
 | The old value still shows up | A resolver has it cached. Wait for the old TTL, or test with `dig @ns1.cloider.com` |
 

@@ -8,7 +8,8 @@ keywords: [cloider nameservers, ns1.cloider.com, change nameservers, namecheap c
 
 Cloider's nameservers are `ns1.cloider.com`, `ns2.cloider.com`, `ns3.cloider.com` and `ns4.cloider.com`. When you set
 them as your domain's nameservers at your registrar, Cloider answers DNS for the domain with the records you manage in
-Cloider. This page shows how to change the nameservers at popular registrars, how to check the change, and exactly how
+Cloider. They only answer for a custom domain once it's verified, so verify the domain with its TXT record before you
+switch. This page shows how to change the nameservers at popular registrars, how to check the change, and exactly how
 Cloider's nameservers answer queries.
 
 ## At a glance
@@ -17,6 +18,7 @@ Cloider's nameservers answer queries.
 | --- | --- |
 | **Nameservers** | `ns1.cloider.com`, `ns2.cloider.com`, `ns3.cloider.com`, `ns4.cloider.com` |
 | **Set them at** | Your registrar, where the domain is registered |
+| **Before you switch** | Verify the domain with its TXT record. Cloider's nameservers don't answer for an unverified domain |
 | **Time to take effect** | Usually minutes to a few hours, up to 48 hours |
 | **What they answer with** | The records on the domain's **DNS records** list in Cloider, plus the domain's `SOA` and `NS` records |
 | **Record types answered** | `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `SOA`, `SRV`, `PTR`, `CAA`, `HTTPS`, `SPF`. `ALIAS` records are answered as `A` and `AAAA` |
@@ -30,8 +32,9 @@ The four names are the same for every domain and every account. You find them:
 
 - **Dashboard**: on the **Activate Cloider DNS** step when you add a custom domain, and in the **Name servers** section
   of every custom domain's page, each with a copy button. The text reads **Login into your domain provider and change
-  your name servers to the following:**.
-- **CLI**: `cloider domain create example.com` prints them.
+  your name servers to the following:**. While the domain is unverified, the section warns you to verify it first.
+- **CLI**: `cloider domain verify example.com` prints them once the domain is verified, and `cloider domain create`
+  does for a domain that is verified as soon as it's added.
 - **Terraform**: the `nameservers` attribute of the [`cloider_options`](/terraform/data-sources/options) data source.
 - **API**: `nameservers` in `GET https://cloider.com/api/options`.
 
@@ -45,13 +48,17 @@ The four names are the same for every domain and every account. You find them:
 ## Before you change the nameservers
 
 1. **Add the domain to Cloider.** See [Add a custom domain](/domains/add-a-custom-domain).
-2. **Copy the records the domain already uses** into Cloider, especially `MX` and `TXT` records for email. Once the
+2. **Verify the domain.** Add its TXT record, `_cloider-verify.example.com`, at the DNS provider that hosts the domain
+   today, and click **Verify** or run `cloider domain verify example.com`. Cloider's nameservers refuse queries for an
+   unverified domain, so switching first would take it offline, and the record could no longer be found. See
+   [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain).
+3. **Copy the records the domain already uses** into Cloider, especially `MX` and `TXT` records for email. Once the
    nameservers switch, only Cloider's records answer. See
-   [Recreate your existing DNS records](/domains/add-a-custom-domain#step-2-recreate-your-existing-dns-records).
-3. **Turn off DNSSEC** if it is enabled. At most registrars this is a DNSSEC switch or a list of DS records to delete.
+   [Recreate your existing DNS records](/domains/add-a-custom-domain#step-3-recreate-your-existing-dns-records).
+4. **Turn off DNSSEC** if it is enabled. At most registrars this is a DNSSEC switch or a list of DS records to delete.
    Cloider's nameservers don't sign answers, and a domain that keeps a DS record while its nameservers don't sign
    stops resolving for every resolver that validates DNSSEC.
-4. **Lower the TTL** of important records at your current DNS provider a day ahead, if you can. That shortens the time
+5. **Lower the TTL** of important records at your current DNS provider a day ahead, if you can. That shortens the time
    some visitors see old answers.
 
 ## Change the nameservers at your registrar
@@ -134,7 +141,7 @@ Some registrars also offer "glue records" or "child nameservers" in the same are
 
 :::note[Country code domains with strict registry checks]
 Some country code registries test new nameservers before accepting a change, and expect them to answer for the domain
-with `SOA` and `NS` records. Cloider's nameservers answer both within seconds of the domain being added. If your
+with `SOA` and `NS` records. Cloider's nameservers answer both within seconds of the domain being verified. If your
 registrar still reports a failed nameserver check, keep DNS at your current provider and point the host names at
 Cloider from there, or contact [support](/account/support).
 :::
@@ -142,7 +149,7 @@ Cloider from there, or contact [support](/account/support).
 ## Does the domain need NS records?
 
 No. Cloider's nameservers answer `NS` queries for the domain itself with `ns1.cloider.com` to `ns4.cloider.com`, and
-`SOA` queries with the domain's `SOA` record, within seconds of the domain being added. Tools and services that ask "which
+`SOA` queries with the domain's `SOA` record, within seconds of the domain being verified. Tools and services that ask "which
 nameservers does `example.com` use?" get the right answer from Cloider without any record of yours.
 
 An `NS` record you add at the apex replaces those four in the answer, so leave the name blank only for nameservers the
@@ -190,7 +197,7 @@ records you add, and they don't look up other names for you. Knowing their behav
 | Behavior | What you see |
 | --- | --- |
 | **Authoritative answers** | Answers for domains added to Cloider carry the `aa` flag. Recursion isn't offered (no `ra` flag), so don't use `ns1.cloider.com` as your computer's resolver |
-| **Other domains** | A query for a domain that isn't added to Cloider gets `REFUSED` |
+| **Other domains** | A query for a domain that isn't added to Cloider, or isn't verified yet, gets `REFUSED` |
 | **Record types** | `A`, `AAAA`, `CNAME`, `MX`, `TXT`, `NS`, `SOA`, `SRV`, `PTR`, `CAA`, `HTTPS` and `SPF` queries are answered. Other types get an empty answer. An [`ALIAS`](/domains/dns-records#alias-record) record answers `A` and `AAAA` queries with its target's addresses, and `SERVFAIL` when the target can't be looked up |
 | **TTL** | Each answer carries the TTL you set on the record, 60 to 172800 seconds. An `ALIAS` answer carries the target's TTL when that is lower, at least 30 seconds and at most an hour |
 | **Name exists, type doesn't** | Status `NOERROR` with an empty answer (NODATA), for example an `AAAA` query for a name that has only an `A` record |
@@ -226,6 +233,7 @@ provider before deleting this domain.**
 
 <FAQ items={[
   {q: 'What are Cloider\'s nameservers?', a: 'ns1.cloider.com, ns2.cloider.com, ns3.cloider.com and ns4.cloider.com. Enter all four at your registrar as custom nameservers.'},
+  {q: 'Can I switch the nameservers before verifying the domain?', a: 'No. Cloider\'s nameservers refuse queries for an unverified domain, so it would stop resolving, and the TXT record that verifies it can\'t be read there. Add the record at your current DNS provider, verify the domain, then switch.'},
   {q: 'How long does a nameserver change take?', a: 'Usually from a few minutes to a few hours. Resolvers can keep the old nameservers cached for up to 48 hours, so plan for that in the worst case.'},
   {q: 'Do I need to transfer my domain to Cloider?', a: 'No. The domain stays registered at your registrar. You only change its nameservers there.'},
   {q: 'Does Cloider DNS support DNSSEC?', a: 'No. Turn DNSSEC off at your registrar, by removing the DS record, before you switch the nameservers to Cloider. Otherwise validating resolvers reject the domain\'s answers.'},

@@ -37,6 +37,7 @@ Most resources are imported by their id. The CLI's `-o wide` output adds an **ID
 | [`cloider_registry`](/terraform/resources/registry) | The project's id | `cloider registry list -o wide` | `r4t6yu` |
 | [`cloider_registry_token`](/terraform/resources/registry-token) | The token's id | `cloider registry token list -o wide` | |
 | [`cloider_domain`](/terraform/resources/domain) | The domain name | `cloider domain list` | `example.com` |
+| [`cloider_domain_verification`](/terraform/resources/domain-verification) | The domain name, of a verified domain | `cloider domain list` (`VERIFIED` is `yes`) | `example.com` |
 | [`cloider_dns_record`](/terraform/resources/dns-record) | The record's numeric id | `cloider dns list <domain> -o wide` | `48213` |
 | [`cloider_target`](/terraform/resources/target) | `<domain>/<id>` | `cloider target list <domain> -o wide` | `example.com/t4k9vq` |
 

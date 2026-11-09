@@ -95,7 +95,7 @@ Routes a domain path to an app, a cluster service or a bucket's website. The rou
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `domain_name` | string | Yes | A domain of the account |
+| `domain_name` | string | Yes | A domain of the account. A custom domain must be [verified](/api/endpoints/domains#verify-a-domain) |
 | `target_type` | string | No | `App`, `Bucket`, `Cluster` or `LoadBalancer`. Default `Cluster` |
 | `path` | string | No | The path on the domain. Default `/`. Must start with `/` and use only letters, digits, `/`, `_`, `.` and `-`. Must be `/` for `Bucket` and `LoadBalancer` |
 | `target_path` | string | No | The path on the service. Default: the same as `path`. Same rules |
@@ -170,7 +170,7 @@ curl -X POST https://cloider.com/api/targets \
 {"hashed_id": "x4v7n", "domain_name": "example.com", "message": "Target created successfully"}
 ```
 
-For a custom domain, the domain's nameservers must point to Cloider for the route to be reachable; see [Expose services](/kubernetes/expose-services) and [Domains for apps](/apps/domains).
+A custom domain must be verified before it takes a target, and its nameservers must point to Cloider for the route to be reachable; see [Expose services](/kubernetes/expose-services) and [Domains for apps](/apps/domains).
 
 ### Errors
 
@@ -185,6 +185,7 @@ For a custom domain, the domain's nameservers must point to Cloider for the rout
 | `400` | `cluster_id`, `service`, `path`, `target_path` | `Cluster is required`, `LoadBalancer is required`, `A LoadBalancer takes the whole domain, the path must be /`, `A LoadBalancer takes the whole domain, the target path must be /` (LoadBalancer targets) |
 | `400` | `_` | `A LoadBalancer target needs a custom domain.`, `A LoadBalancer target takes the whole domain. Delete the domain's other targets first, or use another domain.`, `This domain points at a LoadBalancer, which takes the whole domain. Delete that target first, or use another domain.` |
 | `400` | `_` | `This cluster is not ready yet. Wait until it is running, then add the target.`, `This LoadBalancer has no IP yet. Wait until it gets one, then add the target.`, `The domain has an A, AAAA, ALIAS or CNAME record of its own. Delete it from the domain's DNS records first, then add the target.` |
+| `400` | `_` | `Verify example.com first: add the TXT record shown on its domain page, then verify it.` (an unverified custom domain) |
 | `400` | `_` | `Invalid target type specified` |
 | `400` | `_` | `This path is already in use on this domain. Please choose a different path.` |
 | `400` | `_` | `This app is not ready yet. Wait until it finishes deploying, then add the target.` |

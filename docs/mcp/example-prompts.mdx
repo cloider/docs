@@ -322,13 +322,17 @@ Is acme-shop.cloider.app free? If so, claim it and point it at the web app.
 Add example.com to Cloider, tell me which nameservers to set at my registrar, and serve www.example.com from the web app.
 ```
 
-**Tools:** `create_domain` (for `example.com` and `www.example.com`), `create_dns_record`, `create_domain_target`
+**Tools:** `create_domain` (for `example.com` and `www.example.com`), `verify_domain`, `create_dns_record`, `create_domain_target`
+
+```json title="Tool call: verify_domain"
+{"domain": "example.com", "wait": true}
+```
 
 ```json title="Tool call: create_dns_record"
 {"domain": "example.com", "type": "CNAME", "name": "www", "value": "acme-shop.cloider.app.", "ttl": 3600}
 ```
 
-A target doesn't add DNS records, so the agent adds a CNAME for www to a free subdomain the app already has. The domain itself already has an ALIAS record that points at Cloider. `www.example.com` is added as a domain of its own so it can have a target.
+A new custom domain starts unverified, so the agent first shows you the TXT record from `create_domain`'s answer. You add it where the domain's DNS is hosted today, and `verify_domain` checks it and lists the nameservers to set. A target doesn't add DNS records, so the agent adds a CNAME for www to a free subdomain the app already has. The domain itself already has an ALIAS record that points at Cloider. `www.example.com` is added as a domain of its own so it can have a target, and is verified at once because it's under `example.com`.
 
 ```text title="Prompt"
 Set up Google Workspace mail for example.com: MX records, SPF and DMARC.

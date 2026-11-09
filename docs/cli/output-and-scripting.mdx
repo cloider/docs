@@ -222,6 +222,8 @@ While waiting, the CLI checks the resource's status every 3 seconds.
 
 `cloider deploy` and `cloider app build retry -f` follow the build until the app is up by default; `--detach` (`-d`) returns right away instead.
 
+`cloider domain verify --wait` checks a custom domain's TXT record every 15 seconds instead, for up to 10 minutes, and takes no `--timeout`. See [`cloider domain verify`](/cli/commands/domain#cloider-domain-verify).
+
 ## Exit codes
 
 Every command exits with `0` on success. When it fails, the exit code says why, so a script can react without parsing messages:

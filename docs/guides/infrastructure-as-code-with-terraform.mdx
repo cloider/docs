@@ -18,7 +18,7 @@ workload into the cluster from the same configuration, wired to the database, th
 | | |
 | --- | --- |
 | **You will build** | Two Terraform configurations: `bootstrap/` (the state bucket) and `platform/` (everything else), producing `https://example.com` served from the cluster `production` |
-| **Resources** | `cloider_cluster`, `cloider_database`, `cloider_bucket`, `cloider_bucket_key`, `cloider_registry`, `cloider_registry_token`, `cloider_domain`, `cloider_dns_record`, `cloider_target`, plus `kubernetes_*` resources |
+| **Resources** | `cloider_cluster`, `cloider_database`, `cloider_bucket`, `cloider_bucket_key`, `cloider_registry`, `cloider_registry_token`, `cloider_domain`, `cloider_domain_verification`, `cloider_dns_record`, `cloider_target`, plus `kubernetes_*` resources |
 | **Tools** | Terraform 1.10 or later (or OpenTofu 1.10 or later), `kubectl`, `dig`, optionally Docker |
 | **Difficulty** | Advanced. You should know Terraform's plan and apply cycle |
 | **Time** | About 60 minutes, plus the time your registrar takes to switch nameservers |
@@ -47,6 +47,7 @@ flowchart TB
     rtp["cloider_registry_token ci-push"]
     rtl["cloider_registry_token production-pull"]
     dm["cloider_domain example.com, www.example.com, acme-shop.cloider.app"]
+    dv["cloider_domain_verification example.com"]
     dr["cloider_dns_record A @, CNAME www, TXT @"]
     tg["cloider_target x3"]
     subgraph k8s["kubernetes provider, in the cluster"]
@@ -71,7 +72,8 @@ a configuration whose state it holds, or a mistake there could destroy its own s
 - [Terraform](https://developer.hashicorp.com/terraform/install) 1.10 or later, or [OpenTofu](https://opentofu.org)
   1.10 or later, for state locking with `use_lockfile`.
 - `kubectl` to look at the cluster, and `dig` to check DNS.
-- A domain you own, here `example.com`, and access to its registrar to change its nameservers.
+- A domain you own, here `example.com`, access to the DNS provider that hosts it today to add a `TXT` record, and
+  access to its registrar to change its nameservers.
 
 Give Terraform the token through the environment. The provider block can then stay empty:
 
@@ -373,14 +375,20 @@ resource "cloider_registry_token" "cluster_pull" {
 ### dns.tf: the domains, records and targets
 
 ```hcl title="platform/dns.tf"
-# The custom domain, delegated to Cloider's nameservers at the registrar
+# The custom domain, delegated to Cloider's nameservers at the registrar once verified
 resource "cloider_domain" "apex" {
   name = var.domain
 }
 
-# www is a domain of its own for targets; its DNS record stays on the apex domain
+# Waits until Cloider finds the TXT record from the verification_record output
+resource "cloider_domain_verification" "apex" {
+  domain = cloider_domain.apex.name
+}
+
+# www is a domain of its own for targets; its DNS record stays on the apex domain.
+# Added once the apex is verified, so it's verified at once
 resource "cloider_domain" "www" {
-  name = "www.${var.domain}"
+  name = "www.${cloider_domain_verification.apex.domain}"
 }
 
 # A free subdomain: works at once, and is what www points at
@@ -416,7 +424,7 @@ resource "cloider_dns_record" "spf" {
 # Route each name to the web Service in the cluster
 resource "cloider_target" "web" {
   for_each = {
-    apex = cloider_domain.apex.name
+    apex = cloider_domain_verification.apex.domain
     www  = cloider_domain.www.name
     free = cloider_domain.free.name
   }
@@ -435,6 +443,11 @@ resource "cloider_target" "web" {
 - The SPF record `v=spf1 -all` says the domain sends no email. Replace it with your mail provider's value if it does,
   and add `MX` records the same way. See [Email DNS records](/domains/email-dns-records).
 - A target references the Service through `kubernetes_service_v1.web`, so Terraform creates the Service first.
+- A custom domain starts unverified and takes no targets until Cloider finds its `TXT` record.
+  `cloider_domain_verification` waits for that, so the apex target takes its `domain` from the verification, and
+  `www.example.com` is only added after it: a name under a domain you verified is verified at once, with no record of
+  its own. DNS records such as the `www` CNAME can be added before, and Cloider serves them once it's verified. See
+  [`cloider_domain_verification`](/terraform/resources/domain-verification).
 
 ### kubernetes.tf: the workload
 
@@ -579,8 +592,17 @@ output "urls" {
   value = [for t in cloider_target.web : "https://${t.domain}"]
 }
 
+output "verification_record" {
+  description = "Add this TXT record where the custom domain's DNS is hosted today."
+  value = {
+    type  = "TXT"
+    name  = cloider_domain.apex.verification_record_name
+    value = cloider_domain.apex.verification_record_value
+  }
+}
+
 output "nameservers" {
-  description = "Set these at the registrar of the custom domain."
+  description = "Set these at the registrar of the custom domain, once it's verified."
   value       = data.cloider_options.current.nameservers
 }
 
@@ -647,22 +669,48 @@ Success! The configuration is valid.
 ## Part 4: Apply in two steps
 
 The `kubernetes` provider is configured from `cloider_cluster.main`, so it can't plan anything before the cluster
-exists. Create the cluster on its own first, then everything else. Later applies need only `terraform apply`.
+exists. Create the cluster on its own first, then everything else. Add the custom domain in the same first step: the
+second step waits until Cloider finds its `TXT` record, which you add in between. Later applies need only
+`terraform apply`.
 
 ```bash
-terraform apply -target=cloider_cluster.main
+terraform apply -target=cloider_cluster.main -target=cloider_domain.apex
 ```
 
 ```text title="Output"
+cloider_domain.apex: Creating...
 cloider_cluster.main: Creating...
+cloider_domain.apex: Creation complete after 1s [id=example.com]
 cloider_cluster.main: Still creating... [1m0s elapsed]
 cloider_cluster.main: Creation complete after 2m41s [id=x8f2kq]
 
-Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+verification_record = {
+  "name" = "_cloider-verify.example.com"
+  "type" = "TXT"
+  "value" = "cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46"
+}
 ```
 
 Terraform warns that `-target` is meant for exceptional cases. Creating a cluster before configuring a provider from it
-is one of them. Then apply the rest:
+is one of them.
+
+Add the `TXT` record from `verification_record` at the DNS provider that hosts `example.com` today, not in Cloider:
+Cloider's nameservers don't answer for a domain until it's verified. The value is your own, so copy it from your
+output, or later with `terraform output verification_record`. Check that the record is published:
+
+```bash
+dig _cloider-verify.example.com TXT +short
+```
+
+```text title="Output"
+"cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46"
+```
+
+Then apply the rest:
 
 ```bash
 terraform apply
@@ -671,6 +719,7 @@ terraform apply
 ```text title="Output"
 Plan: 19 to add, 0 to change, 0 to destroy.
 ...
+cloider_domain_verification.apex: Creation complete after 1s [id=example.com]
 cloider_database.orders: Creation complete after 1m52s [id=p0q9zm]
 kubernetes_deployment_v1.web: Creation complete after 21s [id=shop/web]
 cloider_target.web["free"]: Creation complete after 1s [id=t4k9vq]
@@ -698,7 +747,17 @@ urls = [
   "https://acme-shop.cloider.app",
   "https://www.example.com",
 ]
+verification_record = {
+  "name" = "_cloider-verify.example.com"
+  "type" = "TXT"
+  "value" = "cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46"
+}
 ```
+
+`cloider_domain_verification.apex` checks for the record every 15 seconds, for up to 10 minutes. If it gives up, it
+shows why the record wasn't found, and the next `terraform apply` tries again; a slow DNS provider may need
+`timeouts = { create = "30m" }` on it. Until the domain is verified it takes no targets, and Cloider deletes an
+unverified domain 7 days after it was added. See [Verification fails](/domains/troubleshooting#verification-fails).
 
 `domain_status` shows the status when the domain was created. A domain turns `Active` once a target routes to it,
 which the next `terraform apply` or `cloider domain list` shows. Creating a cluster or a database waits until it is
@@ -732,7 +791,8 @@ out of git.
 
 ## Part 5: Point the domain at Cloider
 
-The apex already points at Cloider with the `ALIAS` record the domain was added with, and `www` with its `CNAME`.
+The domain is verified, so Cloider's nameservers answer for it. The apex already points at Cloider with the `ALIAS`
+record the domain was added with, and `www` with its `CNAME`.
 
 1. **Recreate your existing records** (email, verification) as `cloider_dns_record` resources before the switch, or
    they stop resolving. See [Add a custom domain](/domains/add-a-custom-domain). If your website stays elsewhere, set
@@ -852,9 +912,9 @@ terraform destroy
 ```
 
 ```text title="Output"
-Plan: 0 to add, 0 to change, 20 to destroy.
+Plan: 0 to add, 0 to change, 21 to destroy.
 ...
-Destroy complete! Resources: 20 destroyed.
+Destroy complete! Resources: 21 destroyed.
 ```
 
 Deleting the bucket deletes every file in it, and deleting the database deletes its backups. Set your registrar's
@@ -883,6 +943,9 @@ Finally delete the API token in **Access Control**, **API Tokens** if you made o
 | A bucket or registry name is refused as taken | Names are global across Cloider. Pick another in `terraform.tfvars` |
 | The pods can't connect to the database | The database trusts `cluster:<id>`: the pods must use `private_host`, which `DATABASE_URL` does |
 | `ImagePullBackOff` after switching `app_image` | The image wasn't pushed, the tag is wrong, or it's in another project than the pull token covers |
+| `Domain example.com isn't verified` with `No TXT record named _cloider-verify.example.com ... was found yet` | The record isn't at the DNS provider that hosts the domain today, or isn't published yet. Check with `dig _cloider-verify.example.com TXT +short` and apply again |
+| `Domain example.com isn't verified` with `example.com already uses Cloider's nameservers, ...` | The nameservers were switched before the domain was verified. Point them back to your previous DNS provider, add the `TXT` record there and apply, or contact [support](/account/support) |
+| `Verify example.com first: ...` on a `cloider_target` | The target was created before the verification. Take its `domain` from `cloider_domain_verification.apex.domain`, as `dns.tf` does |
 | Certificate warning on `example.com` | The nameservers haven't switched yet, or `apex_ipv4` is empty. Check with `dig` |
 | A create is refused on a trial account | The trial allows one cluster, database, bucket and registry project at a time. See the note at the top |
 
@@ -901,6 +964,7 @@ More in the [Terraform provider overview](/terraform/overview) and [Domains trou
   {q: 'Is there a Terraform provider for Cloider?', a: 'Yes. cloider/cloider on the Terraform Registry manages clusters, databases, buckets and bucket keys, registry projects and tokens, domains, DNS records and targets. It works with Terraform and OpenTofu, and reads its API token from CLOIDER_TOKEN or the cloider CLI\'s login.'},
   {q: 'Can I store Terraform state in a Cloider bucket?', a: 'Yes. Use the s3 backend with the bucket, a key, region eu-central-2, endpoints = { s3 = "https://s3.eu-central-2.cloider.com" }, use_path_style, use_lockfile and the three skip_ settings, with a Cloider bucket key in AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. Create that bucket in a separate configuration.'},
   {q: 'How do I deploy into a Cloider cluster with the Kubernetes provider?', a: 'Configure the kubernetes provider with host, cluster_ca_certificate, client_certificate and client_key from the cloider_cluster resource\'s kube_config, or from the cloider_cluster data source in another configuration. In one configuration, apply -target=cloider_cluster.<name> first.'},
-  {q: 'Why does Terraform need two applies the first time?', a: 'The kubernetes provider is configured from the cluster\'s kube_config, which doesn\'t exist until the cluster is created. Creating the cluster with -target first lets the second apply plan the Kubernetes resources. Later applies need only terraform apply.'},
+  {q: 'Why does Terraform need two applies the first time?', a: 'The kubernetes provider is configured from the cluster\'s kube_config, which doesn\'t exist until the cluster is created. Creating the cluster with -target first lets the second apply plan the Kubernetes resources. The first apply also adds the custom domain, so you can add its TXT record before the second apply verifies it. Later applies need only terraform apply.'},
+  {q: 'How do I verify a custom domain with Terraform?', a: 'Add the TXT record from the cloider_domain\'s verification_record_name and verification_record_value at the DNS provider that hosts the domain today, then create a cloider_domain_verification for it, which waits until Cloider finds the record. Take each target\'s domain from the verification, so targets are created once the domain is verified.'},
   {q: 'Does a target create the DNS record for my domain?', a: 'No. A custom domain comes with an ALIAS record for the domain itself that points at Cloider, but a target adds nothing, so add a cloider_dns_record for every other name: a CNAME to a free cloider.app subdomain for www and other subdomains.'},
 ]} />

@@ -80,6 +80,7 @@ resource "cloider_database" "orders" {
 | [`cloider_registry`](/terraform/resources/registry) | A container registry project, with its visibility, storage limit and immutable tags setting | [Container Registry](/container-registry/overview) |
 | [`cloider_registry_token`](/terraform/resources/registry-token) | A token to push and pull images of some or all registry projects | [Registry tokens](/container-registry/tokens) |
 | [`cloider_domain`](/terraform/resources/domain) | A free subdomain under a Cloider root such as `cloider.app`, or a custom domain you own | [Domains](/domains/overview) |
+| [`cloider_domain_verification`](/terraform/resources/domain-verification) | The verification of a custom domain: waits until Cloider finds its TXT record, after which the domain takes targets | [Add a custom domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain) |
 | [`cloider_dns_record`](/terraform/resources/dns-record) | A DNS record set (every value of one type at one name) on a custom domain | [DNS records](/domains/dns-records) |
 | [`cloider_target`](/terraform/resources/target) | A route from a path of a domain to a Service in a cluster, or to an app, over HTTPS | [Targets](/domains/targets) |
 

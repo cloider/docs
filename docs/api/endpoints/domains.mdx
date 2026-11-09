@@ -2,11 +2,11 @@
 title: Domains API endpoints
 sidebar_label: Domains
 sidebar_position: 12
-description: Cloider API reference for domains, claim a free cloider.app subdomain or add a custom domain, check availability, list, get and delete domains with their records and routes.
-keywords: [cloider domain api, add custom domain api, free subdomain api, cloider.app subdomain, domain availability api, delete domain api]
+description: Cloider API reference for domains: claim a free cloider.app subdomain, add and verify a custom domain, check availability, and list, get and delete domains.
+keywords: [cloider domain api, add custom domain api, verify domain api, domain verification txt record, free subdomain api, cloider.app subdomain, domain availability api, delete domain api]
 ---
 
-These endpoints manage the domains of a Cloider account: **free subdomains** under `cloider.app` that Cloider hosts for you, and **custom domains** you own and point at Cloider's nameservers. A domain does nothing by itself: [DNS records](/api/endpoints/dns-records) say what its names resolve to, and [targets](/api/endpoints/targets) route its paths to an app, a cluster service or a bucket's static website over HTTPS.
+These endpoints manage the domains of a Cloider account: **free subdomains** under `cloider.app` that Cloider hosts for you, and **custom domains** you own, verify with a TXT record and point at Cloider's nameservers. A domain does nothing by itself: [DNS records](/api/endpoints/dns-records) say what its names resolve to, and [targets](/api/endpoints/targets) route its paths to an app, a cluster service or a bucket's static website over HTTPS.
 
 All paths are relative to `https://cloider.com/api`. Domains are identified by their name, not by an id: `GET /domains/example.com`. See [Domains overview](/domains/overview).
 
@@ -18,6 +18,7 @@ All paths are relative to `https://cloider.com/api`. Domains are identified by t
 | POST | [`/domains`](#add-a-domain) | Write |
 | GET | [`/domains/availability`](#check-whether-a-free-subdomain-is-available) | Read |
 | GET | [`/domains/:domain_name`](#get-a-domain) | Read |
+| POST | [`/domains/:domain_name/verify`](#verify-a-domain) | Write |
 | DELETE | [`/domains/:domain_name`](#delete-a-domain) | Write |
 
 ## The domain object
@@ -27,6 +28,7 @@ All paths are relative to `https://cloider.com/api`. Domains are identified by t
   "domain_name": "example.com",
   "domain_type": "CustomDomain",
   "status": "Active",
+  "verified": true,
   "created_at": "2026-09-20T13:05:41.880214Z"
 }
 ```
@@ -36,7 +38,27 @@ All paths are relative to `https://cloider.com/api`. Domains are identified by t
 | `domain_name` | string | The domain, in lower case. It is the domain's identifier in every endpoint |
 | `domain_type` | string | `Subdomain` for a free subdomain such as `blog.cloider.app`, `CustomDomain` for your own domain |
 | `status` | string | `Pending` (just added, nothing routed yet), `Active` (at least one target routes to it), `Suspended` (its last target was removed) or `Failed` |
+| `verified` | boolean | Whether the domain is proven to be the account's. Free subdomains, and custom domains added before verification existed, are always `true`. An unverified custom domain takes no targets, Cloider's nameservers serve none of its DNS records, and it is deleted 7 days after `created_at` |
+| `verification` | object | Only on an unverified custom domain, and only from `POST /domains`, `GET /domains/:domain_name` and `POST /domains/:domain_name/verify`, never in the list. The TXT record that verifies it, see below |
 | `created_at` | string | When the domain was added |
+
+### The verification object
+
+```json
+{
+  "record_type": "TXT",
+  "record_name": "_cloider-verify.example.com",
+  "record_value": "cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46"
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `record_type` | string | Always `TXT` |
+| `record_name` | string | `_cloider-verify.` followed by the domain |
+| `record_value` | string | `cloider-verify=` followed by 32 hex characters. The value belongs to the account and the domain and never changes, so a record left in place verifies the domain again if it's deleted and added back |
+
+Add the record at the DNS provider that hosts the domain today, before its nameservers point at Cloider, then call [`POST /domains/:domain_name/verify`](#verify-a-domain). See [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain).
 
 ## List domains
 
@@ -55,10 +77,13 @@ curl https://cloider.com/api/domains \
 
 ```json title="Response"
 [
-  {"domain_name": "example.com", "domain_type": "CustomDomain", "status": "Active", "created_at": "2026-09-20T13:05:41.880214Z"},
-  {"domain_name": "blog.cloider.app", "domain_type": "Subdomain", "status": "Active", "created_at": "2026-10-01T09:20:33.102994Z"}
+  {"domain_name": "shop.example.net", "domain_type": "CustomDomain", "status": "Pending", "verified": false, "created_at": "2026-10-20T10:12:09.441027Z"},
+  {"domain_name": "example.com", "domain_type": "CustomDomain", "status": "Active", "verified": true, "created_at": "2026-09-20T13:05:41.880214Z"},
+  {"domain_name": "blog.cloider.app", "domain_type": "Subdomain", "status": "Active", "verified": true, "created_at": "2026-10-01T09:20:33.102994Z"}
 ]
 ```
+
+The list never carries `verification`. Get an unverified domain with [`GET /domains/:domain_name`](#get-a-domain) for its TXT record.
 
 ## Check whether a free subdomain is available
 
@@ -128,10 +153,25 @@ curl -X POST https://cloider.com/api/domains \
 </Tabs>
 
 ```json title="Response"
-{"domain_name": "example.com", "domain_type": "CustomDomain", "status": "Pending", "created_at": "2026-10-20T10:12:09.441027Z"}
+{
+  "domain_name": "example.com",
+  "domain_type": "CustomDomain",
+  "status": "Pending",
+  "verified": false,
+  "created_at": "2026-10-20T10:12:09.441027Z",
+  "verification": {
+    "record_type": "TXT",
+    "record_name": "_cloider-verify.example.com",
+    "record_value": "cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46"
+  }
+}
 ```
 
-Adding a domain the account already has returns the existing domain with `200`, so this request is safe to repeat. A new custom domain also gets an `ALIAS` record for the domain itself that points at `cloider.app` (and, once a target routes the domain to an app with a free subdomain, at that subdomain), unless it's under another of the account's custom domains; it's listed with the domain's [DNS records](/api/endpoints/dns-records). After adding a custom domain, set its nameservers at your registrar to the ones in `GET /options` `nameservers` (`ns1.cloider.com` to `ns4.cloider.com`); see [Nameservers](/domains/nameservers).
+A new custom domain starts unverified, with `verification` holding its TXT record. It's verified at once, with `verified: true` and no `verification`, when its TXT record is already in place, or when it's under a custom domain the account has verified, such as `shop.example.com` once `example.com` is. A free subdomain is always verified. An unverified custom domain is deleted 7 days after it was added.
+
+If another account added the custom domain but never verified it, the request is refused with a message that names the TXT record for your account. Once that record is in place, adding the domain again succeeds, verified, and the other account's claim is removed. Another account's verified domain can't be added, and neither can a name above or below one.
+
+Adding a domain the account already has returns the existing domain with `200`, so this request is safe to repeat. A new custom domain also gets an `ALIAS` record for the domain itself that points at `cloider.app` (and, once a target routes the domain to an app with a free subdomain, at that subdomain), unless it's under another of the account's custom domains; it's listed with the domain's [DNS records](/api/endpoints/dns-records). Once a custom domain is verified, set its nameservers at your registrar to the ones in `GET /options` `nameservers` (`ns1.cloider.com` to `ns4.cloider.com`); see [Nameservers](/domains/nameservers).
 
 | Status | Field | Message |
 | --- | --- | --- |
@@ -139,7 +179,8 @@ Adding a domain the account already has returns the existing domain with `200`, 
 | `400` | `domain_name` | `Invalid root domain name`, `Subdomain name cannot contain dots (multi-level subdomains not allowed)`, `Subdomain name cannot start with numbers`, `Subdomain name must be at least 2 characters` |
 | `400` | `_` | `Invalid domain type specified` |
 | `400` | `_` | `This subdomain is already taken. Please try another one.` |
-| `400` | `_` | `The domain already created by a different user, if you own this domain contact support` |
+| `400` | `_` | `The domain already created by a different user, if you own this domain contact support` (another account verified it) |
+| `400` | `_` | `Another Cloider account added this domain but hasn't verified it. If you own it, add a TXT record named _cloider-verify.example.com with the value cloider-verify=..., then add the domain again.` |
 | `400` | `_` | `This domain is under example.com, which belongs to another Cloider account. If you own example.com, contact support` |
 | `400` | `_` | `A domain under this one belongs to another Cloider account. If you own example.com, contact support` |
 | `400` | `_` | `Your account is suspended. Upgrade to a paid plan to continue using our services.` |
@@ -152,7 +193,7 @@ Adding a domain the account already has returns the existing domain with `200`, 
 GET /domains/:domain_name
 ```
 
-Returns one domain with its targets, newest first. For an app or bucket target, `namespace` and `service` are empty.
+Returns one domain with its targets, newest first. For an app or bucket target, `namespace` and `service` are empty. An unverified custom domain also carries `verification`, its TXT record.
 
 **Access:** any token.
 
@@ -166,6 +207,7 @@ curl https://cloider.com/api/domains/example.com \
   "domain_name": "example.com",
   "domain_type": "CustomDomain",
   "status": "Active",
+  "verified": true,
   "created_at": "2026-09-20T13:05:41.880214Z",
   "targets": [
     {"hashed_id": "t4k9pz", "domain_name": "example.com", "target_type": "App", "app_id": "a7c2mq", "app_name": "web", "app_label": "web", "namespace": "", "service": "", "port": 8080, "path": "/", "target_path": "/"}
@@ -174,6 +216,46 @@ curl https://cloider.com/api/domains/example.com \
 ```
 
 A domain that doesn't exist, or belongs to another account, answers `404 Not Found` (plain text). The domain's records have their own endpoint, [`GET /domains/example.com/dns-records`](/api/endpoints/dns-records#list-a-domains-records), and [`GET /targets?domain_name=example.com`](/api/endpoints/targets#list-a-domains-targets) lists the targets on their own.
+
+## Verify a domain
+
+```http
+POST /domains/:domain_name/verify
+```
+
+Checks the custom domain's TXT record and, when it holds the account's value, marks the domain verified. There is no request body. Cloider asks the domain's own nameservers for the record, so a record added a moment ago is usually seen at once, though some DNS providers take a few minutes to publish one. Once the domain is verified, Cloider's nameservers serve its DNS records within seconds, and it takes targets.
+
+**Access:** Read & Write token.
+
+```bash
+curl -X POST https://cloider.com/api/domains/example.com/verify \
+  -H "Authorization: Bearer $CLOIDER_TOKEN"
+```
+
+```json title="Response"
+{
+  "domain_name": "example.com",
+  "domain_type": "CustomDomain",
+  "status": "Pending",
+  "verified": true,
+  "created_at": "2026-10-20T10:12:09.441027Z",
+  "targets": []
+}
+```
+
+The response is the domain as [`GET /domains/:domain_name`](#get-a-domain) returns it. A domain that is already verified, a free subdomain included, answers the same way with `200`, so the request is safe to repeat. While the record isn't found, the request answers `400` and can be retried: the CLI's `cloider domain verify --wait` and the Terraform `cloider_domain_verification` resource retry every 15 seconds.
+
+| Status | Field | Message |
+| --- | --- | --- |
+| `400` | `_` | `No TXT record named _cloider-verify.example.com with the value cloider-verify=... was found yet. A record added a moment ago can take a few minutes to appear.` |
+| `400` | `_` | `example.com already uses Cloider's nameservers, which answer for it only once it's verified. Add the TXT record where its DNS was hosted before and point the nameservers back there until it's verified, or contact support.` |
+| `400` | `_` | `Could not look up example.com's DNS, try again in a minute.` |
+| `400` | `_` | `This domain is under example.com, which belongs to another Cloider account. If you own example.com, contact support`, `A domain under this one belongs to another Cloider account. If you own example.com, contact support` (another account verified a domain above or below it first) |
+| `400` | `_` | `Operation failed, couldn't verify the domain!` |
+| `403` | `_` | `This API token is read only!`, `You have read-only access to this account, you can not verify domains!` |
+| `404` | | `Not Found` (plain text), for a domain that doesn't exist or belongs to another account |
+
+Errors have the usual shape, `{"errors": {"_": ["..."]}, "data": null}`. See [Verification fails](/domains/troubleshooting#verification-fails) for what to do about each.
 
 ## Delete a domain
 
@@ -204,4 +286,4 @@ See [Delete a domain](/domains/delete-a-domain).
 
 - [DNS records](/api/endpoints/dns-records) and [targets](/api/endpoints/targets)
 - [Free subdomains](/domains/free-subdomains) and [add a custom domain](/domains/add-a-custom-domain)
-- [cloider domain](/cli/commands/domain) and the [cloider_domain](/terraform/resources/domain) Terraform resource
+- [cloider domain](/cli/commands/domain), and the [cloider_domain](/terraform/resources/domain) and [cloider_domain_verification](/terraform/resources/domain-verification) Terraform resources

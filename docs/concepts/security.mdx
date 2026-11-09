@@ -69,7 +69,7 @@ Every member, including Restricted members, can read kubeconfigs and database pa
 ## Encryption in transit
 
 - **Dashboard and API**: `https://cloider.com` and `https://cloider.com/api` are HTTPS only.
-- **Apps and domains**: free `cloider.app` subdomains and your own domains are served over HTTPS with certificates Cloider manages. See [HTTPS certificates](/domains/https-certificates).
+- **Apps and domains**: free `cloider.app` subdomains and your own domains are served over HTTPS with certificates Cloider manages. See [HTTPS certificates](/domains/https-certificates). A custom domain is served only once the account that added it has verified it with a TXT record, so another account can't route or answer for a domain it doesn't control. See [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain).
 - **Object storage**: the S3 endpoint `https://s3.eu-central-2.cloider.com` uses HTTPS.
 - **Container registry**: `registry.cloider.com` uses HTTPS.
 - **Databases**: PostgreSQL, MySQL, MongoDB and Redis databases support SSL/TLS, which you turn on per database. You can download the database's CA certificate to verify the server. See [SSL/TLS](/databases/ssl-tls).

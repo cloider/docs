@@ -326,10 +326,20 @@ route('POST', '/registry/tokens', async (req, res) => {
 })
 
 // domains
-route('GET', '/domains', (req, res) => ok(res, fx.domains.map(d => ({ ...d, targets: fx.targets[d.domain_name] ?? [] }))))
+// the list never carries a domain's verification record, like the api
+route('GET', '/domains', (req, res) => ok(res, fx.domains.map(({ verification, ...d }) => ({ ...d, targets: fx.targets[d.domain_name] ?? [] }))))
+// a custom domain comes back unverified, with the TXT record to add, so the add flow stops at Verify ownership
 route('POST', '/domains', async (req, res) => {
   const body = await readBody(req)
-  ok(res, { domain_name: body.domain_name, domain_type: body.domain_type, status: 'Pending', created_at: fx.NOW.toISOString() })
+  const custom = body.domain_type == 'CustomDomain'
+  ok(res, {
+    domain_name: body.domain_name, domain_type: body.domain_type, status: 'Pending', created_at: fx.NOW.toISOString(),
+    verified: !custom,
+    ...(custom && { verification: {
+      record_type: 'TXT', record_name: `_cloider-verify.${body.domain_name}`,
+      record_value: 'cloider-verify=8d2e6b0f4a9c1e7d3b5a2f8c6e0d4b19',
+    } }),
+  })
 })
 route('GET', '/domains/availability', (req, res, p, q) => ok(res, { domain_name: q.get('domain_name'), available: true, reason: '' }))
 route('GET', '/domains/:name', (req, res, p) => {
@@ -337,6 +347,12 @@ route('GET', '/domains/:name', (req, res, p) => {
   domain ? ok(res, { ...domain, targets: fx.targets[domain.domain_name] ?? [] }) : notFound(res, 'Domain not found!')
 })
 route('DELETE', '/domains/:name', (req, res) => ok(res, fx.domains))
+route('POST', '/domains/:name/verify', (req, res, p) => {
+  const name = decodeURIComponent(p.name)
+  const domain = fx.domains.find(d => d.domain_name == name)
+  const { verification, ...rest } = domain ?? { domain_name: name, domain_type: 'CustomDomain', status: 'Pending', created_at: fx.NOW.toISOString() }
+  ok(res, { ...rest, verified: true, targets: fx.targets[name] ?? [] })
+})
 route('GET', '/domains/:name/dns-records', (req, res, p) => ok(res, fx.dnsRecords[decodeURIComponent(p.name)] ?? []))
 route('POST', '/domains/:name/dns-records', async (req, res, p) => ok(res, { id: 4999, domain_name: p.name, ...(await readBody(req)) }))
 route('GET', '/targets', (req, res, p, q) => ok(res, fx.targets[q.get('domain_name')] ?? []))

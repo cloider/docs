@@ -50,8 +50,8 @@ flowchart LR
 - [`kubectl`](https://kubernetes.io/docs/tasks/tools/) on your computer. Without it, every `kubectl` command below
   can run through `cloider cluster exec production -- kubectl ...` instead.
 - `openssl` and `jq`, to generate WordPress's secret keys and read JSON from the CLI.
-- Optional, for the last part: a domain on Cloider's nameservers, here `example.com`. See
-  [Add a custom domain](/domains/add-a-custom-domain).
+- Optional, for the last part: a domain in your account, verified and on Cloider's nameservers, here `example.com`.
+  See [Add a custom domain](/domains/add-a-custom-domain).
 
 ## Part 1: Create the cluster and connect kubectl
 
@@ -434,8 +434,9 @@ to the admin after the restart, because the keys come from the Secret.
 
 ## Part 7: Use your own domain (optional)
 
-To serve the site on `https://blog.example.com`, the domain `example.com` must be on Cloider's nameservers. Then add a
-DNS record for `blog`, add `blog.example.com` as a domain of its own, and route it to the same Service:
+To serve the site on `https://blog.example.com`, the domain `example.com` must be in your account, verified, and on
+Cloider's nameservers. Then add a DNS record for `blog`, add `blog.example.com` as a domain of its own, and route it to
+the same Service:
 
 ```bash
 cloider dns create example.com --type CNAME --name blog --value acme-blog.cloider.app. --ttl 3600
@@ -443,8 +444,10 @@ cloider domain create blog.example.com
 cloider target create blog.example.com --cluster production --service wordpress/wordpress
 ```
 
-A target doesn't add a DNS record, which is why the `CNAME` comes first. See
-[Add a custom domain](/domains/add-a-custom-domain) for adding `example.com` and pointing its nameservers.
+A target doesn't add a DNS record, which is why the `CNAME` comes first. `blog.example.com` is under `example.com`,
+which you verified, so it's verified as soon as it's added and takes the target at once. See
+[Add a custom domain](/domains/add-a-custom-domain) for adding `example.com`, verifying it and pointing its
+nameservers.
 
 Then tell WordPress its new address. The pod restarts with the new value:
 

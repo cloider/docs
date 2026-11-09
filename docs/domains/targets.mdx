@@ -24,7 +24,7 @@ For the same topic from the other side, see [Domains for apps](/apps/domains) an
 | **Routes** | A host name and a path prefix, such as `example.com/api` |
 | **To** | An app, a Service port in one of your clusters, a bucket's static website, or a LoadBalancer's IP |
 | **Types** | `App`, `Cluster`, `Bucket` and `LoadBalancer` |
-| **Domains** | Free subdomains and custom domains. A LoadBalancer target needs a custom domain |
+| **Domains** | Free subdomains and verified custom domains. A LoadBalancer target needs a custom domain |
 | **Paths** | One target per path per domain. The longest matching path wins. Bucket and LoadBalancer targets always use `/` |
 | **Rewrites** | Optional `target_path` replaces the matched path before the request is forwarded |
 | **Protocol to your code** | Plain HTTP. Cloider terminates HTTPS. A LoadBalancer target passes every port and protocol straight through |
@@ -43,7 +43,7 @@ flowchart LR
 ```
 
 1. The browser looks up the host name. It must resolve to Cloider: free subdomains always do, and a custom domain does
-   once you [point it at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
+   once you [point it at Cloider](/domains/add-a-custom-domain#step-5-point-the-host-names-you-serve-at-cloider).
 2. Cloider terminates HTTPS with the certificate for that host name.
 3. Among the host name's targets, the one with the longest `path` that matches the request wins. A path matches itself
    and everything below it: `/api` matches `/api` and `/api/orders`.
@@ -81,7 +81,9 @@ For an app target you only choose the app: Cloider routes to the app's port itse
 ## Before you begin
 
 - A domain in your account: a [free subdomain](/domains/free-subdomains) or a
-  [custom domain](/domains/add-a-custom-domain).
+  [custom domain](/domains/add-a-custom-domain) you have verified. An unverified custom domain takes no targets: its
+  page says **Verify the domain first, then connect your apps to it here.** instead of offering **Add target**, and the
+  API refuses the target with `Verify example.com first: add the TXT record shown on its domain page, then verify it.`
 - **For an app target**: an app that has deployed. The dashboard offers only `Ready` apps; the CLI, Terraform, the API
   and MCP also accept a `Paused` one.
 - **For a cluster target**: a cluster with a Service to route to. List them with `cloider cluster services <cluster>`
@@ -837,6 +839,7 @@ Delete the target t7p3xr of example.com.
 
 | Limit | Message |
 | --- | --- |
+| A custom domain is verified | `Verify example.com first: add the TXT record shown on its domain page, then verify it.` |
 | `path` and `target_path` start with `/` and contain only letters, digits and `/ _ . -` | `Path must start with / and may only contain letters, numbers and / _ . -`, `Target path must start with / and may only contain letters, numbers and / _ . -` |
 | One target per path per domain | `This path is already in use on this domain. Please choose a different path.` |
 | Service, namespace and cluster names together at most 57 characters | `Service and namespace names are too long for this cluster (combined limit exceeded)` |
@@ -861,6 +864,8 @@ For raw TCP or UDP traffic, such as a database or a game server, use a
 | Problem | Cause and fix |
 | --- | --- |
 | **Add target** is disabled | There is nothing to route to yet: **You have no apps yet. Create one under Apps before adding an app target.**, **No clusters found. You need to create at least one cluster before adding cluster targets.** or **You have no buckets yet. Create one under Buckets and turn on its website before adding a bucket target.** |
+| No **Add target** button, and **Verify the domain first, then connect your apps to it here.** | The custom domain isn't verified yet. Verify it with its TXT record, see [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain) |
+| `Verify example.com first: add the TXT record shown on its domain page, then verify it.` | The same, from the CLI, Terraform, the API or MCP. Run `cloider domain verify example.com --wait` once the TXT record is in place |
 | **None of your buckets has its website on. ...** | Turn on the [static website](/object-storage/static-websites) in a bucket's **Settings** tab, then add the target |
 | `Turn on the bucket's website first, from its Settings.` | The bucket's website is off. Turn it on, then add the target |
 | `A bucket website is served at the root of its domain, the path must be /` | Bucket targets take the whole domain. Leave the path as `/`, or use a domain of its own such as `docs.example.com` |
@@ -876,7 +881,7 @@ For raw TCP or UDP traffic, such as a database or a game server, use a
 | The page shows `404` | The host name reaches Cloider but no target's path matches. Add a target for `/` |
 | `502 Bad Gateway` or `503` | Nothing answers behind the target: the app or cluster is paused, the pods aren't ready, or the port is wrong |
 | Browser certificate warning on a custom domain | The certificate isn't issued yet. See [HTTPS certificates](/domains/https-certificates) |
-| The domain doesn't resolve | Targets other than LoadBalancer targets don't create DNS records. See [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider) |
+| The domain doesn't resolve | Targets other than LoadBalancer targets don't create DNS records. See [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-5-point-the-host-names-you-serve-at-cloider) |
 
 More cases are in [Domains troubleshooting](/domains/troubleshooting).
 

@@ -633,16 +633,29 @@ export const actions = {
     },
   },
   'domains/targets.webp': {},
+  // the mock adds a custom domain unverified, and Verify moves on to Add DNS records by itself
+  'domains/custom-domain-verify.webp': {
+    async run(page, h) {
+      await page.locator('input[name=domain_name]').fill('example.com')
+      await page.getByRole('button', { name: 'Check Availability' }).click()
+      await page.getByRole('button', { name: 'Verify', exact: true }).waitFor()
+      await h.settle()
+    },
+  },
   'domains/custom-domain-nameservers.webp': {
     async run(page, h) {
       await page.locator('input[name=domain_name]').fill('example.com')
       await page.getByRole('button', { name: 'Check Availability' }).click()
-      await page.getByRole('button', { name: 'Continue' }).first().waitFor()
+      await page.getByRole('button', { name: 'Verify', exact: true }).waitFor()
+      await h.settle()
+      await page.getByRole('button', { name: 'Verify', exact: true }).click()
+      await page.getByRole('button', { name: 'Add DNS record' }).first().waitFor()
       await h.settle()
       await page.getByRole('button', { name: 'Continue' }).first().click()
       await page.getByText('ns1.cloider.com').waitFor()
     },
   },
+  'domains/verify-ownership.webp': {},
   'domains/target-form.webp': {
     async run(page, h) {
       await page.getByRole('button', { name: 'Add target' }).click()

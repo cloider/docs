@@ -1,0 +1,209 @@
+---
+title: cloider_domain_verification resource (Terraform)
+sidebar_label: cloider_domain_verification
+sidebar_position: 8
+description: Verify a custom domain with the cloider_domain_verification Terraform resource, which waits for its TXT record before you add targets and switch nameservers.
+keywords: [cloider_domain_verification, terraform domain verification, verify custom domain terraform, txt record verification terraform, _cloider-verify, route53 txt record cloider, cloider_target custom domain]
+---
+
+The `cloider_domain_verification` resource verifies that you own a custom [`cloider_domain`](/terraform/resources/domain). A custom domain starts out unverified: it takes no [`cloider_target`](/terraform/resources/target), Cloider's nameservers serve none of its DNS records, and it is deleted 7 days after it was added. Creating this resource waits until Cloider finds the domain's TXT record, checking every 15 seconds. It doesn't create the record: you add it at the DNS provider that hosts the domain today, by hand or with that provider's own Terraform resource.
+
+## At a glance
+
+| | |
+| --- | --- |
+| **Required arguments** | `domain` |
+| **Changes in place** | `timeouts` |
+| **Changes that replace the verification** | `domain` |
+| **Sensitive attributes** | None |
+| **Timeouts** | `create`, 10 minutes by default |
+| **Import ID** | The domain name, such as `example.com`, of a verified domain |
+| **API** | [`POST /api/domains/:domain_name/verify`](/api/endpoints/domains#verify-a-domain) |
+| **CLI equivalent** | [`cloider domain verify`](/cli/commands/domain#cloider-domain-verify) |
+
+The TXT record comes from the domain's own attributes:
+
+| Record field | Value |
+| --- | --- |
+| Type | `TXT` |
+| Name | The `cloider_domain`'s `verification_record_name`, such as `_cloider-verify.example.com` |
+| Value | The `cloider_domain`'s `verification_record_value`, such as `cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46` |
+
+:::warning[Verify before you point the domain at Cloider's nameservers]
+Add the record where the domain's DNS is hosted today, and change its nameservers to Cloider's only once it's verified. Cloider's nameservers don't answer for an unverified domain, so the record can't be found there. See [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain).
+:::
+
+## Example usage
+
+### Verify a domain and route it, with the record in Route 53
+
+When the domain's DNS is managed with Terraform too, create the record there and the verification waits for it in the same apply. The target takes its `domain` from the verification, so it's created once the domain is verified:
+
+```hcl title="main.tf"
+resource "cloider_domain" "example" {
+  name = "example.com"
+}
+
+# The TXT record, at the DNS provider that hosts example.com now
+data "aws_route53_zone" "example" {
+  name = "example.com"
+}
+
+resource "aws_route53_record" "cloider_verify" {
+  zone_id = data.aws_route53_zone.example.zone_id
+  name    = cloider_domain.example.verification_record_name
+  type    = "TXT"
+  ttl     = 300
+  records = [cloider_domain.example.verification_record_value]
+}
+
+# Waits until Cloider finds the record
+resource "cloider_domain_verification" "example" {
+  domain = cloider_domain.example.name
+
+  depends_on = [aws_route53_record.cloider_verify]
+}
+
+# Taking the domain from the verification creates the target once it's verified
+resource "cloider_target" "web" {
+  domain     = cloider_domain_verification.example.domain
+  cluster_id = cloider_cluster.web.id
+  namespace  = "shop"
+  service    = "web"
+  port       = 80
+}
+```
+
+### Add the record by hand
+
+When the domain's DNS isn't managed with Terraform, apply the domain on its own first, add the record at your DNS provider, then apply the rest:
+
+```hcl title="main.tf"
+resource "cloider_domain" "example" {
+  name = "example.com"
+}
+
+output "verification_record" {
+  value = {
+    type  = "TXT"
+    name  = cloider_domain.example.verification_record_name
+    value = cloider_domain.example.verification_record_value
+  }
+}
+
+resource "cloider_domain_verification" "example" {
+  domain = cloider_domain.example.name
+}
+```
+
+```bash
+terraform apply -target=cloider_domain.example
+cloider domain get example.com    # shows the TXT name and value too
+# add the TXT record at your DNS provider, then:
+terraform apply
+```
+
+### Add domains under a verified one
+
+A custom domain under one your account verified is verified as soon as it's added, with no record of its own. Taking its name from the verification adds it after that:
+
+```hcl title="main.tf"
+resource "cloider_domain" "www" {
+  name = "www.${cloider_domain_verification.example.domain}"
+}
+
+resource "cloider_target" "www" {
+  domain = cloider_domain.www.name
+  app_id = var.web_app_id
+}
+```
+
+### Wait longer for a slow DNS provider
+
+```hcl title="main.tf"
+resource "cloider_domain_verification" "example" {
+  domain = cloider_domain.example.name
+
+  timeouts = {
+    create = "30m"
+  }
+}
+```
+
+## Argument reference
+
+| Argument | Type | Required | Default | Changing it | Description |
+| --- | --- | --- | --- | --- | --- |
+| `domain` | String | Yes | | **Replaces** the verification | The domain to verify, a `cloider_domain`'s `name`. A domain that is already verified, such as a free subdomain, is done at once |
+| `timeouts` | Object | No | `create` 10 minutes | In place | How long `create` waits for the record, such as `"30m"`. See [Timeouts](#timeouts) |
+
+## Attribute reference
+
+| Attribute | Type | Description |
+| --- | --- | --- |
+| `id` | String | The domain name, the same as `domain` |
+
+## Timeouts
+
+| Operation | Default | What it waits for |
+| --- | --- | --- |
+| `create` | 10 minutes | Cloider to find the domain's TXT record, checked every 15 seconds |
+
+If it gives up, the apply fails with `Domain example.com isn't verified`, the last reason the record wasn't found, and `Gave up waiting. Apply again once the record is in place, or raise the timeout with a timeouts block.` Nothing is saved to state, so the next apply checks again. The reasons are the API's, see [Verification fails](/domains/troubleshooting#verification-fails).
+
+## Behavior notes
+
+- **Already verified.** Creating it for a domain that is already verified finishes at once: a free subdomain, a domain under one you verified, or a domain whose record was already in place when it was added.
+- **Errors that aren't retried.** A domain that isn't in your account fails at once with `example.com isn't one of your domains, add it with a cloider_domain first`, and so do a read only token or a member with read-only access. Anything else, such as a record that isn't found yet, is checked again until the timeout.
+- **Deleting it** only removes it from state. A domain stays verified until the domain itself is deleted.
+- **The domain deleted outside Terraform**, or deleted and added back unverified, makes the next refresh remove the verification from state, and the plan offers to create it again. A TXT record left in place verifies the domain again at once.
+- **The domain's `verified` attribute** is read on refresh, so `cloider_domain.<name>.verified` turns `true` on the plan after the apply that verified it. Reference the verification, not `verified`, to order resources after it.
+
+## Import
+
+Import the verification of a domain that is already verified by the domain's name. `cloider domain list` shows which are verified:
+
+```bash
+cloider domain list
+```
+
+```text title="Output"
+DOMAIN             TYPE           STATUS    VERIFIED   CREATED
+example.com        CustomDomain   Active    yes        2026-07-30 08:41
+acme-shop.com      CustomDomain   Pending   no         2026-10-20 08:30
+blog.cloider.app   Subdomain      Active    yes        2026-07-02 17:20
+```
+
+With an `import` block:
+
+```hcl title="imports.tf"
+import {
+  to = cloider_domain_verification.example
+  id = "example.com"
+}
+
+resource "cloider_domain_verification" "example" {
+  domain = "example.com"
+}
+```
+
+With the `terraform import` command:
+
+```bash
+terraform import cloider_domain_verification.example example.com
+```
+
+An unverified domain can't be imported, since there is no verification yet: create the resource instead, and it waits for the record.
+
+## Related
+
+- [`cloider_domain`](/terraform/resources/domain): the domain and its `verification_record_name` and `verification_record_value`
+- [`cloider_target`](/terraform/resources/target): route the verified domain
+- [Add a custom domain](/domains/add-a-custom-domain) and [Verification fails](/domains/troubleshooting#verification-fails)
+
+<FAQ items={[
+  {q: 'How do I verify a custom domain with Terraform?', a: 'Add the TXT record from the cloider_domain\'s verification_record_name and verification_record_value at the DNS provider that hosts the domain today, then create a cloider_domain_verification with domain = cloider_domain.example.name. It waits until Cloider finds the record, checking every 15 seconds for up to 10 minutes.'},
+  {q: 'Does cloider_domain_verification create the TXT record?', a: 'No. The record goes at the DNS provider that hosts the domain today, which Cloider doesn\'t manage. Create it by hand, or with that provider\'s Terraform resource, such as aws_route53_record, and list it in the verification\'s depends_on.'},
+  {q: 'Why does my cloider_target fail on a custom domain?', a: 'A target needs a verified domain, and fails with "Verify example.com first" otherwise. Set the target\'s domain to cloider_domain_verification.<name>.domain so it\'s created after the verification.'},
+  {q: 'What happens when I destroy a cloider_domain_verification?', a: 'Nothing on Cloider. The domain stays verified until the domain itself is deleted.'},
+]} />

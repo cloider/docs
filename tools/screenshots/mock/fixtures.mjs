@@ -183,8 +183,8 @@ export const apps = [
     image_ref: blogImage, dockerfile_args: [], version: '12',
     url: 'https://blog-x7k2.cloider.app',
     domains: [
-      { domain_name: 'blog-x7k2.cloider.app', domain_type: 'Subdomain' },
-      { domain_name: 'example.com', domain_type: 'CustomDomain' },
+      { domain_name: 'blog-x7k2.cloider.app', domain_type: 'Subdomain', verified: true },
+      { domain_name: 'example.com', domain_type: 'CustomDomain', verified: true },
     ],
     source_filename: 'blog.zip', source_size: 1843200, uploaded: true,
     repo_full_name: 'acme/blog', repo_url: 'https://github.com/acme/blog', repo_branch: 'main',
@@ -199,7 +199,7 @@ export const apps = [
     image_ref: 'registry.cloider.com/jane-apps/api-a9m4q:7',
     dockerfile_args: [{ name: 'GO_VERSION', default: '1.25' }], version: '7',
     url: 'https://api-m2p9.cloider.app',
-    domains: [{ domain_name: 'api-m2p9.cloider.app', domain_type: 'Subdomain' }],
+    domains: [{ domain_name: 'api-m2p9.cloider.app', domain_type: 'Subdomain', verified: true }],
     source_filename: 'api.zip', source_size: 524288, uploaded: true,
     repo_full_name: '', repo_url: '', repo_branch: '', git_provider: 'GitHub', auto_deploy: false, git_connected: false,
     image: '', image_tag: '', image_username: '',
@@ -211,7 +211,7 @@ export const apps = [
     status: 'Paused', language: 'JavaScript', framework: 'Express',
     image_ref: 'registry.cloider.com/jane-apps/web-w3n8r:5', dockerfile_args: [], version: '5',
     url: 'https://web-q4m8.cloider.app',
-    domains: [{ domain_name: 'web-q4m8.cloider.app', domain_type: 'Subdomain' }],
+    domains: [{ domain_name: 'web-q4m8.cloider.app', domain_type: 'Subdomain', verified: true }],
     source_filename: 'web.zip', source_size: 3355443, uploaded: true,
     repo_full_name: '', repo_url: '', repo_branch: '', git_provider: 'GitHub', auto_deploy: false, git_connected: false,
     image: '', image_tag: '', image_username: '',
@@ -225,7 +225,7 @@ export const apps = [
     status: 'Ready', language: '', framework: '',
     image_ref: adminImage(0), dockerfile_args: [], version: '4',
     url: 'https://admin-r5t1.cloider.app',
-    domains: [{ domain_name: 'admin-r5t1.cloider.app', domain_type: 'Subdomain' }],
+    domains: [{ domain_name: 'admin-r5t1.cloider.app', domain_type: 'Subdomain', verified: true }],
     source_filename: '', source_size: 0, uploaded: false,
     repo_full_name: '', repo_url: '', repo_branch: '', git_provider: 'GitHub', auto_deploy: false, git_connected: false,
     image: 'ghcr.io/acme/admin', image_tag: 'v3', image_username: 'acme-ci',
@@ -774,7 +774,7 @@ export const buckets = [
     hashed_id: 's3w8q', bucket_name: 'acme-site', public: true, status: 'Ready',
     size_bytes: 3355443, size_sampled_at: ago(0, 0, 4),
     ...bucketFields('acme-site', { error: '404.html' }),
-    domains: [{ domain_name: 'acme-site.cloider.app', domain_type: 'Subdomain' }],
+    domains: [{ domain_name: 'acme-site.cloider.app', domain_type: 'Subdomain', verified: true }],
     policy: null, created_at: ago(12),
   },
 ]
@@ -987,13 +987,21 @@ export const registryTokens = [
 // ---------- domains ----------
 
 export const domains = [
-  { domain_name: 'example.com', domain_type: 'CustomDomain', status: 'Active', created_at: ago(80) },
-  { domain_name: 'blog.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(45) },
-  { domain_name: 'blog-x7k2.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(46) },
-  { domain_name: 'api-m2p9.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(31) },
-  { domain_name: 'web-q4m8.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(24) },
-  { domain_name: 'acme-site.cloider.app', domain_type: 'Subdomain', status: 'Active', created_at: ago(11) },
-  { domain_name: 'play.example.com', domain_type: 'CustomDomain', status: 'Active', created_at: ago(6) },
+  { domain_name: 'example.com', domain_type: 'CustomDomain', verified: true, status: 'Active', created_at: ago(80) },
+  { domain_name: 'blog.cloider.app', domain_type: 'Subdomain', verified: true, status: 'Active', created_at: ago(45) },
+  { domain_name: 'blog-x7k2.cloider.app', domain_type: 'Subdomain', verified: true, status: 'Active', created_at: ago(46) },
+  { domain_name: 'api-m2p9.cloider.app', domain_type: 'Subdomain', verified: true, status: 'Active', created_at: ago(31) },
+  { domain_name: 'web-q4m8.cloider.app', domain_type: 'Subdomain', verified: true, status: 'Active', created_at: ago(24) },
+  { domain_name: 'acme-site.cloider.app', domain_type: 'Subdomain', verified: true, status: 'Active', created_at: ago(11) },
+  { domain_name: 'play.example.com', domain_type: 'CustomDomain', verified: true, status: 'Active', created_at: ago(6) },
+  // added two days ago and not verified yet, so the list tags it and its page asks for the TXT record
+  {
+    domain_name: 'example.net', domain_type: 'CustomDomain', verified: false, status: 'Pending', created_at: ago(2),
+    verification: {
+      record_type: 'TXT', record_name: '_cloider-verify.example.net',
+      record_value: 'cloider-verify=3f9c2a7e51d04b8c9e6f1a2b7c4d8e0f',
+    },
+  },
 ]
 
 const appTarget = (hashed_id, domain_name, app, path, days) => ({

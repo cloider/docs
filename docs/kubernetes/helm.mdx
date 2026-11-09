@@ -278,7 +278,7 @@ Get the generated admin password:
 kubectl get secret grafana -n monitoring -o jsonpath='{.data.admin-password}' | base64 -d; echo
 ```
 
-Route your domain to the `grafana` Service (the domain must already be in your account, see [Add a custom domain](/domains/add-a-custom-domain)):
+Route your domain to the `grafana` Service (the domain must already be in your account, and verified if it's a custom domain, see [Add a custom domain](/domains/add-a-custom-domain)):
 
 ```bash
 cloider target create grafana.example.com --cluster staging --service monitoring/grafana

@@ -108,6 +108,10 @@ set_these_nameservers_at_your_registrar = tolist([
 ])
 ```
 
+Set them at the registrar only once the domain is verified with a
+[`cloider_domain_verification`](/terraform/resources/domain-verification): Cloider's nameservers don't answer for an
+unverified domain.
+
 ### Build a free subdomain from the root
 
 ```hcl title="main.tf"
@@ -146,6 +150,6 @@ The values come from the API every time Terraform reads the data source, so they
 
 <FAQ items={[
   {q: 'Which Kubernetes versions does Cloider offer?', a: 'The cloider_options data source\'s cluster_versions lists them, newest first. The same list is returned by GET /api/options and used by the CLI and the dashboard.'},
-  {q: 'How do I get Cloider\'s nameservers in Terraform?', a: 'Read data.cloider_options.<name>.nameservers. Set those nameservers at your domain\'s registrar to have Cloider answer DNS for a custom domain.'},
+  {q: 'How do I get Cloider\'s nameservers in Terraform?', a: 'Read data.cloider_options.<name>.nameservers. Once the custom domain is verified, with a cloider_domain_verification, set those nameservers at its registrar to have Cloider answer DNS for it.'},
   {q: 'Why should I use ignore_changes with versions from cloider_options?', a: 'Because the list changes when Cloider adds a version, and a different version replaces a cluster or database. ignore_changes = [version] keeps the version the resource was created with.'},
 ]} />

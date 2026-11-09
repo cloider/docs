@@ -17,7 +17,8 @@ follow so that a domain you still use keeps working.
 | --- | --- |
 | **What is deleted** | The domain, every DNS record on it, and every target routing it |
 | **What stays** | Your apps, clusters, Services and buckets with their websites; the domain's registration at your registrar |
-| **Undo** | Not possible. Add the domain again and recreate its records and targets |
+| **Undo** | Not possible. Add the domain again, verify it if it's a custom domain, and recreate its records and targets |
+| **Unverified custom domains** | Deleted automatically 7 days after they were added |
 | **The name afterwards** | Free to be added by any account |
 | **Who can delete** | Members with write access. Read-only members and tokens get `You have read-only access to this account, you can not delete domains!` |
 | **Tools** | Dashboard, `cloider domain delete`, Terraform, `DELETE /api/domains/<domain>`, MCP `delete_domain` |
@@ -183,6 +184,25 @@ never deleted with an app; only its targets to that app are removed. See
 Deleting a free subdomain releases the name immediately. If you might want it again, keep it: a subdomain without
 targets costs nothing.
 
+## Unverified domains are deleted automatically
+
+A custom domain that is still unverified 7 days after it was added is deleted automatically, with any DNS records you
+gave it. It had no targets, since an unverified domain can't take any, and Cloider's nameservers never served its
+records. The domain's page shows the date next to its **Verify** button, and the **Domains** list marks
+it **Unverified**. To keep a domain, verify it, see
+[Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain).
+
+## Add a custom domain again
+
+A custom domain you add again, after deleting it or after it was deleted unverified, starts unverified like any new
+one. Its TXT record, `_cloider-verify.example.com`, has the same value as before, so if you left it at the DNS
+provider that answers for the domain, the domain is verified as soon as it's added.
+
+While the domain's nameservers still point at Cloider, it can't be verified: Cloider's nameservers don't answer for an
+unverified domain, so its TXT record can't be read there. Point the nameservers back to another DNS provider first, or
+contact [support](/account/support). See
+[The domain already uses Cloider's nameservers](/domains/troubleshooting#the-domain-already-uses-cloiders-nameservers).
+
 ## Troubleshooting
 
 | Problem | Cause and fix |
@@ -191,6 +211,8 @@ targets costs nothing.
 | `the name didn't match, nothing was deleted` (CLI) | Type the domain's exact name at the prompt |
 | `deleting domain example.com needs --yes when not running in a terminal` (CLI) | Add `--yes` in scripts |
 | `Operation failed, could not delete DNS records` | Nothing was deleted. Try again in a moment |
+| A domain is gone from **Domains** and nobody deleted it | It was a custom domain left unverified for 7 days. Add it again and verify it |
+| Added the domain again, and verifying says it `already uses Cloider's nameservers` | Its nameservers still point at Cloider. See [Add a custom domain again](#add-a-custom-domain-again) |
 | Email stopped after deleting | The domain still pointed at Cloider's nameservers. Recreate the records at another DNS provider and change the nameservers |
 
 ## Next steps
@@ -202,7 +224,8 @@ targets costs nothing.
 <FAQ items={[
   {q: 'What happens to DNS records when I delete a domain?', a: 'They are deleted with it. If the domain still uses Cloider\'s nameservers, every name under it stops resolving once resolvers\' cached answers expire.'},
   {q: 'Does deleting a domain delete my app or cluster?', a: 'No. Only the domain, its DNS records and its targets are deleted. The apps, Services and bucket websites the targets pointed at keep running.'},
-  {q: 'Can I undo deleting a domain?', a: 'No. Add the domain again and recreate its records and targets. A free subdomain can be claimed by another account in the meantime.'},
+  {q: 'Can I undo deleting a domain?', a: 'No. Add the domain again and recreate its records and targets. A free subdomain can be claimed by another account in the meantime, and a custom domain has to be verified again, which its TXT record does at once if you left it in place.'},
+  {q: 'Why was my custom domain deleted?', a: 'A custom domain that isn\'t verified 7 days after it was added is deleted automatically, with its DNS records. Add it again and verify it with its TXT record.'},
   {q: 'Does deleting a domain cancel its registration?', a: 'No. Cloider doesn\'t register domains. The domain stays registered at your registrar until you cancel it there.'},
   {q: 'How do I stop serving my app on a domain without deleting it?', a: 'Delete the target that routes the domain to the app. The domain and its DNS records stay.'},
 ]} />

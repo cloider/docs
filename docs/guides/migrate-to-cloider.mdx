@@ -44,7 +44,7 @@ flowchart LR
   odb -->|"pg_dump, pg_restore"| ndb
   os3 -->|"rclone copy"| ns3
   oreg -->|"skopeo copy"| nreg
-  odns -->|"recreate records, switch nameservers"| ndns
+  odns -->|"verify, recreate records, switch nameservers"| ndns
 ```
 
 ### What maps to what
@@ -423,12 +423,44 @@ now go to the rehearsal copy, which you replace at cutover.
 
 ## Part 6: Prepare Cloider DNS
 
-Add the domain and recreate **every** record from part 1 in Cloider, so nothing breaks when the nameservers switch.
-Then add the records and targets that send your web traffic to Cloider:
+Add the domain to Cloider first:
 
 ```bash
 cloider domain create example.com
+```
 
+```text title="Output"
+✓ Added example.com
+To verify you own it, add this TXT record where its DNS is hosted today, before pointing it at Cloider:
+  Name:   _cloider-verify.example.com
+  Value:  cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46
+Then run `cloider domain verify example.com --wait`.
+```
+
+Add that `TXT` record at your **old** DNS host, which still answers for the domain, then verify it:
+
+```bash
+cloider domain verify example.com --wait
+```
+
+```text title="Output"
+✓ example.com is verified
+Point it at these nameservers at your registrar:
+  ns1.cloider.com
+  ns2.cloider.com
+  ns3.cloider.com
+  ns4.cloider.com
+Then add records with `cloider dns create example.com ...` and routes with `cloider target create example.com ...`.
+```
+
+Verify before the switch: Cloider's nameservers don't answer for a domain until it's verified, and targets need a
+verified domain. An unverified domain is deleted 7 days after it was added. See
+[Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain).
+
+Then recreate **every** record from part 1 in Cloider, so nothing breaks when the nameservers switch, and add the
+records and targets that send your web traffic to Cloider:
+
+```bash
 # Records you keep, recreated as they were (examples)
 cloider dns create example.com --type MX --value "10 mx1.mail.example.net." --ttl 3600
 cloider dns create example.com --type TXT --value "v=spf1 include:mail.example.net ~all" --ttl 3600
@@ -441,7 +473,8 @@ cloider domain create www.example.com
 cloider target create www.example.com --app api
 ```
 
-Nothing changes for visitors yet: the domain's nameservers still point at the old DNS host. To keep your current DNS
+`www.example.com` is under `example.com`, which you verified, so it's verified as soon as it's added. Nothing changes
+for visitors yet: the domain's nameservers still point at the old DNS host. To keep your current DNS
 host instead of moving to Cloider's nameservers, add only the web records there at cutover: the `www` CNAME, and an `A`
 record for the apex with the address `dig +short api-q2v8.cloider.app A` prints. See
 [Add a custom domain](/domains/add-a-custom-domain).
@@ -510,7 +543,8 @@ Copy this into your ticket and tick it off.
 - [ ] Bucket created and files copied, `rclone check` clean
 - [ ] Database created, rehearsal dump and restore done, timing noted, extensions checked
 - [ ] App (or cluster workloads) running on Cloider with the new configuration, tested on its `cloider.app` address
-- [ ] Domain added in Cloider, every DNS record recreated, web records and targets in place, checked with `dig @ns1.cloider.com`
+- [ ] Domain added in Cloider and verified with its `TXT` record at the old DNS host
+- [ ] Every DNS record recreated, web records and targets in place, checked with `dig @ns1.cloider.com`
 - [ ] Maintenance window announced
 
 **Cutover**
@@ -568,6 +602,9 @@ Leave the nameservers at your registrar untouched until you really cut over.
 | `skopeo` or `docker push` says `unauthorized` | Log in to `registry.cloider.com` with the token's username and secret; check it covers the project and isn't expired |
 | rclone `AccessDenied` on Cloider | The key doesn't reach the bucket, or `RCLONE_CONFIG_CLOIDER_NO_CHECK_BUCKET=true` is missing |
 | The app can't reach the new database | It uses the public host or isn't a trusted source. Use the private host and `--add app:api` |
+| `No TXT record named _cloider-verify.example.com ... was found yet` | The record isn't at the old DNS host, or isn't published yet. Check with `dig _cloider-verify.example.com TXT +short`, then run `cloider domain verify example.com --wait`. See [Verification fails](/domains/troubleshooting#verification-fails) |
+| `example.com already uses Cloider's nameservers, ...` | The nameservers were switched before the domain was verified. Point them back to the old DNS host, add the `TXT` record there and verify, or contact [support](/account/support) |
+| `dig @ns1.cloider.com` answers `REFUSED` | The domain isn't verified yet, so Cloider's nameservers don't answer for it. Verify it first |
 | Some visitors still reach the old app after the switch | Their resolver cached the old record. It expires after the old TTL; that's why TTLs are lowered days before |
 | Email stopped working after the switch | An `MX`, SPF, DKIM or DMARC record wasn't recreated in Cloider. See [Email DNS records](/domains/email-dns-records) |
 | Certificate warning on the domain | The names don't resolve to Cloider yet, or a proxying DNS provider sits in front. See [HTTPS certificates](/domains/https-certificates) |
@@ -587,5 +624,5 @@ More in [Troubleshooting](/reference/troubleshooting).
   {q: 'How do I copy files from S3 to a Cloider bucket?', a: 'Configure rclone with one remote for the old provider and one for Cloider (endpoint https://s3.eu-central-2.cloider.com, region eu-central-2, a bucket access key, no_check_bucket = true) and run rclone copy old:bucket cloider:bucket --metadata, then rclone check to compare.'},
   {q: 'How do I move Docker images to the Cloider registry?', a: 'Create a registry token with Pull & push permission, log in to registry.cloider.com, and copy each image with skopeo copy --all docker://<old image> docker://registry.cloider.com/<project>/<repository>:<tag>, or pull, tag and push it with Docker.'},
   {q: 'How do I migrate to Cloider without downtime?', a: 'Rehearse every step while the old setup serves, lower DNS TTLs days ahead, and keep only the final database copy for the cutover window. The read-only time is roughly how long the dump and restore take; for databases too large for that, contact support.'},
-  {q: 'Can I keep my DNS provider when moving to Cloider?', a: 'Yes. Add the domain to Cloider for its targets, and at your current DNS provider point www with a CNAME to the app\'s cloider.app subdomain and the apex with an A record. Cloider issues the HTTPS certificate once the names resolve to it.'},
+  {q: 'Can I keep my DNS provider when moving to Cloider?', a: 'Yes. Add the domain to Cloider for its targets, verify it with the TXT record Cloider shows, and at your current DNS provider point www with a CNAME to the app\'s cloider.app subdomain and the apex with an A record. Cloider issues the HTTPS certificate once the names resolve to it.'},
 ]} />

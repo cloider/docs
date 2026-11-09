@@ -2,12 +2,12 @@
 title: Troubleshoot domains, DNS and HTTPS on Cloider
 sidebar_label: Troubleshooting
 sidebar_position: 11
-description: Fix Cloider domains that don't resolve or load, with dig and nslookup checks for NXDOMAIN, old nameservers, CNAME at the apex and pending certificates.
-keywords: [domain not working, dns not resolving, nxdomain, dig, nslookup, nameservers not updated, certificate pending, cname apex, cloider dns troubleshooting, dns propagation]
+description: Fix Cloider domains that don't verify, resolve or load, with dig checks for TXT verification records, NXDOMAIN, old nameservers, CNAME apex and certificates.
+keywords: [domain not working, domain verification failed, txt record not found, _cloider-verify, dns not resolving, nxdomain, dig, nslookup, nameservers not updated, certificate pending, cname apex, cloider dns troubleshooting, dns propagation]
 ---
 
-Most domain problems come down to one link in a short chain: the registry hands out the domain's nameservers, the
-nameservers answer with records, the records point at Cloider, a target routes the request, and a certificate secures
+Most domain problems come down to one link in a short chain: the domain is verified, the registry hands out the
+domain's nameservers, the nameservers answer with records, the records point at Cloider, a target routes the request, and a certificate secures
 it. This page shows how to check each link with `dig`, `nslookup` and `curl`, then covers the problems people actually
 hit and every error message from the dashboard, the CLI and the API.
 
@@ -18,16 +18,19 @@ the problem is.
 
 | # | Check | Command | Expected |
 | --- | --- | --- | --- |
-| 1 | The registry uses Cloider's nameservers | `dig example.com NS @a.gtld-servers.net +noall +authority` (for `.com`) or `dig +trace example.com` | `ns1.cloider.com` to `ns4.cloider.com` |
-| 2 | Cloider answers with your record | `dig @ns1.cloider.com example.com A +short` | Your record's value |
-| 3 | The public sees the same answer | `dig @1.1.1.1 example.com A +short` | Same as check 2 |
-| 4 | The name points at Cloider | Compare with `dig +short acme-web.cloider.app` | Same address |
-| 5 | A target routes it | `cloider target list example.com` | A target for the path |
-| 6 | HTTPS works | `curl -sSI https://example.com` | `HTTP/2 200` (or your app's status) |
+| 1 | The domain is verified | `cloider domain get example.com` | `Verified: yes` |
+| 2 | The registry uses Cloider's nameservers | `dig example.com NS @a.gtld-servers.net +noall +authority` (for `.com`) or `dig +trace example.com` | `ns1.cloider.com` to `ns4.cloider.com` |
+| 3 | Cloider answers with your record | `dig @ns1.cloider.com example.com A +short` | Your record's value |
+| 4 | The public sees the same answer | `dig @1.1.1.1 example.com A +short` | Same as check 3 |
+| 5 | The name points at Cloider | Compare with `dig +short acme-web.cloider.app` | Same address |
+| 6 | A target routes it | `cloider target list example.com` | A target for the path |
+| 7 | HTTPS works | `curl -sSI https://example.com` | `HTTP/2 200` (or your app's status) |
 
 ```mermaid
 flowchart TD
-  A[Domain doesn't work] --> B{Registry lists<br/>Cloider's nameservers?}
+  A[Domain doesn't work] --> V{Domain verified?}
+  V -- No --> V1[Add the TXT record at the DNS<br/>provider it uses today, then verify]
+  V -- Yes --> B{Registry lists<br/>Cloider's nameservers?}
   B -- No --> B1[Change nameservers at the registrar,<br/>wait up to 48 hours]
   B -- Yes --> C{ns1.cloider.com answers<br/>with your record?}
   C -- No --> C1[Add or fix the record in Cloider:<br/>name, type, value]
@@ -57,6 +60,102 @@ in PowerShell.
 Asking `ns1.cloider.com` directly shows what Cloider answers right now, with no cache in between. Asking a public
 resolver shows what visitors get.
 
+## Verification fails
+
+A custom domain is verified by a TXT record named `_cloider-verify.example.com`, holding the value shown on the domain's
+page, by `cloider domain get example.com` and in the API's `verification`. Cloider looks the record up by asking the
+domain's own nameservers, the ones the registry lists for it, so the record has to be at the DNS provider that answers
+for the domain today. Each case below starts with the exact message the dashboard, the CLI and the API show.
+
+### No TXT record was found yet
+
+```text
+No TXT record named _cloider-verify.example.com with the value cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46 was found yet. A record added a moment ago can take a few minutes to appear.
+```
+
+Find out which nameservers answer for the domain, then ask one of them for the record:
+
+```bash
+# The domain's nameservers. For shop.example.com, ask for example.com's
+dig example.com NS +short
+
+# What one of them answers for the record
+dig @ns1.example-dns.net _cloider-verify.example.com TXT +short
+```
+
+```text title="Output"
+ns1.example-dns.net.
+ns2.example-dns.net.
+"cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46"
+```
+
+Work through the causes:
+
+1. **The record is at the wrong provider.** A record added at your registrar isn't seen while the domain's DNS is
+   hosted elsewhere, such as Cloudflare, and the reverse. Add it at the provider whose nameservers the first command
+   lists.
+2. **The name has the domain twice.** Many DNS providers add the domain to the names you type, so
+   `_cloider-verify.example.com` becomes `_cloider-verify.example.com.example.com`. Enter only `_cloider-verify` as the
+   name at such a provider. Check with `dig _cloider-verify.example.com.example.com TXT +short`.
+3. **The value differs.** Copy the whole value, `cloider-verify=` included. The value belongs to your account and the
+   domain: one shown in another account, or for another domain such as `www.example.com`, doesn't verify this one.
+4. **The provider hasn't published it yet.** Some providers take a few minutes. Run
+   `cloider domain verify example.com --wait`, which checks every 15 seconds for up to 10 minutes.
+
+### The domain already uses Cloider's nameservers
+
+```text
+example.com already uses Cloider's nameservers, which answer for it only once it's verified. Add the TXT record where its DNS was hosted before and point the nameservers back there until it's verified, or contact support.
+```
+
+The nameservers were switched to Cloider before the domain was verified, or the domain was deleted and added again
+while they still pointed at Cloider. Cloider's nameservers don't answer for an unverified domain, so the TXT record
+can't be read there, and the domain doesn't resolve meanwhile. Pointing a domain at them proves nothing on its own,
+since every account shares them.
+
+1. At your registrar, set the nameservers back to your previous DNS provider, or to the registrar's own DNS.
+2. Add the TXT record there.
+3. Wait until the registry lists those nameservers (`dig example.com NS +short`), then verify.
+4. Switch the nameservers to Cloider again. Records you added in Cloider are served within seconds of verification.
+
+If you can't move the nameservers back, contact [support](/account/support).
+
+### Cloider couldn't look up the domain's DNS
+
+```text
+Could not look up example.com's DNS, try again in a minute.
+```
+
+The domain's nameservers didn't answer in time, or the domain has none. Try again a minute later. If it keeps
+failing, check that `dig example.com NS +short` lists nameservers: a newly registered domain may need DNS turned on at
+the registrar first.
+
+### Another account holds a domain above or below it
+
+```text
+This domain is under example.com, which belongs to another Cloider account. If you own example.com, contact support
+A domain under this one belongs to another Cloider account. If you own example.com, contact support
+```
+
+Another account verified `example.com`, or a name under your domain, before you verified yours. Its DNS records would
+answer for your names, so yours can't be verified. If you own the domain, contact [support](/account/support) with
+proof of ownership.
+
+### Another account added the domain but hasn't verified it
+
+```text
+Another Cloider account added this domain but hasn't verified it. If you own it, add a TXT record named _cloider-verify.example.com with the value cloider-verify=3f9a1c07b2e84d6f9c51a0e7d3b28f46, then add the domain again.
+```
+
+This comes from adding the domain, not from verifying it. Add the record the message names, which is your own, at
+the DNS provider that hosts the domain, then add the domain again. It's added to your account already verified, and
+the other account's claim is removed.
+
+### The domain disappeared from Domains
+
+An unverified custom domain is deleted automatically 7 days after it was added, with any DNS records you gave it. Add
+it again. If its TXT record is still in place, it's verified at once.
+
 ## NXDOMAIN for my domain
 
 `NXDOMAIN` ("non-existent domain") means the nameserver that answered says the name has no records at all.
@@ -75,13 +174,14 @@ Work through the causes:
 1. **The name has no record in Cloider.** Cloider answers `NXDOMAIN` for a name of the domain that has no records.
    The domain itself gets an `ALIAS` record when it's added, but a target doesn't add records: add a `CNAME` for `www` and
    other subdomains. See
-   [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
+   [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-5-point-the-host-names-you-serve-at-cloider).
 2. **The record name includes the domain.** A record named `www.example.com` on `example.com` answers for
    `www.example.com.example.com`. Edit it and set the name to `www`. Check with `cloider dns list example.com`.
 3. **The name has a typo.** Compare `cloider domain list` with the name you query, and the record names with the host
    names you use.
-4. **The domain was deleted from Cloider** while its nameservers still point at Cloider. Add it again with its
-   records, or move the nameservers elsewhere.
+4. **The domain was deleted from Cloider** while its nameservers still point at Cloider. Move the nameservers
+   elsewhere. A domain added again starts unverified, and can't be verified while its nameservers point at Cloider,
+   see [The domain already uses Cloider's nameservers](#the-domain-already-uses-cloiders-nameservers).
 5. **A resolver cached the earlier `NXDOMAIN`.** If you queried the name before adding the record, resolvers can keep
    the negative answer for up to 300 seconds, the time set by the `SOA` record that Cloider's negative answers carry. Check `dig @ns1.cloider.com`: if Cloider already
    answers, wait, or test with another resolver.
@@ -163,7 +263,7 @@ DNS doesn't allow a `CNAME` on the domain itself, because the apex must also hol
   Cloider, or to the target the `CNAME` would have had. Cloider's nameservers answer it with the target's current addresses. See
   [ALIAS record](/domains/dns-records#alias-record).
 - **Use an `A` record for the apex** with Cloider's address, `195.181.240.88`, and a `CNAME` for `www`. See
-  [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
+  [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-5-point-the-host-names-you-serve-at-cloider).
 - **Serve the site on `www`** and keep the apex for email and a simple redirect from your app.
 - **Keep DNS at a provider with CNAME flattening**, such as Cloudflare, which accepts a CNAME at the apex. See
   [Keep your current DNS provider](/domains/add-a-custom-domain#keep-your-current-dns-provider).
@@ -188,7 +288,7 @@ curl -vI https://example.com 2>&1 | grep -E "subject:|issuer:"
 
 Check, in order:
 
-1. The domain has a target: `cloider target list example.com`.
+1. The domain is verified and has a target: `cloider domain get example.com`.
 2. The name resolves to Cloider from the public internet: `dig @1.1.1.1 example.com A +short`.
 3. Port 80 reaches Cloider, with no proxy or CDN in front: `curl -I http://example.com/.well-known/acme-challenge/test`
    is answered by Cloider.
@@ -241,7 +341,7 @@ once the MX record is back.
 
 | What you see | Meaning and fix |
 | --- | --- |
-| `status: REFUSED` from `ns1.cloider.com` | The domain isn't added to Cloider, so Cloider's nameservers don't answer for it. Check the spelling, or add the domain |
+| `status: REFUSED` from `ns1.cloider.com` | The domain isn't added to Cloider, or isn't verified yet, so Cloider's nameservers don't answer for it. Check the spelling, add the domain, or [verify it](#verification-fails) |
 | `status: SERVFAIL` from a public resolver | Often leftover DNSSEC: a DS record at the registrar for a domain whose nameservers don't sign. Remove the DS record |
 | `;; WARNING: recursion requested but not available` | Normal when asking Cloider's nameservers directly: they are authoritative only |
 
@@ -251,6 +351,10 @@ once the MX record is back.
 | --- | --- |
 | The domain's page has no **DNS records** section | It is a free subdomain, which has no records |
 | **Add target** is disabled | Nothing to route to yet. Create an app, or a cluster with a Service |
+| No **Add target** button, and **Verify the domain first, then connect your apps to it here.** | The custom domain isn't verified. Use the **Verify ownership** card at the top of its page |
+| **Unverified** next to a domain's status | It isn't verified yet, and is deleted 7 days after it was added. Click the tag to open its page and verify it |
+| **Continue** is disabled on the **Verify ownership** step | The domain isn't verified yet. Click **Verify** once the TXT record is in place, or **Verify later** to finish from the domain's page |
+| A domain is greyed out, marked **unverified**, in a cluster's **Route a domain** dialog | Unverified domains can't be routed yet. Verify it from its page under **Domains** |
 | **Orphaned targets detected!** | Targets point at a cluster, Service or app that no longer exists. Delete them or point them elsewhere |
 | **App now listens on port 8080; edit and save this target to update it.** | The app's port changed. Open the target, click **Save** |
 | **Check Availability** is disabled | Type a plain domain name such as `example.com`, without `https://` or a path |
@@ -266,16 +370,20 @@ same text.
 | --- | --- |
 | `This subdomain is already taken. Please try another one.` | Choose another free subdomain |
 | `You already own this subdomain. Connect it to the app from Domains instead.` | Add a target to it instead |
-| `The domain already created by a different user, if you own this domain contact support` | Contact [support](/account/support) |
-| `This domain is under ..., which belongs to another Cloider account` | Another account holds a domain above it. Contact [support](/account/support) if you own it |
-| `A domain under this one belongs to another Cloider account` | Another account holds a name under it. Contact [support](/account/support) if you own the domain |
+| `The domain already created by a different user, if you own this domain contact support` | Another account added and verified it. Contact [support](/account/support) |
+| `This domain is under ..., which belongs to another Cloider account` | Another account verified a domain above it. Contact [support](/account/support) if you own it |
+| `A domain under this one belongs to another Cloider account` | Another account verified a name under it. Contact [support](/account/support) if you own the domain |
 | `Domain name is a public suffix shared by many owners, add your own domain under it, such as example.co.uk` | Add the domain you registered, not the shared suffix |
 | `Invalid root domain name` | A free subdomain must end in `.cloider.app` |
 | `Disallowed domain name` | Cloider's own domains can't be added |
 | `Invalid domain format` | Use a full name such as `example.com` |
 | `Invalid domain type specified` | API: `domain_type` must be `Subdomain` or `CustomDomain` |
 | `Your account is suspended. Upgrade to a paid plan to continue using our services.` | See [Billing](/account/billing) |
-| `You have read-only access to this account, you can not create domains!` | Ask for write access |
+| `You have read-only access to this account, you can not create domains!`, `You have read-only access to this account, you can not verify domains!` | Ask for write access |
+| `Another Cloider account added this domain but hasn't verified it. ...` | See [Another account added the domain but hasn't verified it](#another-account-added-the-domain-but-hasnt-verified-it) |
+| `No TXT record named ... was found yet. ...` | See [No TXT record was found yet](#no-txt-record-was-found-yet) |
+| `... already uses Cloider's nameservers, which answer for it only once it's verified. ...` | See [The domain already uses Cloider's nameservers](#the-domain-already-uses-cloiders-nameservers) |
+| `Could not look up example.com's DNS, try again in a minute.` | See [Cloider couldn't look up the domain's DNS](#cloider-couldnt-look-up-the-domains-dns) |
 
 ### DNS records
 
@@ -297,6 +405,7 @@ The rules for each type are in [DNS records](/domains/dns-records#record-types).
 
 | Message | Fix |
 | --- | --- |
+| `Verify example.com first: add the TXT record shown on its domain page, then verify it.` | Verify the custom domain, see [Verification fails](#verification-fails) if it doesn't |
 | `This path is already in use on this domain. Please choose a different path.` | Edit the existing target or use another path |
 | `This app is not ready yet. Wait until it finishes deploying, then add the target.` | Wait for the first deploy |
 | `This app's name is too long to be exposed on a domain.` | Create the app with a shorter name |
@@ -307,7 +416,7 @@ The rules for each type are in [DNS records](/domains/dns-records#record-types).
 
 ## Still stuck?
 
-Open a [support request](/account/support) with the domain name, the output of the six checks in
+Open a [support request](/account/support) with the domain name, the output of the seven checks in
 [Start here](#start-here-find-the-broken-link), and what you expected to see. Never include API tokens or passwords.
 
 ## Next steps
@@ -317,6 +426,8 @@ Open a [support request](/account/support) with the domain name, the output of t
 - [Reference troubleshooting](/reference/troubleshooting): problems across all products.
 
 <FAQ items={[
+  {q: 'Why does Cloider say my TXT verification record wasn\'t found?', a: 'Usually the record is at a DNS provider that doesn\'t answer for the domain, or its name has the domain twice, such as _cloider-verify.example.com.example.com. Check which nameservers answer with dig example.com NS +short, ask one of them for _cloider-verify.example.com TXT, and add the record there with only _cloider-verify as the name if the provider adds the domain itself.'},
+  {q: 'Can I verify a domain that already uses Cloider\'s nameservers?', a: 'Not there. Cloider\'s nameservers don\'t answer for an unverified domain, so the TXT record can\'t be read. Point the nameservers back to your previous DNS provider, add the record there and verify, then switch them to Cloider again, or contact support.'},
   {q: 'Why does my domain return NXDOMAIN on Cloider?', a: 'Usually because the name has no record in Cloider. The domain itself gets an ALIAS record that points at Cloider when you add it, but a target doesn\'t create DNS records: add a CNAME for www and other subdomains. Also check that the registry lists ns1.cloider.com to ns4.cloider.com.'},
   {q: 'How do I check whether my nameserver change worked?', a: 'Ask the registry: dig example.com NS @a.gtld-servers.net +noall +authority for .com domains, or dig +trace example.com for any TLD. It should list ns1.cloider.com to ns4.cloider.com.'},
   {q: 'Why can\'t I add a CNAME for my root domain?', a: 'DNS doesn\'t allow a CNAME at the apex. Use an ALIAS record for example.com, which Cloider adds when you add the domain and points at your app\'s free subdomain once you route the domain to the app, and a CNAME for www.example.com. At a DNS provider without ALIAS records, use an A record to 195.181.240.88.'},

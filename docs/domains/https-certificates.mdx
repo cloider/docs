@@ -75,11 +75,14 @@ Some details worth knowing:
 A certificate is issued only when every item below is true. If HTTPS on your custom domain shows a warning for more
 than a few minutes, go through the list.
 
-1. **The domain has a target.** No target, no certificate. Add one, see [Targets](/domains/targets).
+1. **The domain is verified and has a target.** No target, no certificate, and an unverified custom domain takes no
+   targets. Verify it with its TXT record, see
+   [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain), then add a
+   target, see [Targets](/domains/targets).
 2. **The host name resolves to Cloider.** For a subdomain such as `www`, a `CNAME` to a free subdomain you hold; for the
    apex, the `ALIAS` record it was added with, or an `A` record to `195.181.240.88` at another DNS
    provider. See
-   [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-4-point-the-host-names-you-serve-at-cloider).
+   [Point the host names you serve at Cloider](/domains/add-a-custom-domain#step-5-point-the-host-names-you-serve-at-cloider).
 3. **Port 80 reaches Cloider.** The challenge runs over plain HTTP. Nothing in front of the domain, such as a proxy or
    CDN, may block, cache or redirect `/.well-known/acme-challenge/`.
 4. **No CAA record forbids Let's Encrypt.** If the domain has `CAA` records, one of them must be

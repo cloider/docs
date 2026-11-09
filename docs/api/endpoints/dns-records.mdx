@@ -6,7 +6,7 @@ description: "Cloider API reference for DNS records on custom domains: list, cre
 keywords: [cloider dns api, create dns record api, a record api, cname api, mx record api, txt record api, dns ttl, authoritative dns api]
 ---
 
-These endpoints manage the DNS records of a custom domain whose nameservers point to Cloider. A record says what a name under the domain resolves to: an `A` record for an IPv4 address, `MX` for mail, `TXT` for verification strings, and so on. Cloider's nameservers answer with your records shortly after you save them.
+These endpoints manage the DNS records of a custom domain whose nameservers point to Cloider. A record says what a name under the domain resolves to: an `A` record for an IPv4 address, `MX` for mail, `TXT` for verification strings, and so on. Cloider's nameservers answer with your records shortly after you save them, once the domain is [verified](/api/endpoints/domains#verify-a-domain). Records of an unverified custom domain are saved but not served until then.
 
 All paths are relative to `https://cloider.com/api`. Records are created under their domain (`/domains/example.com/dns-records`) and then addressed by their numeric id (`/dns-records/1042`). See [DNS records](/domains/dns-records) for what each type is for.
 
@@ -108,7 +108,7 @@ A domain that doesn't exist or belongs to another account answers with an empty 
 POST /domains/:domain_name/dns-records
 ```
 
-Creates a record and publishes it on Cloider's nameservers.
+Creates a record and publishes it on Cloider's nameservers. On an unverified custom domain the record is saved, and published within seconds of the domain being verified.
 
 **Access:** Read & Write token.
 

@@ -213,7 +213,7 @@ The new image couldn't be pulled for 60 seconds. This is a platform side problem
 | The address shows an error page or `502` | The app isn't answering on its port: it crashed, or it is restarting. Check the [Logs](/apps/logs) tab. A crashed container is restarted automatically |
 | The app works, then errors after a while | Look for crashes or memory growth on [Logs](/apps/logs) and [Insights](/apps/insights), and at the replicas with `cloider app replicas`: **Ran out of memory** or **Restarted for failing its health check** say why one restarted |
 | Some requests fail, others work | One [replica](/apps/scaling#see-an-apps-replicas) is unhealthy, or the replicas don't share state. Read its logs with the replica picker, and keep sessions and files in a database or bucket |
-| The address doesn't load at all | The app has no domain (**No domain connected** on Overview), the app is paused, or a custom domain's nameservers or its `A` or `CNAME` record aren't set. See [Domains](/apps/domains) |
+| The address doesn't load at all | The app has no domain (**No domain connected** on Overview), the app is paused, or a custom domain isn't verified, or its nameservers or its `A` or `CNAME` record aren't set. See [Domains](/apps/domains) |
 | New environment variables aren't picked up | Saving the **Environment** tab restarts the app; build arguments and build variables need the rebuild that saving them starts |
 | Redirect loops or `http://` links | Requests reach the app as plain HTTP behind HTTPS. Configure your framework to trust the proxy and generate `https://` URLs |
 | App went `Failed` after a port change | Nothing answers on the new port. Put the right port back on **Settings** |

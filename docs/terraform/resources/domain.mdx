@@ -2,11 +2,13 @@
 title: cloider_domain resource (Terraform)
 sidebar_label: cloider_domain
 sidebar_position: 7
-description: Claim free cloider.app subdomains and add custom domains with the cloider_domain Terraform resource, point nameservers, and import domains you already added.
-keywords: [cloider_domain, terraform custom domain, cloider.app subdomain terraform, terraform nameservers, free subdomain terraform, domain terraform import, cloider dns terraform]
+description: Claim free cloider.app subdomains and add custom domains with the cloider_domain Terraform resource, read the TXT record that verifies them, and import domains.
+keywords: [cloider_domain, terraform custom domain, cloider.app subdomain terraform, terraform domain verification, verification_record_name, terraform nameservers, free subdomain terraform, domain terraform import, cloider dns terraform]
 ---
 
 The `cloider_domain` resource adds a domain to your Cloider account: either a **free subdomain** under one of Cloider's roots, such as `acme-web.cloider.app`, or a **custom domain** you own, such as `example.com`. Once added, you route it to an app, a cluster Service or a bucket's static website with a [`cloider_target`](/terraform/resources/target), and give a custom domain DNS records with [`cloider_dns_record`](/terraform/resources/dns-record).
+
+A custom domain starts out **unverified**. Until you prove you own it, with the TXT record in its `verification_record_name` and `verification_record_value` added where its DNS is hosted today and a [`cloider_domain_verification`](/terraform/resources/domain-verification), it takes no targets, Cloider's nameservers serve none of its records, and it is deleted 7 days after it was added. A domain under one you verified, or whose record is already in place, is verified as soon as it's added.
 
 ## At a glance
 
@@ -45,7 +47,7 @@ resource "cloider_domain" "preview" {
 }
 ```
 
-### Add a custom domain and show its nameservers
+### Add a custom domain, verify it and show its nameservers
 
 ```hcl title="main.tf"
 data "cloider_options" "current" {}
@@ -54,17 +56,31 @@ resource "cloider_domain" "example" {
   name = "example.com"
 }
 
+output "verification_record" {
+  description = "Add this where the domain's DNS is hosted today"
+  value = {
+    type  = "TXT"
+    name  = cloider_domain.example.verification_record_name
+    value = cloider_domain.example.verification_record_value
+  }
+}
+
+# Waits until Cloider finds the TXT record, checking every 15 seconds
+resource "cloider_domain_verification" "example" {
+  domain = cloider_domain.example.name
+}
+
 output "nameservers" {
-  description = "Set these at your registrar"
+  description = "Set these at your registrar once the domain is verified"
   value       = data.cloider_options.current.nameservers
 }
 ```
 
-Then change the domain's nameservers at your registrar to the ones in the output. See [Nameservers](/domains/nameservers).
+Apply the domain first with `terraform apply -target=cloider_domain.example`, add the record from the `verification_record` output (or from `cloider domain get example.com`) at the DNS provider that hosts the domain today, then run `terraform apply` to verify it. The verification checks every 15 seconds, for up to 10 minutes by default. Then change the domain's nameservers at your registrar to the ones in the output. Cloider's nameservers don't answer for an unverified domain, so verify before you switch. See [`cloider_domain_verification`](/terraform/resources/domain-verification) and [Nameservers](/domains/nameservers).
 
 ### Serve a custom domain from an app: domain, DNS records and targets
 
-A custom domain comes with an `ALIAS` record for the domain itself that points at Cloider, and a target doesn't add any other record. So serving `example.com` and `www.example.com` takes four kinds of resources:
+A custom domain comes with an `ALIAS` record for the domain itself that points at Cloider, and a target doesn't add any other record. So serving `example.com` and `www.example.com` takes domains, a verification, a DNS record and targets:
 
 ```hcl title="main.tf"
 variable "web_app_id" {
@@ -77,13 +93,19 @@ resource "cloider_domain" "free" {
   name = "acme-web.cloider.app"
 }
 
-# The custom domain, and www as a domain of its own so it can have a target
+# The custom domain, verified by its TXT record
 resource "cloider_domain" "example" {
   name = "example.com"
 }
 
+resource "cloider_domain_verification" "example" {
+  domain = cloider_domain.example.name
+}
+
+# www as a domain of its own so it can have a target. Added once example.com is
+# verified, it is verified at once
 resource "cloider_domain" "www" {
-  name = "www.example.com"
+  name = "www.${cloider_domain_verification.example.domain}"
 }
 
 # DNS: example.com came with an ALIAS that points at Cloider, www needs a CNAME
@@ -103,7 +125,7 @@ resource "cloider_target" "free" {
 }
 
 resource "cloider_target" "apex" {
-  domain = cloider_domain.example.name
+  domain = cloider_domain_verification.example.domain
   app_id = var.web_app_id
 }
 
@@ -113,7 +135,7 @@ resource "cloider_target" "www" {
 }
 ```
 
-`www.example.com` is answered by the nameservers of `example.com`, so its DNS record lives on `example.com`. It only needs to be a domain of its own so that a target can route it. See [Add a custom domain](/domains/add-a-custom-domain) for the full walkthrough.
+`www.example.com` is answered by the nameservers of `example.com`, so its DNS record lives on `example.com`. It only needs to be a domain of its own so that a target can route it, and taking its name from the verification adds it once `example.com` is verified, so it needs no TXT record of its own. The apex target takes its `domain` from the verification for the same reason: a target on an unverified domain is refused. As above, add `example.com`'s TXT record before the apply that creates the verification. See [Add a custom domain](/domains/add-a-custom-domain) for the full walkthrough.
 
 ## Argument reference
 
@@ -130,6 +152,9 @@ The provider checks the name's form at plan time: `Example.com` or `example.com.
 | `id` | String | The domain name, the same as `name` |
 | `type` | String | `Subdomain` or `CustomDomain` |
 | `status` | String | `Pending` until something routes to it, `Active` while something does, `Suspended` once nothing does any more. See [Status values](/reference/status-values) |
+| `verified` | Boolean | Whether the domain is verified. A free subdomain is verified from the start, a custom domain once a `cloider_domain_verification` finds its TXT record. It's read on refresh, so it turns `true` on the plan after the apply that verified the domain |
+| `verification_record_name` | String | The name of the TXT record that verifies a custom domain, `_cloider-verify.<name>`. It stays set once the domain is verified. Null when the domain never needed one here: a free subdomain, a custom domain verified as soon as it was added, or one imported once verified |
+| `verification_record_value` | String | The TXT record's value, `cloider-verify=` and 32 hex characters. It's the same every time for this domain in your account, so a record left in place verifies the domain again if it's deleted and added back. Null when `verification_record_name` is |
 | `created_at` | String | When the domain was added, in RFC 3339 |
 
 ## Behavior notes
@@ -138,6 +163,8 @@ The provider checks the name's form at plan time: `Example.com` or `example.com.
 - **Deleting a domain** also deletes its DNS records and the targets that route it. Terraform deletes the `cloider_dns_record` and `cloider_target` resources that refer to the domain first, but any records or targets created outside Terraform go too.
 - **DNS records** can only be added to custom domains. Free subdomains are answered by Cloider and don't take records.
 - **The apex ALIAS record.** A custom domain comes with an `ALIAS` record for the domain itself that points at `cloider.app`, unless it's under another of the account's custom domains. When a `cloider_target` first routes the domain to an app with a free subdomain, the `ALIAS` moves to that subdomain. Terraform doesn't manage it, and a `cloider_dns_record` of type `A`, `AAAA` or `ALIAS` without a `name` takes it over.
+- **Verification.** A custom domain is verified by a separate [`cloider_domain_verification`](/terraform/resources/domain-verification), which waits for its TXT record. Add the record at the DNS provider that hosts the domain today, before its nameservers point at Cloider: Cloider's nameservers don't answer for an unverified domain. A `cloider_target` on an unverified domain fails with `Verify example.com first: add the TXT record shown on its domain page, then verify it.`
+- **Unverified domains are deleted after 7 days.** The next refresh then removes the domain from state and the plan offers to add it again. Its TXT record, if left in place, verifies it again at once.
 - **HTTPS** certificates are issued automatically for every domain a target routes, see [HTTPS certificates](/domains/https-certificates).
 - **Deleted outside Terraform.** The next refresh removes the domain from state and the plan offers to add it again.
 
@@ -150,9 +177,9 @@ cloider domain list
 ```
 
 ```text title="Output"
-DOMAIN             TYPE           STATUS   CREATED
-example.com        CustomDomain   Active   2026-07-30 08:41
-blog.cloider.app   Subdomain      Active   2026-07-02 17:20
+DOMAIN             TYPE           STATUS   VERIFIED   CREATED
+example.com        CustomDomain   Active   yes        2026-07-30 08:41
+blog.cloider.app   Subdomain      Active   yes        2026-07-02 17:20
 ```
 
 With an `import` block:
@@ -174,17 +201,18 @@ With the `terraform import` command:
 terraform import cloider_domain.example example.com
 ```
 
-The ID is lower-cased and a trailing dot is removed, so `Example.com.` imports as `example.com`. Import the domain's DNS records and targets too, see [`cloider_dns_record`](/terraform/resources/dns-record#import) and [`cloider_target`](/terraform/resources/target#import).
+The ID is lower-cased and a trailing dot is removed, so `Example.com.` imports as `example.com`. Import the domain's DNS records and targets too, see [`cloider_dns_record`](/terraform/resources/dns-record#import) and [`cloider_target`](/terraform/resources/target#import). A verified custom domain's `cloider_domain_verification` imports by the same name, see [Import](/terraform/resources/domain-verification#import).
 
 ## Related
 
 - [`cloider_dns_record`](/terraform/resources/dns-record): records on a custom domain
+- [`cloider_domain_verification`](/terraform/resources/domain-verification): verify a custom domain with its TXT record
 - [`cloider_target`](/terraform/resources/target): route the domain to an app, a Service or a bucket's website
 - [`cloider_options`](/terraform/data-sources/options): subdomain roots and nameservers
 - [Domains overview](/domains/overview)
 
 <FAQ items={[
-  {q: 'How do I add a custom domain to Cloider with Terraform?', a: 'Add a cloider_domain with name = "example.com", apply, and set the domain\'s nameservers at your registrar to cloider_options\' nameservers. Then add cloider_dns_record resources for the host names you serve and a cloider_target to route each one.'},
+  {q: 'How do I add a custom domain to Cloider with Terraform?', a: 'Add a cloider_domain with name = "example.com" and apply it. Add the TXT record in its verification_record_name and verification_record_value where the domain\'s DNS is hosted today, then add a cloider_domain_verification and apply again. Once it\'s verified, set the domain\'s nameservers at your registrar to cloider_options\' nameservers, add cloider_dns_record resources for the host names you serve, and a cloider_target, with its domain taken from the verification, to route each one.'},
   {q: 'How do I claim a free cloider.app subdomain with Terraform?', a: 'Add a cloider_domain whose name ends in a subdomain root, such as acme-web.cloider.app. The provider sees the root and claims it as a free subdomain. It must be one label and not taken by another account.'},
   {q: 'Why does my custom domain not resolve after adding a target?', a: 'A target doesn\'t add DNS records. The domain itself comes with an ALIAS record that points at Cloider; add CNAME records for subdomains such as www with cloider_dns_record, and check that the domain uses Cloider\'s nameservers.'},
   {q: 'Can Terraform manage a domain I already added in the dashboard?', a: 'Yes, by importing it: terraform import cloider_domain.example example.com, or an import block. Creating it instead fails with "Domain already added".'},

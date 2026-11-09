@@ -113,7 +113,7 @@ cloider target create play.example.com --cluster production --loadbalancer games
 ✓ Routed play.example.com/ to LoadBalancer games/server
 ```
 
-The CLI checks the cluster's services first: an unknown service fails with exit code `4` (``no service shop/api in cluster production, see `cloider cluster services` ``), and a service with several ports needs `--port` (`shop/api has several ports (8080/TCP, 9090/TCP), pick one with --port`). Without `--app`, `--bucket` or `--cluster` it fails with `say where to route to with --app, --bucket or --cluster`. See [Targets](/domains/targets) and [Expose services](/kubernetes/expose-services). MCP tool: `create_domain_target`.
+The CLI checks the cluster's services first: an unknown service fails with exit code `4` (``no service shop/api in cluster production, see `cloider cluster services` ``), and a service with several ports needs `--port` (`shop/api has several ports (8080/TCP, 9090/TCP), pick one with --port`). Without `--app`, `--bucket` or `--cluster` it fails with `say where to route to with --app, --bucket or --cluster`. A custom domain must be verified first, or the API refuses the target with `Verify example.com first: add the TXT record shown on its domain page, then verify it.`, see [`cloider domain verify`](/cli/commands/domain#cloider-domain-verify). See [Targets](/domains/targets) and [Expose services](/kubernetes/expose-services). MCP tool: `create_domain_target`.
 
 ## cloider target update
 

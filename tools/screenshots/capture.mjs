@@ -84,7 +84,12 @@ function build() {
     'run', '--rm', '--name', config.container, '-v', `${config.webDir}:/app`, '-w', '/app',
     'node:22-alpine', 'npx', 'nuxt', 'build',
   ], { stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' })
-  if (res.status != 0) throw new Error('nuxt build failed')
+  if (res.status != 0) {
+    // the copy is in sync by now, so without this the next run would take the old
+    // .output for an up to date build
+    fs.writeFileSync(path.join(config.webDir, 'nuxt.config.ts'), '')
+    throw new Error('nuxt build failed')
+  }
 }
 
 function startNuxt() {

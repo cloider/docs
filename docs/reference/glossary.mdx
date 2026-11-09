@@ -85,7 +85,7 @@ A named entry in a kubeconfig file that tells `kubectl` which cluster and creden
 The Kubernetes components that run a cluster: the API server, the cluster state and the controllers. Cloider runs it for you, and its usage is part of the cluster's compute. See [How Cloider works](/concepts/how-cloider-works).
 
 ### Custom domain
-A domain you own, such as `example.com`, added to Cloider and pointed at Cloider's nameservers. See [Add a custom domain](/domains/add-a-custom-domain).
+A domain you own, such as `example.com`, added to Cloider, verified with a TXT record and pointed at Cloider's nameservers. See [Add a custom domain](/domains/add-a-custom-domain).
 
 ## D
 
@@ -112,6 +112,9 @@ A file of instructions to build a container image. If an app's source has one, C
 
 ### Domain
 A domain name you use with Cloider: a free subdomain of `cloider.app` or a custom domain you own. See [Domains overview](/domains/overview).
+
+### Domain verification
+Proving a custom domain is yours with a TXT record named `_cloider-verify.<domain>`, added where its DNS is hosted today. Until it's verified, the domain takes no targets, Cloider's nameservers serve none of its records, and it's deleted after 7 days. See [Verify that you own the domain](/domains/add-a-custom-domain#step-2-verify-that-you-own-the-domain).
 
 ## E
 
