@@ -38,7 +38,10 @@ runs' instead, on the **Runs** tab.
 1. Open the app and go to the **Logs** tab.
 2. The tab shows **Connecting to the app...**, then the latest lines, and keeps following with a **Live** badge.
 3. Pick how much history to load with **Lines** (100, 200, 500 or 1000). Changing it opens a new stream.
-4. Scroll up to read without being pulled back down; scroll to the bottom to follow again.
+4. To find something, click **Search logs** (the magnifier above the logs) and type. Only the lines holding that text
+   stay on screen, ignoring case, with each match highlighted, and new lines that match keep arriving. It searches the
+   lines already loaded, so raise **Lines** to search further back. Press Esc or **Close search** to see every line again.
+5. Scroll up to read without being pulled back down; scroll to the bottom to follow again.
 
 When the stream ends (after 60 minutes, or if the connection can't be restored), the tab says **This stream has ended.
 Reconnect to keep following the app.** Click **Reconnect**.
@@ -253,6 +256,7 @@ set the environment variable `PYTHONUNBUFFERED=1`; in other languages flush afte
   {q: 'How do I see my Cloider app\'s logs?', a: 'Open the app\'s Logs tab in the dashboard, or run cloider app logs <app> for the last 200 lines and cloider app logs <app> -f to follow new lines. The logs are the app container\'s stdout and stderr.'},
   {q: 'Does Cloider keep app logs?', a: 'No. Logs are streamed from the running container and are not stored, so a restart or a new deploy starts an empty log. Send logs to an external service if you need to keep them.'},
   {q: 'How many log lines can I see?', a: '100, 200, 500 or 1000 lines of history, chosen with the Lines picker or cloider app logs -n. Following then shows new lines as they arrive, for up to 60 minutes per stream.'},
+  {q: 'Can I search my app\'s logs?', a: 'Yes. On the Logs tab, click Search logs and type: only the lines holding that text stay on screen, ignoring case, with each match highlighted. It searches the lines already loaded, up to the 1000 you can ask for, since Cloider doesn\'t store logs. With the CLI, pipe cloider app logs <app> into grep.'},
   {q: 'Where is the build output?', a: 'On the Builds tab: click Logs on a build, or run cloider app build logs <app>. The Logs tab only shows the running app.'},
   {q: 'Why are my Python logs delayed?', a: 'Python buffers stdout when it isn\'t a terminal. Set the environment variable PYTHONUNBUFFERED=1 on the app, or flush after printing, and lines appear as they are written.'},
 ]} />

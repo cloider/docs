@@ -21,8 +21,8 @@ never billed.
 | **Requests (This Month)** | Requests since the first of the month |
 | **Server Errors (This Month)** | The share of this month's requests answered with a 5xx status, and how many |
 | **Data Out (This Month)** | Bytes sent back to clients since the first of the month |
-| **CPU & Memory** | CPU and memory per replica, minute by minute, against each replica's limit, last hour by default, up to 12 hours |
-| **Ready Replicas** | Replicas ready to serve, minute by minute, and each hour's peak, last hour by default, up to 12 hours |
+| **CPU & Memory** | CPU and memory per replica, minute by minute, against each replica's limit, last 30 minutes by default, from 5 minutes up to 12 hours |
+| **Ready Replicas** | Replicas ready to serve, minute by minute, and each hour's peak, last 30 minutes by default, from 5 minutes up to 12 hours |
 | **Requests** | Requests per day, stacked by 2xx, 3xx, 4xx and 5xx, last 31 days |
 | **Data Out** | Bytes sent back per day, last 31 days |
 | **Avg. Usage (This Month)** | Average CPU in cores and memory in GB over the days of this month |
@@ -91,8 +91,8 @@ the ones the app never sees, such as the `503` a client gets while the app is do
 ## How are CPU and memory charted?
 
 The **CPU & Memory** charts show what the app's [replicas](/apps/scaling) use, minute by minute, next to what each one
-is allowed. They open on the last hour: pick **3h**, **6h** or **12h** to look further back, and **Refresh** for the
-latest minute, which also shows next to each chart's title.
+is allowed. They open on the last 30 minutes: pick **5m** for a closer look, **1h**, **3h**, **6h** or **12h** to look
+further back, and **Refresh** for the latest minute, which also shows next to each chart's title.
 
 <Screenshot
   src="/img/screenshots/apps/insights-cpu-memory.webp"
@@ -119,8 +119,8 @@ charts are the billed averages, and count each replica at no less than what it i
 
 The **Ready Replicas** chart shows how many of the app's [replicas](/apps/scaling) were ready to serve requests, which
 is where autoscaling shows: the line climbs when the app scales up and drops when it scales back down. The dashed line
-is the most replicas of each hour. It opens on the last hour: pick **3h**, **6h** or **12h** to look further back, and
-**Refresh** for the latest count, which also shows next to the title.
+is the most replicas of each hour. It opens on the last 30 minutes: pick **5m** for a closer look, **1h**, **3h**, **6h**
+or **12h** to look further back, and **Refresh** for the latest count, which also shows next to the title.
 
 <Screenshot
   src="/img/screenshots/apps/insights-replicas.webp"
@@ -348,7 +348,7 @@ cloider app exec blog -- ps aux
 <FAQ items={[
   {q: 'How many requests does my app get per day?', a: 'The app\'s Insights tab shows requests per day for the last 31 days, split into 2xx, 3xx, 4xx and 5xx, with today\'s and this month\'s totals and the data sent back. They are counted at the ingress for every domain of the app, and are not billed.'},
   {q: 'Where can I see how often my cron job\'s runs fail?', a: 'On the cron job\'s Insights tab: the runs that ended today and this month, the minutes they ran, and this month\'s success and failure rate with how many runs succeeded and failed. The Runs tab lists the last 5 succeeded and 5 failed runs with their output.'},
-  {q: 'How can I see when my app scaled up or down?', a: 'The app\'s Insights tab charts its ready replicas minute by minute and the peak of each hour, over the last hour by default and up to the last 12 hours. A paused app shows 0.'},
+  {q: 'How can I see when my app scaled up or down?', a: 'The app\'s Insights tab charts its ready replicas minute by minute and the peak of each hour, over the last 30 minutes by default, from the last 5 minutes up to the last 12 hours. A paused app shows 0.'},
   {q: 'Where can I see how much CPU and memory my app uses?', a: 'On the app\'s Insights tab in the dashboard: CPU and memory per replica minute by minute over the last 12 hours against each replica\'s limit, average CPU in cores and memory in GB for this month and today, and daily charts for the last 31 days. cloider app usage <app> -o json returns the daily figures.'},
   {q: 'How often is app usage measured?', a: 'Usage is sampled every minute while the app runs, and averaged per day. A paused app has no running container, so it records zero usage.'},
   {q: 'Does the web terminal count towards my app\'s usage?', a: 'No. Only the app\'s own container is measured and billed. The terminal that the dashboard opens runs separately and isn\'t counted.'},
