@@ -21,13 +21,13 @@ Every Cloider cluster comes with a terminal that has `kubectl` and `helm` instal
 
 ## How the terminal works
 
-When a cluster is created, Cloider deploys a small `terminal` Deployment into the cluster's `kube-system` namespace. Its pod holds the cluster's kubeconfig, so `kubectl` and `helm` inside it talk to your cluster's API as cluster admin. The browser terminal, `cloider cluster shell` and `cloider cluster exec` all run in that pod, and so does a pod's **Terminal** on the cluster's page, which opens a shell inside the pod's container with `kubectl exec` (see [Open a terminal in a pod](/kubernetes/manage-workloads#open-a-terminal-in-a-pod)).
+Every cluster has a terminal that Cloider runs next to it, outside the cluster itself. It holds the cluster's kubeconfig, so `kubectl` and `helm` inside it talk to your cluster's API as cluster admin. The browser terminal, `cloider cluster shell` and `cloider cluster exec` all run in it, and so does a pod's **Terminal** on the cluster's page, which opens a shell inside the pod's container with `kubectl exec` (see [Open a terminal in a pod](/kubernetes/manage-workloads#open-a-terminal-in-a-pod)).
 
 A few consequences are worth knowing:
 
-- **Don't delete or scale down the `terminal` Deployment** in `kube-system`. If it is gone, the browser terminal and `exec` stop working with `This cluster's terminal isn't running right now!`.
-- **The terminal's filesystem is temporary.** Files you create in it are lost whenever its pod restarts, for example when the cluster is paused and resumed. Keep manifests in git or on your computer, and pipe them in with `exec -i`.
-- **It runs in your cluster**, so its CPU and memory use is counted in the cluster's compute like any other pod. When idle it uses very little.
+- **It starts when you need it.** The terminal runs only while it is used: it starts the first time you open it or run `exec`, and stops after 10 minutes nobody used it. Starting it takes a few seconds, while the dashboard and the CLI show `Starting the terminal...`. An open browser terminal or `cloider cluster shell` keeps it running.
+- **The terminal's filesystem is temporary.** Files you create in it are lost whenever it stops, after 10 idle minutes or when the cluster is paused. Keep manifests in git or on your computer, and pipe them in with `exec -i`.
+- **It isn't in your cluster.** You won't find it in `kube-system`, and nothing you do inside the cluster can change it. While it runs, its CPU and memory use is counted in the cluster's compute. When idle it uses very little.
 - **It needs the cluster to be `Ready`.** While a cluster is creating, paused or being deleted, the terminal isn't available.
 
 ## Open the browser terminal
@@ -111,7 +111,6 @@ cloider cluster exec staging kubectl get pods -A
 ```text title="Output"
 NAMESPACE     NAME                        READY   STATUS    RESTARTS   AGE
 kube-system   coredns-6b9d8c7f5d-q2x7l    1/1     Running   0          2d
-kube-system   terminal-7c9f6d8b4d-4mzk8   1/1     Running   0          2d
 shop          web-6d8f7b9c5d-2kq9x        1/1     Running   0          5h
 shop          web-6d8f7b9c5d-8hj2p        1/1     Running   0          5h
 ```
@@ -280,7 +279,9 @@ See [Access control](/account/access-control) and [API tokens](/account/api-toke
 | `This cluster is paused. Resume it to run a command!` (HTTP 409) | [Resume the cluster](/kubernetes/pause-and-resume) first |
 | `This cluster is not ready yet!` (HTTP 409) | The cluster is still being created. Wait for `Ready` |
 | `This cluster is being deleted!` (HTTP 409) | The cluster is being deleted, nothing can run in it |
-| `This cluster's terminal isn't running right now!` (HTTP 409) | The `terminal` pod in `kube-system` isn't running. If you scaled the `terminal` Deployment down, scale it back up with your kubeconfig (`kubectl scale deployment terminal -n kube-system --replicas 1`). If you deleted it, contact [support](/account/support) |
+| `The cluster's terminal could not be started, try again in a moment!` or `The terminal could not be started, try again in a moment!` (HTTP 503) | The terminal didn't start. Retry. If it keeps happening, contact [support](/account/support) |
+| `This cluster's terminal isn't running right now!` (HTTP 409) | The terminal stopped just as the command was about to run. Retry |
+| `The terminal is taking too long to start, try again in a moment.` | The terminal didn't start within 3 minutes. Retry. If it keeps happening, contact [support](/account/support) |
 | `The command could not be started, try again in a moment!` (HTTP 503) | A temporary problem starting the command. Retry |
 | `Give a command to run!` | The request had no command. With the CLI, put the command after the cluster name |
 | `stdin is bigger than 2 MiB!` | Split the input, or apply manifests in several calls |

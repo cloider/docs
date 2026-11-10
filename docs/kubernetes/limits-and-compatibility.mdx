@@ -102,7 +102,7 @@ The control plane and the cluster DNS are billed like your own pods, on the larg
 
 ### Cloider components in `kube-system`
 
-Every cluster has a few components that Cloider installs and relies on, in `kube-system`: the cluster DNS, the metrics server and the `terminal` Deployment used by the browser terminal and `cloider cluster exec`. Don't delete or modify them.
+Every cluster has a few components that Cloider installs and relies on, in `kube-system`: the cluster DNS and the metrics server. Don't delete or modify them. The [terminal](/kubernetes/web-terminal-and-exec) used by the browser terminal and `cloider cluster exec` runs outside the cluster.
 
 ## Limits
 

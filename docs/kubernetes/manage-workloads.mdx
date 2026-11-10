@@ -48,7 +48,7 @@ The actions button next to the namespace list (the three dots) has **New namespa
 
 ### What are system namespaces?
 
-`kube-system`, `kube-public` and `kube-node-lease` hold the parts of the cluster that Cloider runs for you, such as cluster DNS, the metrics server and the [web terminal](/kubernetes/web-terminal-and-exec). The dashboard hides them unless you turn on **Show system namespaces**, which **ConfigMaps** and **Secrets** don't offer, and never changes them: a change there is refused with `kube-system is managed by Cloider, the dashboard does not change it. Use kubectl if you really need to.`
+`kube-system`, `kube-public` and `kube-node-lease` hold the parts of the cluster that Cloider runs for you, such as cluster DNS and the metrics server. The dashboard hides them unless you turn on **Show system namespaces**, which **ConfigMaps** and **Secrets** don't offer, and never changes them: a change there is refused with `kube-system is managed by Cloider, the dashboard does not change it. Use kubectl if you really need to.`
 
 ## Create objects from YAML
 
@@ -379,7 +379,7 @@ A Secret's YAML shows its values as `<hidden>`, so a Secret is edited from **Sec
 <FAQ items={[
   {q: 'Can I manage Kubernetes workloads without kubectl on Cloider?', a: 'Yes. A cluster\'s page in the Cloider dashboard lists its pods, Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, HorizontalPodAutoscalers, ConfigMaps, Secrets, Services, Ingress objects, NetworkPolicies, volumes, PersistentVolumes, StorageClasses, events, ResourceQuotas, LimitRanges and PriorityClasses, and can scale, restart, change images, set environment variables, read logs, open a terminal in a pod, edit keys, resize volumes, route domains and apply any YAML.'},
   {q: 'Do changes made in the dashboard conflict with kubectl or Helm?', a: 'The dashboard changes the same objects through the cluster\'s Kubernetes API. Apply YAML uses server-side apply with the field manager cloider-dashboard. A later helm upgrade or kubectl apply of the same fields sets them back to what the chart or manifest says, so keep changes you want to last in your manifests.'},
-  {q: 'Why are kube-system and other system namespaces hidden?', a: 'They hold the parts of the cluster Cloider runs for you, such as cluster DNS, the metrics server and the web terminal. The dashboard hides them unless you turn on Show system namespaces, and never changes them.'},
+  {q: 'Why are kube-system and other system namespaces hidden?', a: 'They hold the parts of the cluster Cloider runs for you, such as cluster DNS and the metrics server. The dashboard hides them unless you turn on Show system namespaces, and never changes them.'},
   {q: 'Do Ingress objects work on Cloider clusters?', a: 'An Ingress is only served by an ingress controller running in the cluster, and a new cluster has none, so the Ingress view shows it as not served. To route a domain or a path of it to a Service with automatic HTTPS, use Targets, which need nothing installed in the cluster.'},
   {q: 'Can read-only members see Secret values?', a: 'Members with read-only access can open every view and reveal a Secret\'s value one key at a time, but can\'t change anything.'},
 ]} />

@@ -88,7 +88,7 @@ Each cluster comes with:
 
 - **Cluster DNS**, so pods reach Services by name (`http://api.shop.svc.cluster.local`).
 - **The Kubernetes metrics server**, so `kubectl top pods` and the HorizontalPodAutoscaler work out of the box.
-- **A terminal Deployment** in the `kube-system` namespace that powers the [browser terminal](/kubernetes/web-terminal-and-exec). Don't delete it, or the browser terminal and `cloider cluster exec` stop working.
+- **A terminal** with `kubectl` and `helm` pointed at the cluster, behind the [browser terminal](/kubernetes/web-terminal-and-exec), `cloider cluster shell` and `cloider cluster exec`. Cloider runs it outside the cluster and starts it when you open it.
 
 ## What can you run on a cluster?
 

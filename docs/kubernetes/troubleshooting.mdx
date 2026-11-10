@@ -71,7 +71,8 @@ See [Connect with kubectl](/kubernetes/connect-with-kubectl).
 | `This cluster is paused. Resume it to run a command!` (409) | Resume the cluster |
 | `This cluster is not ready yet!` (409) | Wait for `Ready` |
 | `This cluster is being deleted!` (409) | Nothing can run in a cluster that is being deleted |
-| `This cluster's terminal isn't running right now!` (409) | The `terminal` Deployment in `kube-system` isn't running. Restore it if you scaled it down; if it was deleted, contact [support](/account/support) |
+| `This cluster's terminal isn't running right now!` (409) | The terminal stopped just as the command was about to run. Retry |
+| `The terminal could not be started, try again in a moment!` (503) | The terminal didn't start. Retry; if it keeps happening, contact [support](/account/support) |
 | `The command could not be started, try again in a moment!` (503) | Retry |
 | `Terminals need a Read & Write API token!` (403) | Use a Read & Write API token |
 | `You have read-only access to this account, you can not run commands!` (403) | Your role is read-only |
