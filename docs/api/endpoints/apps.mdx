@@ -348,7 +348,7 @@ Creates the app from a staged source and starts its first build right away. Opti
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `app_name` | string | Yes | 2 to 64 characters: lower case letters, digits and `-`, starting with a letter, not ending with `-` |
+| `app_name` | string | Yes | 2 to 50 characters: lower case letters, digits and `-`, starting with a letter, not ending with `-` |
 | `port` | integer | Yes, unless `schedule` is set | 1 to 65535, the port the app listens on |
 | `source_token` | string | Yes | The `token` from step 1, or from an import |
 | `start_command` | string | No | One line, up to 1000 characters. A buildpack build writes it into a `Procfile`; an image app and an app built from a `Dockerfile` run it with `sh -c` in place of the image's `ENTRYPOINT` and `CMD` |
@@ -387,7 +387,7 @@ The app is created even when a later part of the request fails. Those failures c
 
 | Status | Field | Message |
 | --- | --- | --- |
-| `400` | `app_name` | `App name must not be empty`, `App name can not be upper case`, `App name must not have special characters except "-"`, `App name must be at least 2 characters`, `App name must not exceed 64 characters`, and the like |
+| `400` | `app_name` | `App name must not be empty`, `App name can not be upper case`, `App name must not have special characters except "-"`, `App name must be at least 2 characters`, `App name must not exceed 50 characters`, and the like |
 | `400` | `port` | `App port must not be empty`, `App port must be between 1 and 65535` |
 | `400` | `compute_mode`, `replicas`, `max_replicas`, `cpu`, `memory`, `cpu_threshold`, `memory_threshold`, `thresholds` | The compute errors, see [Change the settings](#change-the-port-compute-health-check-schedule-or-start-command) |
 | `400` | `start_command` | `Start command must be at most 1000 characters`, `Start command must be a single line` |
@@ -804,7 +804,7 @@ Streams what the app prints to standard output and standard error as [server-sen
 | `lines` | No | How many past lines to start with: `100`, `200`, `500` or `1000`. Default `200` |
 | `follow` | No | `false` to send the past lines and end. Default: follow |
 | `run` | No | A cron job's run to read, by its `name` from [the runs](#list-a-cron-jobs-runs). Without it, a cron job's stream follows its latest run and moves on to each new one. With it, a followed stream ends once that run has finished. `404 Run not found!` on any other app |
-| `replica` | No | One replica to read, by its `name` from [the replicas](#list-an-apps-replicas). Without it, the stream follows every replica, and when the app can run more than one, each line starts with its replica's name in brackets: `[app-7c9d8f6b5-x2k4p] GET / 200`. `404 Replica not found!` on a cron job or a name that isn't a replica's |
+| `replica` | No | One replica to read, by its `name` from [the replicas](#list-an-apps-replicas). Without it, the stream follows every replica, and when the app can run more than one, each line starts with its replica's name in brackets: `[blog-x2k4p] GET / 200`. `404 Replica not found!` on a cron job or a name that isn't a replica's |
 
 ```bash
 curl -N "https://cloider.com/api/apps/a8q2w/logs/stream?lines=100" \
@@ -887,7 +887,7 @@ curl https://cloider.com/api/apps/b7x2k/replicas -H "Authorization: Bearer $CLOI
 ```json title="Response"
 [
   {
-    "name": "app-7c9d8f6b5-x2k4p",
+    "name": "blog-x2k4p",
     "version": "12",
     "status": "Running",
     "ready": true,
@@ -896,7 +896,7 @@ curl https://cloider.com/api/apps/b7x2k/replicas -H "Authorization: Bearer $CLOI
     "created_at": "2026-10-18T11:12:40Z"
   },
   {
-    "name": "app-7c9d8f6b5-r5t7n",
+    "name": "blog-r5t7n",
     "version": "12",
     "status": "Running",
     "ready": false,

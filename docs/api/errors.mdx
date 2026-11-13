@@ -114,10 +114,10 @@ Resource names follow DNS rules, and every rule that is broken is reported:
 
 | Field | Example messages |
 | --- | --- |
-| `cluster_name` | `Cluster name must not be empty`, `Cluster name can not be upper case`, `Cluster name can not start with numbers`, `Cluster name must not have special characters except "-"`, `Cluster name must be at least 2 characters` |
-| `database_name` | `Database name must not exceed 64 characters`, `Database name is reserved` |
+| `cluster_name` | `Cluster name must not be empty`, `Cluster name can not be upper case`, `Cluster name can not start with numbers`, `Cluster name must not have special characters except "-"`, `Cluster name must be at least 2 characters`, `Cluster name must not exceed 50 characters` |
+| `database_name` | `Database name must not exceed 48 characters`, `Database name is reserved` |
 | `database_user` | `Database username must not have special characters except "_"`, `Database username is reserved` |
-| `app_name` | `App name must not have spaces`, `App name must not exceed 64 characters` |
+| `app_name` | `App name must not have spaces`, `App name must not exceed 50 characters` |
 | `bucket_name` | `Bucket name must be at least 3 characters`, `Bucket name can only have lowercase letters, numbers and "-"`, `This bucket name is already taken` |
 | `name` (registry project) | `Project name must have at least one letter`, `This project name is already taken` |
 | `domain_name` | `Invalid domain format`, `Domain name cannot have upper case letters` |

@@ -435,7 +435,7 @@ cloider app logs api -f | grep -i error
 2026-10-20T09:41:15Z GET /orders 200 12.8ms
 ```
 
-An app that can run more than one replica prints all of them, each line starting with its replica's name in brackets (`[app-7c9d8f6b5-x2k4p] GET / 200`). Logs go to stdout. When a followed stream drops and reconnects, the CLI prints `--- reconnected, the last lines may repeat ---` to stderr. Stop following with Ctrl-C. See [Logs](/apps/logs). MCP tool: `get_app_logs`.
+An app that can run more than one replica prints all of them, each line starting with its replica's name in brackets (`[blog-x2k4p] GET / 200`). Logs go to stdout. When a followed stream drops and reconnects, the CLI prints `--- reconnected, the last lines may repeat ---` to stderr. Stop following with Ctrl-C. See [Logs](/apps/logs). MCP tool: `get_app_logs`.
 
 ## cloider app replicas
 
@@ -450,10 +450,10 @@ cloider app replicas blog
 ```
 
 ```text title="Output"
-NAME                  STATUS    READY   RESTARTS   VERSION   CREATED   MESSAGE
-app-7c9d8f6b5-x2k4p   Running   yes     0          12        2d ago    -
-app-7c9d8f6b5-m8q3z   Running   yes     0          12        2d ago    -
-app-7c9d8f6b5-r5t7n   Running   no      1          12        38m ago   Failing its health check, it answered with HTTP 503
+NAME         STATUS    READY   RESTARTS   VERSION   CREATED   MESSAGE
+blog-x2k4p   Running   yes     0          12        2d ago    -
+blog-m8q3z   Running   yes     0          12        2d ago    -
+blog-r5t7n   Running   no      1          12        38m ago   Failing its health check, it answered with HTTP 503
 ```
 
 **STATUS** is `Starting`, `Running`, `Crashing` or `Stopping`, and **MESSAGE** says why a replica isn't simply up. Read one's logs with `cloider app logs <app> --replica <name>`, open a shell in it with `cloider app shell <app> --replica <name>`, or run a command in it with `cloider app exec --replica <name> <app> ...`. A cron job has no replicas. MCP tool: `list_app_replicas`.

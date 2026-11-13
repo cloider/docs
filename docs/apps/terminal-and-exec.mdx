@@ -83,7 +83,7 @@ An MCP client has no terminal. Agents run commands one at a time with the `app_e
 </TabItem>
 </Tabs>
 
-The prompt shows the app's name as the host name: Cloider sets the container's hostname to the app name.
+The prompt shows the replica's name as the host name, such as `blog-x2k4p`.
 
 ### Pick a replica
 
@@ -93,8 +93,8 @@ each one shows its status and version, so you can open a shell in the one that m
 
 ```bash
 cloider app replicas blog
-cloider app shell blog --replica app-7c9d8f6b5-r5t7n
-cloider app exec --replica app-7c9d8f6b5-r5t7n blog -- cat /tmp/state.json
+cloider app shell blog --replica blog-r5t7n
+cloider app exec --replica blog-r5t7n blog -- cat /tmp/state.json
 ```
 
 Without `--replica`, `cloider app shell` and `cloider app exec` use the newest replica. In the API, `GET
@@ -266,7 +266,7 @@ cloider app exec blog "wget -qO- http://localhost:\$PORT/health"
 | **You have read-only access to this account, you can not run commands!** | Your role in the account is read-only |
 | **The terminal could not be started, try again in a moment!** | The terminal didn't wake in time. Try again |
 | **This app has no running container right now!** | The app is between containers (a restart or a rollout). Try again in a few seconds |
-| **This app has no running replica named app-7c9d8f6b5-r5t7n!** | That replica has stopped, for example after a scale down or a new version. List the current ones with `cloider app replicas` |
+| **This app has no running replica named blog-r5t7n!** | That replica has stopped, for example after a scale down or a new version. List the current ones with `cloider app replicas` |
 | **Replica not found!** / **That is not a replica's name!** | The name isn't one of a replica. Copy it from `cloider app replicas` |
 | **A cron job app has no replicas!** | A cron job runs a container per run. Open a running run's terminal from the **Runs** tab |
 | `127` exit code | The command isn't installed in the image. Buildpack images don't include every tool, so check with `cloider app exec <app> "command -v <tool>"` |

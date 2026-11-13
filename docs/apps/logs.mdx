@@ -168,16 +168,16 @@ cloider app logs blog -n 100
 ```
 
 ```text title="Output"
-[app-7c9d8f6b5-x2k4p] 2026-10-20T15:29:13.474Z HEAD / 200 8ms
-[app-7c9d8f6b5-r5t7n] 2026-10-20T15:29:16.998Z GET  /posts/shipping-faster-with-preview-deploys 200 37ms
-[app-7c9d8f6b5-m8q3z] 2026-10-20T15:29:22.255Z GET  /archive?page=2 200 31ms
+[blog-x2k4p] 2026-10-20T15:29:13.474Z HEAD / 200 8ms
+[blog-r5t7n] 2026-10-20T15:29:16.998Z GET  /posts/shipping-faster-with-preview-deploys 200 37ms
+[blog-m8q3z] 2026-10-20T15:29:22.255Z GET  /archive?page=2 200 31ms
 ```
 
 List the replicas, then read one:
 
 ```bash
 cloider app replicas blog
-cloider app logs blog --replica app-7c9d8f6b5-r5t7n -f
+cloider app logs blog --replica blog-r5t7n -f
 ```
 
 </TabItem>
@@ -191,7 +191,7 @@ The Terraform provider can't read app logs. Use the dashboard, the CLI or the AP
 Add `replica`, a name from [`GET /apps/<id>/replicas`](/api/endpoints/apps#list-an-apps-replicas):
 
 ```bash
-curl -N "https://cloider.com/api/apps/b7x2k/logs/stream?lines=200&replica=app-7c9d8f6b5-r5t7n"   -H "Authorization: Bearer $CLOIDER_TOKEN"
+curl -N "https://cloider.com/api/apps/b7x2k/logs/stream?lines=200&replica=blog-r5t7n"   -H "Authorization: Bearer $CLOIDER_TOKEN"
 ```
 
 </TabItem>
@@ -204,7 +204,7 @@ One replica of the blog app is failing its health check. Show me its logs.
 The agent lists the replicas with `list_app_replicas`, then reads the failing one:
 
 ```json title="Tool call: get_app_logs"
-{"app": "blog", "replica": "app-7c9d8f6b5-r5t7n", "lines": 200}
+{"app": "blog", "replica": "blog-r5t7n", "lines": 200}
 ```
 
 </TabItem>

@@ -97,7 +97,7 @@ The CLI leaves out everything `.gitignore` lists, plus `.git` and `.cloider`. To
 2. Under **Application source**, drag the `hello` folder onto the drop zone, or click **choose a folder**. A zip file or a single HTML file works too. To deploy from a repository instead, click **GitHub**, **GitLab** or **Bitbucket** under **Import a Git repository** (see [Deploy from Git](/apps/deploy-from-git)), and to run an image you already built, click **Docker image** (see [Deploy a Docker image](/apps/deploy-an-image)).
 3. Cloider uploads the code and looks at it. The **Configure your app** step opens with what it detected under *We had a look at your code*.
 4. Fill in the form:
-   - **App Name**: `hello`. Lowercase letters, digits and dashes, 2 to 64 characters, starting with a letter.
+   - **App Name**: `hello`. Lowercase letters, digits and dashes, 2 to 50 characters, starting with a letter.
    - **Port**: `8080`.
    - **Start Command**: leave empty, so `npm start` runs.
    - **Give this app a free subdomain**: leave on, and type `hello-acme` in **Subdomain**. Wait for *hello-acme.cloider.app is available*.

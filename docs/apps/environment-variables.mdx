@@ -21,6 +21,7 @@ again unless you ask for it. This page covers all three lists, secrets, limits, 
 
 - **Secret** values are never listed, in the dashboard, the CLI or the API. You read one by name, one at a time.
 - `PORT` is always set by Cloider to the app's port and overrides a variable of the same name.
+- `HOSTNAME` holds each replica's name, such as `blog-x2k4p`, and `CLOIDER_REPLICA_ID` its own id.
 - Plain environment variables are also visible to a **buildpack** build. Secret environment variables never reach any
   build.
 - Values are stored with the app on the platform, not in the source.

@@ -237,10 +237,10 @@ resource "cloider_database" "orders" {
 
 | Argument | Type | Required | Default | Changing it | Description |
 | --- | --- | --- | --- | --- | --- |
-| `name` | String | Yes | | **Replaces** | The database's name, also the name of the database inside the server. Lower case letters, digits and `-`, starting with a letter, not ending with `-`, 2 to 64 characters. Some names are reserved, see [Limits](/reference/limits-and-quotas) |
+| `name` | String | Yes | | **Replaces** | The database's name, also the name of the database inside the server. Lower case letters, digits and `-`, starting with a letter, not ending with `-`, 2 to 48 characters. Some names are reserved, see [Limits](/reference/limits-and-quotas) |
 | `engine` | String | Yes | | **Replaces** | `postgresql`, `mysql`, `mongodb` or `redis` |
 | `version` | String | No | The newest version of the engine on offer | **Replaces** | The engine version, from the `versions` of the engine in [`cloider_options`](/terraform/data-sources/options)' `database_engines` |
-| `user` | String | No | `<name>_user` with `-` written as `_`, such as `orders_db_user` | **Replaces** | The user to connect as: lower case letters, digits and `_`, starting with a letter |
+| `user` | String | No | `<name>_user` with `-` written as `_`, such as `orders_db_user`, cut to 32 characters for MySQL | **Replaces** | The user to connect as: lower case letters, digits and `_`, starting with a letter, up to 32 characters for MySQL and 63 for the other engines |
 | `plan` | String | No | `hobby` | In place to a larger plan, **replaces** to a smaller one | `hobby`, `starter`, `basic`, `standard`, `plus` or `pro`, smallest first. See `cloider pricing` and [Pricing](/reference/pricing) |
 | `label` | String | No | `name`, with a `-1`, `-2`... suffix when another database has that name | In place | The name the dashboard and CLI show. Lower case letters, digits and `-`, starting with a letter. Unique among your databases |
 | `ssl` | Bool | No | `true`, except `false` for Redis | In place, **restarts** the database | Whether connections must use TLS. On Redis, `true` makes the server accept TLS connections only |

@@ -124,7 +124,7 @@ Creates a cluster and starts provisioning it. The request returns as soon as the
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `cluster_name` | string | Yes | 2 or more characters: lower case letters, digits and `-`. Must start with a letter, not end with `-`, no spaces |
+| `cluster_name` | string | Yes | 2 to 50 characters: lower case letters, digits and `-`. Must start with a letter, not end with `-`, no spaces |
 | `cluster_version` | string | Yes | One of the versions in `GET /options` `cluster_versions`, today `1.34`, `1.33` or `1.32`. There is no default in the API |
 | `is_ha` | boolean | No | Must be `false` or left out. `true` is refused |
 
@@ -145,7 +145,7 @@ If the account already has a cluster labelled `staging`, the new one is created 
 
 | Status | Field | Message |
 | --- | --- | --- |
-| `400` | `cluster_name` | `Cluster name must not be empty`, `Cluster name must not have spaces`, `Cluster name can not be upper case`, `Cluster name can not start with numbers`, `Cluster name must not have special characters except "-"`, `Cluster name must not start with any special character`, `Cluster name must not end with any special character`, `Cluster name must be at least 2 characters` |
+| `400` | `cluster_name` | `Cluster name must not be empty`, `Cluster name must not have spaces`, `Cluster name can not be upper case`, `Cluster name can not start with numbers`, `Cluster name must not have special characters except "-"`, `Cluster name must not start with any special character`, `Cluster name must not end with any special character`, `Cluster name must be at least 2 characters`, `Cluster name must not exceed 50 characters` |
 | `400` | `cluster_version` | `Invalid cluster version!` |
 | `400` | `is_ha` | `HA clusters are not supported at the moment!` |
 | `400` | `_` | `You have read-only access to this account, you can not create clusters!` (a Restricted member) |
