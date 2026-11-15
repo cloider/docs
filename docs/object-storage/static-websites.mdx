@@ -18,7 +18,7 @@ This page explains how a bucket website answers requests, how to turn it on with
 | **Address** | `https://<bucket>.s3-website.eu-central-2.cloider.com`, over HTTPS with Cloider's certificate |
 | **Your domains** | A free subdomain or a custom domain, with a **Bucket** target. See [Serve the website on a domain](#serve-the-website-on-a-domain) |
 | **Index document** | A file name without a slash, `index.html` by default |
-| **Error document** | Optional, a key in the bucket such as `404.html`. Without one, a small built-in `404` page |
+| **Error document** | Optional, a key in the bucket such as `404.html`. Without one, Cloider's built-in `404` page |
 | **Requires** | A **Ready** bucket with [public read access](/object-storage/public-and-private-buckets) |
 | **Methods** | `GET` and `HEAD`, including range and conditional requests |
 | **Not offered** | Folder listings and redirect rules |
@@ -438,7 +438,7 @@ This Deny names everyone, so it applies to every download from the bucket, not o
 | `Another change to this bucket is in progress, try again in a moment!` | Another settings, policy or delete change to this bucket is running. Try again |
 | `Turn on the bucket's website first, from its Settings.` | The target's bucket has its website off. Turn it on, then add the target |
 | `A bucket website is served at the root of its domain, the path must be /` | Leave the path and target path as `/`. To serve the site under its own name, use a domain such as `docs.example.com` |
-| Every path, even `/`, shows a plain `404 Not Found` page | The website is off, the bucket isn't **Ready** and public, or the change hasn't shown yet: settings take up to about 30 seconds. On a domain, also check that it has a Bucket target |
+| Every path shows Cloider's **Page not found** page, and `/` shows **Nothing here yet** | The website is off, the bucket isn't **Ready** and public, or the change hasn't shown yet: settings take up to about 30 seconds. On a domain, also check that it has a Bucket target |
 | `/` shows your error document with `404` | There is no index document at the root. Upload `index.html` to the bucket's root, not under a folder such as `dist/` |
 | `403` with your error document | A bucket policy denies the visitor, for example with a `NotIpAddress` condition. Check `cloider bucket policy get acme-site` |
 | The browser downloads a page, or shows HTML or CSS as text | The file was stored with the wrong `Content-Type`, and the website doesn't let browsers guess. Upload it again with the right type, see [Set headers when you upload](#set-headers-when-you-upload) |

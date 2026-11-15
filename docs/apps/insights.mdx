@@ -51,7 +51,7 @@ Its **Data Out (This Month)** card stays at `0 B`: data out is counted at the do
   caption="A cron job's Insights: its runs in place of requests."
 />
 
-Usage is sampled every minute while the app runs. A new app shows **Usage is sampled every minute while the app runs,
+Usage is sampled every 10 seconds while the app runs. A new app shows **Usage is sampled every 10 seconds while the app runs,
 and shows here once the first samples are in.** until its first samples arrive.
 
 <Screenshot
@@ -70,7 +70,7 @@ the ones the app never sees, such as the `503` a client gets while the app is do
 - **Requests** is the total. The chart splits it by status class: **2xx** success, **3xx** redirect, **4xx** client error
   and **5xx** server error. WebSocket upgrades (`101`) are in the total only.
 - **Data Out** is the size of the responses sent back, headers included, in binary units (1 KB = 1024 bytes).
-- Counts are added every minute to the current day, in UTC.
+- Counts are added every 10 seconds to the current day, in UTC.
 - Days from before requests were counted show no bar.
 
 <Screenshot
@@ -129,7 +129,7 @@ or **12h** to look further back, and **Refresh** for the latest count, which als
   caption="Six hours of autoscaling: up for the midday traffic, down after it, and a short step up for a burst."
 />
 
-- Replicas are counted every minute. Each change of the count and each hour's peak are kept for 12 hours.
+- Replicas are counted every 10 seconds. Each change of the count and each hour's peak are kept for 12 hours.
 - A replica counts once it is ready: when its [health check](/apps/health-checks) passes, or without one, when it
   accepts connections on the app's port. A replica still starting or failing its check isn't counted. A deploy
   doesn't add one: the old replica stops being counted as its replacement takes over.
@@ -350,7 +350,7 @@ cloider app exec blog -- ps aux
   {q: 'Where can I see how often my cron job\'s runs fail?', a: 'On the cron job\'s Insights tab: the runs that ended today and this month, the minutes they ran, and this month\'s success and failure rate with how many runs succeeded and failed. The Runs tab lists the last 5 succeeded and 5 failed runs with their output.'},
   {q: 'How can I see when my app scaled up or down?', a: 'The app\'s Insights tab charts its ready replicas minute by minute and the peak of each hour, over the last 30 minutes by default, from the last 5 minutes up to the last 12 hours. A paused app shows 0.'},
   {q: 'Where can I see how much CPU and memory my app uses?', a: 'On the app\'s Insights tab in the dashboard: CPU and memory per replica minute by minute over the last 12 hours against each replica\'s limit, average CPU in cores and memory in GB for this month and today, and daily charts for the last 31 days. cloider app usage <app> -o json returns the daily figures.'},
-  {q: 'How often is app usage measured?', a: 'Usage is sampled every minute while the app runs, and averaged per day. A paused app has no running container, so it records zero usage.'},
+  {q: 'How often is app usage measured?', a: 'Usage is sampled every 10 seconds while the app runs, and averaged per day. A paused app has no running container, so it records zero usage.'},
   {q: 'Does the web terminal count towards my app\'s usage?', a: 'No. Only the app\'s own container is measured and billed. The terminal that the dashboard opens runs separately and isn\'t counted.'},
   {q: 'How is the cost forecast calculated?', a: 'The forecast projects the app\'s current usage over the rest of this month and over next month, at the current rates. It changes as the app\'s usage changes.'},
 ]} />
