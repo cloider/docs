@@ -119,14 +119,14 @@ cloider cluster create <name> [flags]
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--version` | string | the newest offered | Kubernetes version, for example `1.34`, `1.33` or `1.32` |
+| `--version` | string | the newest offered | Kubernetes version, `1.36` right now |
 | `-w, --wait` | bool | `false` | Wait until the cluster is `Ready` |
 | `--timeout` | duration | `15m0s` | How long `--wait` waits |
 
 The CLI reads the versions Cloider currently offers before creating the cluster. A version that isn't offered fails with exit code `2` and lists the ones that are:
 
 ```text
-Error: version 1.29 isn't offered, pick one of: 1.34, 1.33, 1.32
+Error: version 1.29 isn't offered, pick one of: 1.36
 ```
 
 Create a cluster and return right away:
@@ -136,18 +136,18 @@ cloider cluster create staging
 ```
 
 ```text title="Output"
-✓ Creating cluster staging (Kubernetes 1.34)
+✓ Creating cluster staging (Kubernetes 1.36)
 Follow it with `cloider cluster status staging`, or pass --wait next time.
 ```
 
 Create a cluster on a specific version and wait until it is ready:
 
 ```bash
-cloider cluster create staging --version 1.33 --wait
+cloider cluster create staging --version 1.36 --wait
 ```
 
 ```text title="Output"
-✓ Creating cluster staging (Kubernetes 1.33)
+✓ Creating cluster staging (Kubernetes 1.36)
 ✓ Cluster staging is ready. Get its kubeconfig with `cloider cluster kubeconfig staging --merge`.
 ```
 
@@ -503,7 +503,7 @@ MCP tool: `cluster_exec` (marked as destructive, since a command can change anyt
 - [Terraform `cloider_cluster`](/terraform/resources/cluster) for infrastructure as code
 
 <FAQ items={[
-  {q: 'How do I create a Kubernetes cluster with the Cloider CLI?', a: 'Run cloider cluster create staging --wait. Without --version you get the newest Kubernetes version Cloider offers; --version 1.33 picks another one. --wait returns once the cluster is Ready.'},
+  {q: 'How do I create a Kubernetes cluster with the Cloider CLI?', a: 'Run cloider cluster create staging --wait. Without --version you get the newest Kubernetes version Cloider offers, 1.36 right now; --version picks a specific one. --wait returns once the cluster is Ready.'},
   {q: 'How do I get a kubeconfig for my Cloider cluster?', a: 'Run cloider cluster kubeconfig staging --merge --use. It adds the cluster to ~/.kube/config (or the first file in $KUBECONFIG) as the context cloider-staging and makes it the current context. Without --merge it prints the kubeconfig, and -f writes it to a file.'},
   {q: 'Can I run kubectl without installing it?', a: 'Yes. cloider cluster exec staging kubectl get pods -A runs kubectl in the cluster\'s terminal, where kubectl and helm are already configured. cloider cluster shell staging opens an interactive shell there.'},
   {q: 'How do I pause a cluster from the CLI?', a: 'Run cloider cluster pause staging --wait, and cloider cluster resume staging --wait to start it again.'},

@@ -19,7 +19,7 @@ Cloider runs managed **MySQL 9**, the open source relational database used by Wo
 | **Topology** | One server, no replicas |
 | **Port** | Assigned per database (not 3306) |
 | **Database and user** | A database named after your Cloider database (for example `shop-db`) and the user you chose (for example `shop_db_user`) |
-| **Root access** | Not given out. The `root` and `mysql` users are reserved |
+| **Root access** | Not given out. The `root` and `mysql` users are reserved. Your user can create, alter and drop users and roles and grant privileges on its database, see [users and roles](#users-and-roles) |
 | **Authentication** | `caching_sha2_password` |
 | **SSL** | On by default. With SSL off, TLS is turned off on the server |
 | **Max connections** | 20 (Hobby) to 200 (Pro), see [server settings per plan](#server-settings-per-plan) |
@@ -433,6 +433,35 @@ SHOW STATUS LIKE 'Threads_connected';
 
 Cloider creates one database, named after your Cloider database, and one user. The `root` user is reserved for Cloider, so statements that need administrative privileges, such as `SET GLOBAL`, `SUPER` or creating objects with another user as `DEFINER`, aren't available.
 
+### Users and roles
+
+Your user can create, alter and drop users and roles and grant them privileges on your database. Give each application or person a login of its own, for example a read-only one for reporting:
+
+```sql
+CREATE USER 'reporting'@'%' IDENTIFIED BY 'choose-a-long-password';
+GRANT SELECT ON `shop-db`.* TO 'reporting'@'%';
+
+-- or through a role
+CREATE ROLE 'shop_read';
+GRANT SELECT ON `shop-db`.* TO 'shop_read';
+GRANT 'shop_read' TO 'reporting'@'%';
+SET DEFAULT ROLE ALL TO 'reporting'@'%';
+
+-- the users on the server
+SELECT User, Host FROM mysql.user;
+```
+
+A new user connects with the same host, port and database as yours.
+
+| Permission | Your user |
+| --- | --- |
+| `CREATE USER`, `ALTER USER`, `RENAME USER`, `DROP USER` | Yes |
+| `CREATE ROLE`, `DROP ROLE`, granting roles | Yes |
+| `GRANT` and `REVOKE` privileges on your database | Yes |
+| Privileges on other databases or the whole server (`*.*`) | No |
+| `SHOW GRANTS FOR` another user | No, it needs read access to the `mysql` schema, which holds the password hashes. Run `SHOW GRANTS` logged in as that user |
+| Change, drop or grant `root` and the `mysql.*` users | No |
+
 ### Database names with hyphens
 
 A database name with a hyphen, such as `shop-db`, works as is in connection settings. Inside SQL, quote it with backticks:
@@ -480,6 +509,8 @@ Or load it without opening the firewall: `cloider db exec -i shop-db < app-clean
 | `Access denied; you need (at least one of) the PROCESS privilege(s)` from `mysqldump` | Add `--no-tablespaces` |
 | `Access denied; you need (at least one of) the SUPER or SET_USER_ID privilege(s)` | The dump contains `DEFINER` clauses. Strip them as shown above |
 | `ERROR 1064` near `-db` | A hyphenated database name used without backticks. Write `` `shop-db` `` |
+| `Access denied; you need (at least one of) the SYSTEM_USER privilege(s)` | The statement touches `root` or a `mysql.*` user, which are reserved |
+| `Access denied for user 'shop_db_user'@'%'` on a `GRANT ... ON *.*` | Your user can only grant privileges on your database: `` GRANT ... ON `shop-db`.* `` |
 
 More in [database troubleshooting](/databases/troubleshooting).
 
@@ -495,5 +526,6 @@ More in [database troubleshooting](/databases/troubleshooting).
   {q: 'What port does Cloider MySQL use?', a: 'Each MySQL database gets its own port when it is created, not 3306. The port is in the connection details.'},
   {q: 'Why does the mysql client need --get-server-public-key?', a: 'Only when SSL is off. MySQL 9 uses caching_sha2_password, which needs either an encrypted connection or the server\'s RSA public key to send the password. With SSL on, no extra flag is needed.'},
   {q: 'Can I get root access to MySQL on Cloider?', a: 'No. You connect as the database user created with the database. The root user is reserved for Cloider.'},
+  {q: 'Can I create more MySQL users on Cloider?', a: 'Yes. Your user can create, alter and drop users and roles and grant them privileges on your database. It can\'t grant privileges on other databases or the whole server, or change the root user.'},
   {q: 'Can I run WordPress or Laravel on Cloider MySQL?', a: 'Yes. Give the application the host, port, database, user and password from the database\'s Overview tab, using the private host when the application runs on Cloider.'}
 ]} />

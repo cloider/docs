@@ -18,7 +18,7 @@ Cloider runs managed **MongoDB 8**, the document database that stores JSON-like 
 | **Topology** | A single-member replica set, so transactions and change streams work |
 | **Port** | Assigned per database (not 27017) |
 | **Database and user** | A database named after your Cloider database (for example `catalog-db`) and the user you chose (for example `catalog_db_user`), created in that database |
-| **Admin access** | Not given out. The `admin` user and the `admin`, `local` and `config` databases are reserved |
+| **Admin access** | Not given out. The `admin` user and the `admin`, `local` and `config` databases are reserved. Your user can manage users and roles in its database, see [users and roles](#users-and-roles) |
 | **SSL** | On by default. The server accepts TLS and, for compatibility, unencrypted connections too |
 | **Client** | `mongosh` |
 | **Plans** | Hobby (0.25 vCPU, 0.5 GB RAM, 2 GB storage) to Pro (3 vCPU, 6 GB RAM, 24 GB storage), see [plans](/databases/overview#mongodb-plans) |
@@ -261,7 +261,31 @@ The member's address is the public host, `catalog-db-m3v8rt.db.cloider.com:24309
 
 ### The database and the user
 
-Cloider creates one database, named after your Cloider database, and one user in it. Your application works in that database. The user can't create or manage other users, and the `admin` user, which administers the server, is reserved for Cloider.
+Cloider creates one database, named after your Cloider database, and one user in it. Your application works in that database. The `admin` user, which administers the server, is reserved for Cloider.
+
+### Users and roles
+
+Your user has the `userAdmin` role on your database: it can create, change and drop users and roles there and grant them that database's roles. Give each application or person a login of its own, for example a read-only one for reporting:
+
+```javascript
+db.getSiblingDB('catalog-db').createUser({
+  user: 'reporting',
+  pwd: passwordPrompt(),
+  roles: [{ role: 'read', db: 'catalog-db' }]
+})
+
+// the users of your database
+db.getSiblingDB('catalog-db').getUsers()
+```
+
+A new user is created in your database too, so it connects with the same connection string as yours, its own name and password in place of your user's. Your user can also grant itself `dbAdmin` or `dbOwner` on the database.
+
+| Permission | Your user |
+| --- | --- |
+| `createUser`, `updateUser`, `dropUser` in your database | Yes |
+| `createRole`, `dropRole`, `grantRolesToUser` with your database's roles | Yes |
+| Roles on other databases, or server-wide roles such as `root` | No |
+| Change or drop the `admin` user | No |
 
 ### TLS mode
 
@@ -317,6 +341,7 @@ mongorestore --uri "mongodb://catalog_db_user:$(cloider db password catalog-db)@
 | `getaddrinfo ENOTFOUND catalog-db-m3v8rt.db.cloider.com` or a timeout from a Cloider app on the private host | The connection string lacks `directConnection=true`, so the driver switched to the replica set member's public host. Add `directConnection=true` |
 | `querySrv ENOTFOUND` | The URI uses `mongodb+srv://`. Use `mongodb://` with the host and port |
 | Connection works but data is missing | Your code writes to another database. Use the database from the connection string (`client.db()`) |
+| `not authorized on admin to execute command { createUser` | The user is being created in another database, here `admin`. Run `use catalog-db` first, or `db.getSiblingDB('catalog-db').createUser(...)` |
 
 More in [database troubleshooting](/databases/troubleshooting).
 
@@ -332,5 +357,6 @@ More in [database troubleshooting](/databases/troubleshooting).
   {q: 'Can I use Prisma with Cloider MongoDB?', a: 'Yes. Prisma\'s MongoDB connector needs a replica set, which a Cloider MongoDB database is. Keep directConnection=true in the connection string.'},
   {q: 'Why does mongosh say the certificate is not trusted?', a: 'Cloider signs MongoDB certificates with its own CA. Download it with cloider db cert <database> -f ca.crt or from the Overview tab, and pass it with --tlsCAFile ca.crt.'},
   {q: 'What port does Cloider MongoDB use?', a: 'Each MongoDB database gets its own port when it is created, not 27017. The port is in the connection details.'},
-  {q: 'Can I use mongodb+srv connection strings?', a: 'No. Use a mongodb:// connection string with the host and port from the connection details.'}
+  {q: 'Can I use mongodb+srv connection strings?', a: 'No. Use a mongodb:// connection string with the host and port from the connection details.'},
+  {q: 'Can I create more MongoDB users on Cloider?', a: 'Yes. Your user has the userAdmin role on your database, so it can create, change and drop users and roles there. It can\'t grant roles on other databases or server-wide roles such as root.'}
 ]} />

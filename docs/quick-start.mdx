@@ -218,10 +218,9 @@ A Cloider **Kubernetes cluster** is a standard Kubernetes API that you reach wit
 
 1. Open **Kubernetes** in the sidebar and click **Create Cluster**.
 2. Type a **Cluster Name**, for example `staging`. Use lowercase letters, digits and dashes, starting with a letter.
-3. Leave **Cluster Version** on the newest version, or pick another.
-4. Click **Create cluster**.
-5. Wait until the cluster's status is **Ready**. It goes through **Creating** and **Starting** first, which takes a few minutes.
-6. Click the menu button (three dots) at the end of the cluster's row and choose **Kubeconfig** to download its kubeconfig file (saved as `config`).
+3. Click **Create cluster**. Every new cluster runs Kubernetes 1.36.
+4. Wait until the cluster's status is **Ready**. It goes through **Creating** and **Starting** first, which takes a few minutes.
+5. Click the menu button (three dots) at the end of the cluster's row and choose **Kubeconfig** to download its kubeconfig file (saved as `config`).
 
 Then point `kubectl` at the downloaded file:
 
@@ -238,7 +237,7 @@ cloider cluster create staging --wait
 ```
 
 ```text title="Output"
-✓ Creating cluster staging (Kubernetes 1.34)
+✓ Creating cluster staging (Kubernetes 1.36)
 ✓ Cluster staging is ready. Get its kubeconfig with `cloider cluster kubeconfig staging --merge`.
 ```
 
@@ -299,7 +298,7 @@ Create the cluster:
 curl -X POST https://cloider.com/api/clusters \
   -H "Authorization: Bearer $CLOIDER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"cluster_name": "staging", "cluster_version": "1.34"}'
+  -d '{"cluster_name": "staging", "cluster_version": "1.36"}'
 ```
 
 ```json title="Response"
@@ -405,5 +404,5 @@ You can also **pause** a cluster or an app instead of deleting it. A paused clus
   {q: 'Do I need a Dockerfile to deploy an app?', a: 'No. Cloider detects the language and framework and builds your code with buildpacks. If your project has its own Dockerfile, Cloider builds that instead.'},
   {q: 'What URL does my app get?', a: 'An app gets a free subdomain of cloider.app with HTTPS, for example https://hello-7kq2.cloider.app. You can pick the name when you create the app, and add your own domain later.'},
   {q: 'How long does it take to create a Kubernetes cluster?', a: 'A few minutes. The cluster goes through Creating and Starting before it is Ready. Use --wait with the CLI, or wait for the Ready status in the dashboard, before you download the kubeconfig.'},
-  {q: 'Which Kubernetes versions can I choose?', a: 'The versions offered right now are listed by the Cluster Version field in the dashboard, by the GET /api/options endpoint and by the cloider_options Terraform data source. The CLI picks the newest one when you leave out --version.'}
+  {q: 'Which Kubernetes versions can I choose?', a: 'New clusters run Kubernetes 1.36, the only version offered right now. The versions offered are listed by the GET /api/options endpoint and by the cloider_options Terraform data source, and the CLI picks the newest one when you leave out --version. A cluster keeps the version it was created with.'}
 ]} />

@@ -18,7 +18,7 @@ Cloider runs managed **PostgreSQL 18**, the open source relational database. Eac
 | **Topology** | One primary server, no read replicas |
 | **Port** | Assigned per database (not 5432) |
 | **Database and user** | A database named after your Cloider database (for example `orders-db`) and the user you chose (for example `orders_db_user`) |
-| **Superuser** | Not given out. The `postgres` user is reserved, and you connect as your database user |
+| **Superuser** | Not given out. You connect as your database user, which can create, alter and drop roles and grant privileges, but can't make a superuser or bypass row-level security. See [users and roles](#users-and-roles) |
 | **SSL** | On by default. The server offers TLS with a certificate signed by Cloider's CA |
 | **Client** | `psql` |
 | **Plans** | Hobby (0.25 vCPU, 0.25 GB RAM, 1 GB storage) to Pro (2 vCPU, 4 GB RAM, 16 GB storage), see [plans](/databases/overview#postgresql-and-mysql-plans) |
@@ -348,6 +348,29 @@ With `DATABASE_URL` set to the connection string with `?sslmode=require`, run `b
 
 Cloider creates one database, named after your Cloider database, and one user. Your application connects as that user. The `postgres` superuser is reserved for Cloider and its password isn't given out, so commands that need a superuser, such as `ALTER SYSTEM` or creating untrusted extensions, aren't available.
 
+### Users and roles
+
+Your database user can create, alter and drop roles and grant them privileges, like the admin user of other managed PostgreSQL services. Give each application or person a login of its own, for example a read-only one for reporting:
+
+```sql
+CREATE ROLE reporting LOGIN PASSWORD 'choose-a-long-password';
+GRANT USAGE ON SCHEMA public TO reporting;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO reporting;
+-- and the tables your user creates later
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO reporting;
+```
+
+A new role connects with the same host, port and database as your database user. Every role you create is granted to your database user, so it keeps managing the role and has its privileges: it can change the role's tables, and run `REASSIGN OWNED BY reporting TO orders_db_user` before `DROP ROLE reporting`.
+
+| Permission | Your database user |
+| --- | --- |
+| `CREATE ROLE`, `ALTER ROLE`, `DROP ROLE` | Yes |
+| `GRANT` and `REVOKE` privileges and role memberships | Yes |
+| Create a role with `CREATEDB` | Yes |
+| Create a `SUPERUSER` | No |
+| Give `BYPASSRLS` or `REPLICATION` | No |
+| Change or drop the `postgres` user | No |
+
 ### Database names with hyphens
 
 A Cloider database name can contain hyphens (`orders-db`). In connection strings and client flags it works as is. Inside SQL, quote it as an identifier:
@@ -446,6 +469,7 @@ PGPASSWORD="$(cloider db password orders-db)" \
 | `certificate verify failed` or `self-signed certificate in certificate chain` | The client verifies the certificate without Cloider's CA. Pass `sslrootcert=ca.crt` |
 | `sorry, too many clients already` or `remaining connection slots are reserved` | The connection limit is reached. Lower your pool sizes or [resize](/databases/resize) |
 | `permission denied to create extension` | The extension needs a superuser, which isn't available |
+| `permission denied to create role` or `permission denied to alter role` | The role is a superuser or has `BYPASSRLS` or `REPLICATION`, which your database user can't give or manage. See [users and roles](#users-and-roles) |
 | `could not extend file ... No space left on device` | The storage is full. [Resize](/databases/resize) to a plan with more storage |
 
 More in [database troubleshooting](/databases/troubleshooting).
@@ -461,6 +485,7 @@ More in [database troubleshooting](/databases/troubleshooting).
   {q: 'Which PostgreSQL version does Cloider run?', a: 'Cloider runs PostgreSQL 18. The version is set when the database is created.'},
   {q: 'What port does Cloider PostgreSQL use?', a: 'Each PostgreSQL database gets its own port when it is created, not 5432. The port is shown in the connection details and in cloider db get <database>.'},
   {q: 'Do I get superuser access to PostgreSQL on Cloider?', a: 'No. You connect as the database user created with the database. The postgres superuser is reserved for Cloider, so actions that need a superuser are not available.'},
+  {q: 'Can I create more PostgreSQL users on Cloider?', a: 'Yes. Your database user can create, alter and drop roles and grant them privileges. It can\'t create a superuser or give BYPASSRLS or REPLICATION.'},
   {q: 'Does Cloider PostgreSQL support SSL?', a: 'Yes. SSL is on by default for PostgreSQL. Use sslmode=require to encrypt, or sslmode=verify-full with the CA certificate from cloider db cert to also verify the server.'},
   {q: 'Can I use Prisma, Django or Rails with Cloider PostgreSQL?', a: 'Yes. Any PostgreSQL client works. Give the framework the connection string from the database\'s Overview tab, with the private host when the app runs on Cloider.'},
   {q: 'Does Cloider PostgreSQL have read replicas?', a: 'No. Each PostgreSQL database is a single primary server. Its backups can be restored into a new database, as of now or any second of the last 14 days.'}
