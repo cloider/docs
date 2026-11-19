@@ -326,7 +326,7 @@ replicas together, prorated to the second. Each replica counts the larger of wha
 | --- | --- |
 | Horizontal autoscaling | The CPU and memory you set |
 | Fixed resource management | The CPU and memory you set |
-| Automatic resource management | What it uses, at least 0.01 vCPU and 64 MB |
+| Automatic resource management | What it uses, at least 0.001 vCPU and 1 MB |
 
 So an autoscaled app's bill follows its replica count: more replicas during busy hours, fewer at night. A
 [paused](/apps/pause-resume-and-delete) app runs no replicas and costs nothing. See the
@@ -349,7 +349,7 @@ management. CPU works differently: a replica that reaches its CPU is slowed down
 | --- | --- |
 | `Minimum replicas must be between 1 and 20` / `Replicas must be between 1 and 20` | Pick a count from 1 to 20 |
 | `Maximum replicas must be between the minimum and 20` | Set the maximum at or above the minimum |
-| `CPU must be between 0.05 and 2` | Enter a CPU per replica of up to 2 vCPU |
+| `CPU must be between 0.001 and 2` | Enter a CPU per replica of up to 2 vCPU |
 | `Memory must be between 64 and 4096 MB` | Enter a memory per replica of up to 4096 MB |
 | `CPU threshold must be between 10% and 90%, or off` | Use 10 to 90, or leave it empty (`0` in the CLI and API) |
 | `Set a CPU threshold, a memory threshold or both, for when to add a replica` | Turn at least one threshold on |
