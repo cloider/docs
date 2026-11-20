@@ -55,7 +55,7 @@ unavailable. For better availability and fault tolerance, we recommend at least 
 With **Automatic resource management**, you only choose how many replicas may run. Cloider scales the app both ways:
 
 - **Vertically:** each replica uses the CPU and memory it needs, up to **0.25 vCPU** and **500 MB** per replica, and is
-  billed for what it uses.
+  billed for what it uses, with the [app minimum](#how-is-a-scaled-app-billed) as the least the app pays.
 - **Horizontally:** another replica is added once the replicas average **80% of their CPU** (0.2 vCPU) or **70% of
   their memory** (350 MB) per replica, up to **Maximum replicas** (5 by default).
 - **Down:** a replica is removed after 5 quieter minutes, never below **Minimum replicas** (2 by default).
@@ -328,6 +328,13 @@ replicas together, prorated to the second. Each replica counts the larger of wha
 | Fixed resource management | The CPU and memory you set |
 | Automatic resource management | What it uses, at least 0.001 vCPU and 1 MB |
 
+Whatever the option, a running app pays at least the **app minimum**, **$2.99 per 30 days**, charged by the second as
+it runs. Each day the app costs its compute or the minimum for the time it ran, whichever is more, so a small app pays
+about $0.10 a day and $1.495 by day 15. Time counts while any replica runs, so a paused app and an app whose first
+build hasn't finished pay nothing, and a [cron job](/apps/cron-jobs) is billed for its runs alone. On the invoice, the
+days billed on compute appear as **Compute-Hour** lines and the days billed the minimum as **Minimum** lines in
+running hours.
+
 So an autoscaled app's bill follows its replica count: more replicas during busy hours, fewer at night. A
 [paused](/apps/pause-resume-and-delete) app runs no replicas and costs nothing. See the
 [pricing reference](/reference/pricing) for current rates, and the [Insights](/apps/insights) tab for what the app
@@ -368,7 +375,7 @@ management. CPU works differently: a replica that reaches its CPU is slowed down
 <FAQ items={[
   {q: 'Can a Cloider app run more than one instance?', a: 'Yes. An app runs 1 to 20 replicas, identical copies that share its requests. Set a fixed count, or let Cloider add and remove replicas between a minimum and a maximum as the app gets busy. New apps start with 2 to 5 replicas.'},
   {q: 'How does autoscaling work on Cloider?', a: 'With Horizontal autoscaling, a replica is added once the replicas average your CPU threshold (80% by default), your memory threshold (70% by default), or either. With Automatic resource management, a replica is added once they average 0.2 vCPU or 350 MB each. Replicas are removed after 5 quieter minutes, never below the minimum.'},
-  {q: 'What is the difference between Horizontal autoscaling and Automatic resource management?', a: 'Horizontal autoscaling gives each replica the CPU and memory you set, bills all of it, and lets you pick the CPU and memory thresholds. Automatic resource management lets each replica use what it needs, up to 0.25 vCPU and 500 MB, and bills what it uses.'},
+  {q: 'What is the difference between Horizontal autoscaling and Automatic resource management?', a: 'Horizontal autoscaling gives each replica the CPU and memory you set, bills all of it, and lets you pick the CPU and memory thresholds. Automatic resource management lets each replica use what it needs, up to 0.25 vCPU and 500 MB, and bills what it uses. Either way, a running app pays at least $2.99 per 30 days.'},
   {q: 'How many replicas should my app run?', a: 'At least 2 for anything users depend on, so one replica can restart or move while the other keeps serving. With 1 replica the app is down whenever that replica is.'},
   {q: 'Does changing the compute configuration rebuild my app?', a: 'No. Saving it redeploys the version that is running, and the old replicas keep serving until the new ones are up.'},
   {q: 'Can I scale an app to zero?', a: 'No. At least 1 replica runs while the app is up. To stop an app and its billing completely, pause it.'},

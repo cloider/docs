@@ -18,6 +18,7 @@ This page lists **what** Cloider charges for and in which unit. The amounts them
 | Kubernetes cluster | Load balancers | Per load balancer per month | `cluster.loadbalancer` |
 | App | Compute | Per compute unit per month | `app.compute_unit` |
 | App | Compute unit size | vCPU to memory ratio | `app.cpu_to_mem_ratio` |
+| App | Minimum | Per running app per 30 days, whatever its compute | `app.minimum` |
 | Database | Plan | Per database per month, per engine and plan | `database.<Engine>.<Plan>.price` |
 | Database (paused) | Retained storage | Per database per month while paused | `database.<Engine>.<Plan>.paused_price` |
 | Bucket | Storage | Per GiB stored per month | `bucket.storage_gi` |
@@ -41,7 +42,7 @@ The pricing section of the home page, [cloider.com/#pricing](https://cloider.com
 cloider pricing
 ```
 
-The first table lists `SERVICE`, `UNIT` and `PRICE` for each price kind: the cluster's `compute unit`, `volume per Gi`, `load balancer` and `cpu to memory ratio`, the app's `compute unit` and `cpu to memory ratio`, the bucket's and registry's `storage per Gi`. The second lists every database `PLAN` per engine with its monthly `PRICE`, `CPU`, `RAM`, `STORAGE` and `PAUSED` price. Add `-o json` for the raw answer.
+The first table lists `SERVICE`, `UNIT` and `PRICE` for each price kind: the cluster's `compute unit`, `volume per Gi`, `load balancer` and `cpu to memory ratio`, the app's `compute unit`, `cpu to memory ratio` and `minimum per 30 days running`, the bucket's and registry's `storage per Gi`. The second lists every database `PLAN` per engine with its monthly `PRICE`, `CPU`, `RAM`, `STORAGE` and `PAUSED` price. Add `-o json` for the raw answer.
 
 </TabItem>
 <TabItem value="terraform" label="Terraform">
@@ -67,7 +68,8 @@ curl https://cloider.com/api/pricing
   },
   "app": {
     "compute_unit": "<monthly price of one compute unit>",
-    "cpu_to_mem_ratio": "<MiB of memory per millicore>"
+    "cpu_to_mem_ratio": "<MiB of memory per millicore>",
+    "minimum": "<the least a running app pays per 30 days>"
   },
   "bucket": {"storage_gi": "<monthly price of one GiB stored>"},
   "registry": {"storage_gi": "<monthly price of one GiB stored>"},
@@ -114,6 +116,8 @@ compute units = max(vCPU, memory in MiB / (cpu_to_mem_ratio x 1000))
 Each running container counts the larger of its request and its actual use, for CPU and memory separately. A cluster's compute includes its Kubernetes control plane; the calculator on cloider.com estimates the control plane at about $9.99 a month. Clusters and apps have separate compute prices.
 
 On an invoice, compute appears as **Compute-Hour** lines: compute units times hours.
+
+An app pays at least `app.minimum` per 30 days of running time, $2.99 today, charged by the second. Each day costs its compute or the minimum for the time the app ran, whichever is more, and the days billed the minimum appear on the invoice as **Minimum** lines in running hours.
 
 ## Storage
 

@@ -285,6 +285,8 @@ by the time they run. There is no charge for builds, requests or traffic.
   size it yourself. See [How is a scaled app billed?](/apps/scaling#how-is-a-scaled-app-billed)
 - Usage is metered continuously, charged for the time the app runs, and summed per day. The current rate is on the
   [pricing page](/reference/pricing).
+- A running app pays at least **$2.99 per 30 days**, charged by the second, whatever its compute comes to. See
+  [How is a scaled app billed?](/apps/scaling#how-is-a-scaled-app-billed)
 - A **paused** app has no running replicas, so it uses no compute and costs nothing.
 - Your app's images live in the account's apps registry project, which is billed like any
   [registry project](/container-registry/usage-and-billing), by the image data it stores. Cloider keeps only the two
@@ -350,7 +352,7 @@ token with read access has the same limits. See [Accounts and roles](/concepts/a
   {q: 'What is a Cloider app?', a: 'A Cloider app is your source code built into a container image and run as a web service, served over HTTPS on a free cloider.app subdomain or your own domain. Cloider builds it with your Dockerfile, a buildpack for your language, or a static web server, and runs it on 1 to 20 replicas.'},
   {q: 'Do I need a Dockerfile to deploy an app?', a: 'No. Without a Dockerfile, Cloider builds Node.js, Python, Go, Java, Scala, PHP, Ruby and .NET projects with Cloud Native Buildpacks, and serves a folder of HTML files as a static site. With a Dockerfile at the root of the project, Cloider builds exactly that Dockerfile.'},
   {q: 'Which port should my app listen on?', a: 'Listen on the port in the PORT environment variable. Cloider sets PORT to the app\'s port, which is detected from the project or defaults to 8080, and only routes traffic to that port. You can change the port on the Settings tab.'},
-  {q: 'How much does an app cost?', a: 'An app is billed for the CPU and memory its running container uses, for the time it runs. Builds, requests and traffic are free, and a paused app costs nothing for compute. The app\'s images are stored in a registry project billed by storage.'},
+  {q: 'How much does an app cost?', a: 'An app is billed for the CPU and memory its running container uses, for the time it runs, and at least $2.99 per 30 days while it runs. Builds, requests and traffic are free, and a paused app costs nothing for compute. The app\'s images are stored in a registry project billed by storage.'},
   {q: 'Can an app run more than one instance?', a: 'Yes. An app runs 1 to 20 replicas that share its requests, a fixed number or added and removed by Cloider as the app gets busy. New apps start with 2 to 5. For several services that talk to each other, use a Cloider Kubernetes cluster.'},
   {q: 'What happens to my running app when a new build fails?', a: 'Nothing. The version that is live keeps serving until a new version builds, starts and stays up. A failed build only marks that build Failed, and you can retry it or deploy again.'},
   {q: 'Can I manage apps with Terraform?', a: 'Not directly. The Terraform provider has no app resource, but a cloider_target can route one of your domains to an existing app by its id.'},
